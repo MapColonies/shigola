@@ -134,6 +134,10 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 	} else {
 		extent, tileSRID = tile.Extent()
 	}
+	if tileSRID == tegola.WGS84 {
+		z, x, y := tile.ZXY()
+		log.Debugf("postgis: replacing tokens for WorldCRS84Quad tile z=%v x=%v y=%v tile_srid=%v layer_srid=%v with_buffer=%v extent=%v", z, x, y, tileSRID, srid, withBuffer, extent)
+	}
 
 	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MinX(), extent.MinY()})
 	if err != nil {
@@ -155,6 +159,9 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 		maxPt.Y(),
 		srid,
 	)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("postgis: WorldCRS84Quad BBOX tile_srid=%v layer_srid=%v min=%v max=%v bbox=%v", tileSRID, srid, minPt, maxPt, bbox)
+	}
 
 	extent, _ = tile.Extent()
 	// TODO: Always convert to meter if we support different projections

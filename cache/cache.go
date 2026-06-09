@@ -12,6 +12,7 @@ import (
 	"github.com/go-spatial/geom/slippy"
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/dict"
+	internalLog "github.com/go-spatial/tegola/internal/log"
 )
 
 // Interface defines a cache back end
@@ -91,6 +92,9 @@ func ParseKeyForTileSRID(str string, tileSRID uint64) (*Key, error) {
 	}
 	maxXatZ := uint64(gridWidth - 1)
 	maxYatZ := uint64(gridHeight - 1)
+	if tileSRID != tegola.WebMercator {
+		internalLog.Debugf("cache: tile grid for key parse path=%v tile_srid=%v z=%v width=%v height=%v max_x=%v max_y=%v", str, tileSRID, key.Z, gridWidth, gridHeight, maxXatZ, maxYatZ)
+	}
 
 	placeholder, err = strconv.ParseUint(zxy[1], 10, 32)
 	if err != nil || placeholder > maxXatZ {

@@ -103,6 +103,7 @@ func (tile *tile_t) Extent() (ext *geom.Extent, srid uint64) {
 	switch tile.srid {
 	case tegola.WGS84:
 		ext, err = tegola.WorldCRS84QuadExtent(tile.Tile)
+		log.Debugf("provider tile extent: using WorldCRS84Quad tile=%v srid=%v extent=%v err=%v", tile.Tile, tile.srid, ext, err)
 	case tegola.WebMercator:
 		ext, err = slippy.Extent(webmercatorGrid, tile.Tile)
 	default:
@@ -124,7 +125,11 @@ func (tile *tile_t) BufferedExtent() (ext *geom.Extent, srid uint64) {
 	if tile.srid == tegola.WGS84 {
 		ratio = ext.XSpan() / slippy.MvtTileDim
 	}
-	return ext.ExpandBy(ratio * float64(tile.buffer)), uint64(tile.srid)
+	bufferedExtent := ext.ExpandBy(ratio * float64(tile.buffer))
+	if tile.srid == tegola.WGS84 {
+		log.Debugf("provider buffered extent: WorldCRS84Quad tile=%v buffer=%v ratio=%v extent=%v buffered_extent=%v", tile.Tile, tile.buffer, ratio, ext, bufferedExtent)
+	}
+	return bufferedExtent, uint64(tile.srid)
 }
 
 // Tile is an interface used by Tiler, it is an unnecessary abstraction and is

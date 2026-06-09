@@ -50,9 +50,15 @@ func (c connectionPoolCollector) QueryContext(ctx context.Context, query string)
 }
 
 func (c connectionPoolCollector) QueryContextWithBBox(ctx context.Context, query string, extent *geom.Extent, tileSRID uint64, srid uint64, hasTileBounds bool) (*sql.Rows, error) {
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: querying with WorldCRS84Quad BBOX tile_srid=%v layer_srid=%v has_tile_bounds=%v extent=%v", tileSRID, srid, hasTileBounds, extent)
+	}
 	ll, ur, err := getBBoxCoordinates(extent, tileSRID, srid)
 	if err != nil {
 		return nil, err
+	}
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: WorldCRS84Quad BBOX coordinates tile_srid=%v layer_srid=%v ll=%v ur=%v", tileSRID, srid, ll, ur)
 	}
 
 	strLL, _ := wkt.EncodeString(ll)

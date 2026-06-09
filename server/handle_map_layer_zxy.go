@@ -73,11 +73,14 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
 	}
 	maxXatZ := uint64(gridWidth - 1)
 	maxYatZ := uint64(gridHeight - 1)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("WorldCRS84Quad tile grid for z/%v: width=%v height=%v max_x=%v max_y=%v", req.z, gridWidth, gridHeight, maxXatZ, maxYatZ)
+	}
 
 	x := params["x"]
 	placeholder, err = strconv.ParseUint(x, 10, 32)
 	if err != nil || placeholder > maxXatZ {
-		log.Warnf("invalid X value (%v)", x)
+		log.Warnf("invalid X value (%v) for tile_srid %v at z/%v; max_x=%v", x, tileSRID, req.z, maxXatZ)
 		return fmt.Errorf("invalid X value (%v)", x)
 	}
 	req.x = uint(placeholder)
@@ -87,7 +90,7 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
 	yParts := strings.Split(y, ".")
 	placeholder, err = strconv.ParseUint(yParts[0], 10, 32)
 	if err != nil || placeholder > maxYatZ {
-		log.Warnf("invalid Y value (%v)", yParts[0])
+		log.Warnf("invalid Y value (%v) for tile_srid %v at z/%v; max_y=%v", yParts[0], tileSRID, req.z, maxYatZ)
 		return fmt.Errorf("invalid Y value (%v)", yParts[0])
 	}
 
@@ -137,6 +140,9 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("handling WorldCRS84Quad tile request map=%v layer=%v z=%v x=%v y=%v tile_srid=%v", req.mapName, req.layerName, req.z, req.x, req.y, tileSRID)
+	}
 
 	// filter down the layers we need for this zoom
 	m = m.FilterLayersByZoom(slippy.Zoom(req.z))
@@ -175,6 +181,7 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if tileSRID == tegola.WGS84 {
 			ext4326 = extent
+			log.Debugf("WorldCRS84Quad tile extent map=%v z=%v x=%v y=%v extent=%v", req.mapName, req.z, req.x, req.y, ext4326)
 		} else {
 			points4326, err := proj.Inverse(proj.WebMercator, extent[:])
 			if err != nil {
@@ -189,7 +196,7 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, intersect := m.Bounds.Intersect(ext4326); !intersect {
 			msg := fmt.Sprintf("map (%v -- %v) does not contains tile at %v/%v/%v -- %v", req.mapName, m.Bounds, req.z, req.x, req.y, ext4326)
-			log.Debug(msg)
+			log.Debugf("%v tile_srid=%v", msg, tileSRID)
 			http.Error(w, msg, http.StatusNotFound)
 			return
 		}

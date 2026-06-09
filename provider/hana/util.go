@@ -17,6 +17,7 @@ import (
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/basic"
 	"github.com/go-spatial/tegola/internal/env"
+	"github.com/go-spatial/tegola/internal/log"
 	"github.com/go-spatial/tegola/provider"
 )
 
@@ -244,6 +245,9 @@ func getBBoxCoordinates(extent *geom.Extent, tileSRID uint64, srid uint64) (geom
 	if isPlanarEquivalentSrid(toSRID) {
 		toSRID -= PLANAR_SRID_OFFSET
 	}
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: transforming WorldCRS84Quad BBOX coordinates tile_srid=%v layer_srid=%v transform_srid=%v extent=%v", tileSRID, srid, toSRID, extent)
+	}
 
 	minGeo, err := basic.Transform(tileSRID, toSRID, geom.Point{extent.MinX(), extent.MinY()})
 	if err != nil {
@@ -255,7 +259,12 @@ func getBBoxCoordinates(extent *geom.Extent, tileSRID uint64, srid uint64) (geom
 		return geom.Point{}, geom.Point{}, fmt.Errorf("Error trying to convert tile point: %w ", err)
 	}
 
-	return minGeo.(geom.Point), maxGeo.(geom.Point), nil
+	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: transformed WorldCRS84Quad BBOX coordinates tile_srid=%v layer_srid=%v min=%v max=%v", tileSRID, srid, minPt, maxPt)
+	}
+
+	return minPt, maxPt, nil
 }
 
 func getBBoxFilter(dbVersion uint, geomField string, srid uint64) string {
