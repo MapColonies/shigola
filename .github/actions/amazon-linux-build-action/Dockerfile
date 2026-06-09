@@ -5,7 +5,7 @@ FROM amazonlinux:latest
 RUN yum install -y tar gzip gcc
 
 # install Go
-ENV GOLANG_VERSION=1.26.2
+ENV GOLANG_VERSION=1.26.4
 ENV GOLANG_VERSION_SHA256=990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282
 
 RUN curl -o golang.tar.gz https://dl.google.com/go/go$GOLANG_VERSION.linux-amd64.tar.gz \
