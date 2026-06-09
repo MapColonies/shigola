@@ -531,7 +531,7 @@ func TestMVTForLayers(t *testing.T) {
 				},
 			},
 			layerNames: []string{"rivers"},
-			mvtTile:    make([]byte, 7619),
+			mvtTile:    make([]byte, 4445),
 			tile:       provider.NewTile(2, 1, 1, 16, 4326),
 		},
 		"SQL with fields and without id": {
@@ -547,7 +547,7 @@ func TestMVTForLayers(t *testing.T) {
 				},
 			},
 			layerNames: []string{"rivers"},
-			mvtTile:    make([]byte, 7436),
+			mvtTile:    make([]byte, 4363),
 			tile:       provider.NewTile(2, 1, 1, 16, 4326),
 		},
 		"SQL with id only": {
@@ -564,7 +564,7 @@ func TestMVTForLayers(t *testing.T) {
 				},
 			},
 			layerNames: []string{"rivers"},
-			mvtTile:    make([]byte, 7443),
+			mvtTile:    make([]byte, 4343),
 			tile:       provider.NewTile(2, 1, 1, 16, 4326),
 		},
 		"SQL without any fields": {
@@ -580,7 +580,7 @@ func TestMVTForLayers(t *testing.T) {
 				},
 			},
 			layerNames: []string{"rivers"},
-			mvtTile:    make([]byte, 6676),
+			mvtTile:    make([]byte, 3988),
 			tile:       provider.NewTile(2, 1, 1, 16, 4326),
 		},
 	}

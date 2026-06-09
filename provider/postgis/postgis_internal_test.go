@@ -132,7 +132,7 @@ func TestMVTProviders(t *testing.T) {
 				},
 			},
 			layerNames: []string{"land"},
-			mvtTile:    make([]byte, 174689),
+			mvtTile:    make([]byte, 100847),
 			tile:       provider.NewTile(0, 0, 0, 16, 4326),
 		},
 	}
