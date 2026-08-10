@@ -181,6 +181,6 @@ func (co cache) Original() tegolaCache.Interface { return co.cache }
 func (co cache) IsObserver() bool                { return true }
 
 var (
-	_ observability.Cache  = (*cache)(nil)
-	_ tegolaCache.Wrapped  = (*cache)(nil)
+	_ observability.Cache = (*cache)(nil)
+	_ tegolaCache.Wrapped = (*cache)(nil)
 )
