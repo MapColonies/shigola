@@ -20,6 +20,34 @@ import (
 // TESTENV is the environment variable that must be set to "yes" to run the redis tests.
 const TESTENV = "RUN_REDIS_TESTS"
 
+// ADDRENV overrides the address the connecting tests dial. It exists so the
+// suite can reach a redis that is not on the loopback interface — a compose
+// service name from inside a devcontainer, say. The default is the same address
+// cache/redis itself defaults to, so an unset environment behaves as before.
+const ADDRENV = "REDIS_TEST_ADDRESS"
+
+var testAddress = ttools.GetEnvDefault(ADDRENV, "127.0.0.1:6379")
+
+// withTestAddress fills in the test redis address, unless the case pins an
+// address or a uri of its own — the cases that assert on a bad address must
+// keep the address they were written with.
+func withTestAddress(config dict.Dict) dict.Dict {
+	if _, ok := config["address"]; ok {
+		return config
+	}
+	if _, ok := config["uri"]; ok {
+		return config
+	}
+
+	out := make(dict.Dict, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out["address"] = testAddress
+
+	return out
+}
+
 func TestCreateOptions(t *testing.T) {
 	ttools.ShouldSkip(t, TESTENV)
 
@@ -236,8 +264,8 @@ func compareOptions(t *testing.T, actual, expected *goredis.Options) {
 	}
 }
 
-// TestNew will run tests against a local redis instance
-// on 127.0.0.1:6379
+// TestNew will run tests against a live redis instance — 127.0.0.1:6379 unless
+// REDIS_TEST_ADDRESS says otherwise.
 func TestNew(t *testing.T) {
 	ttools.ShouldSkip(t, TESTENV)
 
@@ -250,7 +278,7 @@ func TestNew(t *testing.T) {
 		return func(t *testing.T) {
 			t.Parallel()
 
-			_, err := redis.New(tc.config)
+			_, err := redis.New(withTestAddress(tc.config))
 			if tc.expectedErr != nil {
 				if err == nil {
 					t.Errorf("expected err %v, got nil", tc.expectedErr.Error())
@@ -292,7 +320,7 @@ func TestNew(t *testing.T) {
 		"explicit config": {
 			config: map[string]any{
 				"network":  "tcp",
-				"address":  "127.0.0.1:6379",
+				"address":  testAddress,
 				"password": "",
 				"db":       0,
 				"max_zoom": uint(10),
@@ -301,7 +329,7 @@ func TestNew(t *testing.T) {
 		},
 		"explicit config with uri": {
 			config: map[string]any{
-				"uri": "redis://127.0.0.1:6379/0",
+				"uri": "redis://" + testAddress + "/0",
 			},
 		},
 		"implicit config": {
@@ -387,7 +415,7 @@ func TestSetGetPurge(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			rc, err := redis.New(tc.config)
+			rc, err := redis.New(withTestAddress(tc.config))
 			if err != nil {
 				t.Errorf("unexpected err, expected %v got %v", nil, err)
 				return
@@ -472,7 +500,7 @@ func TestSetOverwrite(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			rc, err := redis.New(tc.config)
+			rc, err := redis.New(withTestAddress(tc.config))
 			if err != nil {
 				t.Errorf("unexpected err, expected %v got %v", nil, err)
 				return
@@ -548,7 +576,7 @@ func TestMaxZoom(t *testing.T) {
 		return func(t *testing.T) {
 			t.Parallel()
 
-			rc, err := redis.New(tc.config)
+			rc, err := redis.New(withTestAddress(tc.config))
 			if err != nil {
 				t.Fatalf("unexpected err, expected %v got %v", nil, err)
 			}
