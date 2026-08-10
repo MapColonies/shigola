@@ -83,6 +83,11 @@ type Atlas struct {
 	// the build info on the observer and insure changes to observer
 	// also publishes the build info.
 	publishBuildInfo bool
+
+	// cacheCollectorsRegistered stops the write-pool and promotion collectors
+	// being registered twice. Unlike the cache wrappers, a collector cannot be
+	// unwrapped and re-derived — prometheus simply rejects the duplicate.
+	cacheCollectorsRegistered bool
 }
 
 // AllMaps returns a slice of all maps contained in the Atlas so far.
@@ -233,28 +238,73 @@ func (a *Atlas) GetCache() cache.Interface {
 
 // CacheWritePool returns the detached-write pool of the configured cache, or
 // nil if there is none.
-//
-// It looks through cache.Wrapped, because the observability wrapper is applied
-// *outside* the detachment decorator that holds the pool — so a direct type
-// assertion on GetCache() finds nothing the moment an observer is configured.
 func (a *Atlas) CacheWritePool() *cache.WritePool {
 	if a == nil {
 		return defaultAtlas.CacheWritePool()
 	}
 
-	for c := a.GetCache(); c != nil; {
-		if h, ok := c.(cache.WritePoolHolder); ok {
-			return h.WritePool()
-		}
+	return cache.WritePoolOf(a.GetCache())
+}
 
-		w, ok := c.(cache.Wrapped)
-		if !ok {
-			return nil
-		}
+// instrumentCache wraps the whole cache, and descends into a composite one so
+// each tier is instrumented under its own label.
+//
+// Instrumentation applied only from the outside yields a single hits_total for
+// the entire chain, where "hit" means "hit in some tier" — which answers none
+// of the questions the layered cache exists to answer. The chain cannot
+// instrument itself (observability imports cache), and it is constructed before
+// the observer exists, so this is the only place the two can meet.
+func instrumentCache(o observability.Interface, c cache.Interface) cache.Interface {
+	// Strip a previous instrumentation rather than wrapping it. Without this a
+	// second SetObservability puts an instrumented cache inside another one and
+	// double-counts everything — which is what the whole tree did until
+	// prometheus's accessor was renamed to Original(), since the assertion
+	// could never succeed.
+	if w, ok := c.(observability.Cache); ok && w.IsObserver() {
 		c = w.Original()
 	}
 
-	return nil
+	return o.InstrumentedCache(instrumentTiers(o, c, ""))
+}
+
+// instrumentTiers returns c with each of its tiers wrapped in per-tier
+// instrumentation, recursively, with names qualified by path.
+//
+// The recursion is not thoroughness. Without it a nested chain reports one
+// aggregate label and its inner tiers are invisible — precisely the blindness
+// this exists to remove — and two nested chains each holding a `redis` would
+// share a label, silently making both series wrong.
+//
+// Idempotent, because Tiers() returns the chain's *original* tiers: free of
+// observability wrappers, though still carrying their read deadlines. Each call
+// re-derives from those rather than wrapping whatever is currently installed.
+func instrumentTiers(o observability.Interface, c cache.Interface, path string) cache.Interface {
+	to, ok := o.(observability.TieredCacheObserver)
+	if !ok {
+		return c
+	}
+
+	tiered, ok := c.(cache.Tiered)
+	if !ok {
+		return c
+	}
+
+	tiers := tiered.Tiers()
+	wrapped := make([]cache.Interface, len(tiers))
+
+	for i, tier := range tiers {
+		name := tier.Name
+		if path != "" {
+			name = path + "/" + name
+		}
+
+		// Depth first: a nested chain has its own tiers instrumented before it
+		// is itself wrapped.
+		wrapped[i] = to.InstrumentedTierCache(name, instrumentTiers(o, tier.Cache, name))
+	}
+
+	// WithTiers re-wraps, so the decorators For applied survive this.
+	return tiered.WithTiers(wrapped)
 }
 
 // SetCache sets the cache backend
@@ -287,10 +337,17 @@ func (a *Atlas) SetObservability(o observability.Interface) {
 		a.observer.Init()
 	}
 	if a.cacher != nil {
-		if w, ok := a.cacher.(observability.Cache); ok && w.IsObserver() {
-			a.cacher = o.InstrumentedCache(w.Original())
-		} else {
-			a.cacher = o.InstrumentedCache(a.cacher)
+		a.cacher = instrumentCache(o, a.cacher)
+
+		// Registered once per atlas. The collectors are process-wide by
+		// nature — one cache, one pool — and prometheus rejects a second
+		// registration of the same metric name outright, so re-registering on
+		// a second SetObservability would panic rather than refresh anything.
+		if !a.cacheCollectorsRegistered {
+			if collectors := cacheCollectors(a.cacher); len(collectors) > 0 {
+				o.MustRegister(collectors...)
+				a.cacheCollectorsRegistered = true
+			}
 		}
 	}
 	for _, aMap := range a.maps {

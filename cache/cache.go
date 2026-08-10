@@ -82,6 +82,93 @@ type WritePoolHolder interface {
 	WritePool() *WritePool
 }
 
+// ChainStats crosses the cache→observability import cycle the same way
+// WritePoolStats does.
+//
+// Promotions need their own counter because the per-tier wrapper labels every
+// tier write sub_command="set" and cannot tell a promotion from an ordinary
+// chain write. Differencing tier counters instead (tier0_sets − tier1_sets) is
+// roughly right on the serve path and wrong whenever write tiers are bounded or
+// promotions are dropped — and it encodes a chain invariant into a dashboard
+// query, where nothing notices when it stops holding.
+type ChainStats struct {
+	// Promotions counts promotions that completed.
+	Promotions uint64
+	// PromotionsDropped counts promotions the write pool refused at admission.
+	// A rising value with a falling hot-tier hit ratio is the signature of a
+	// hot tier that has quietly stopped filling.
+	PromotionsDropped uint64
+}
+
+// ChainStatsHolder is implemented by composite caches that promote.
+type ChainStatsHolder interface {
+	ChainStats() ChainStats
+}
+
+// unwrap peels one layer off c: an observability wrapper, or one of the
+// decorators For applies.
+//
+// The decorators do not implement Wrapped, deliberately — that is what stops
+// SetObservability stripping them — so only this package can see past them.
+// Everything that needs to reach through the stack goes through here rather
+// than teaching another package the stack's shape.
+func unwrap(c Interface) (Interface, bool) {
+	switch v := c.(type) {
+	case *detachedCache:
+		return v.cache, true
+	case *tieredDetachedCache:
+		return v.cache, true
+	case *deadlineCache:
+		return v.cache, true
+	case *tieredDeadlineCache:
+		return v.cache, true
+	case Wrapped:
+		return v.Original(), true
+	}
+
+	return nil, false
+}
+
+// WritePoolOf returns the detached-write pool behind c, or nil if it has none.
+//
+// The pool is held by the detachment decorator, which sits *inside* the
+// observability wrapper — so a direct type assertion on the configured cache
+// finds nothing the moment an observer is configured.
+func WritePoolOf(c Interface) *WritePool {
+	for c != nil {
+		if h, ok := c.(WritePoolHolder); ok {
+			return h.WritePool()
+		}
+
+		next, ok := unwrap(c)
+		if !ok {
+			return nil
+		}
+		c = next
+	}
+
+	return nil
+}
+
+// ChainStatsOf returns the promotion-statistics source behind c, if there is
+// one. A live handle rather than a snapshot, because a metrics collector has to
+// re-read it on every scrape.
+func ChainStatsOf(c Interface) (ChainStatsHolder, bool) {
+	for c != nil {
+		if h, ok := c.(ChainStatsHolder); ok {
+			return h, true
+		}
+
+		next, ok := unwrap(c)
+		if !ok {
+			return nil, false
+		}
+		c = next
+	}
+
+	return nil, false
+}
+
 // InjectWritePool gives c the pool if it wants one, looking through the
 // decorators this package applies on the way.
 //

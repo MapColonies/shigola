@@ -47,15 +47,6 @@ const (
 	ConfigKeyMaxZoom = "max_zoom"
 )
 
-// ChainStats crosses the cache→observability import cycle as a plain snapshot,
-// the same way WritePoolStats does. The per-tier wrapper labels every tier
-// write sub_command="set" and cannot tell a promotion from an ordinary chain
-// write, so promotions need their own counter.
-type ChainStats struct {
-	Promotions        uint64
-	PromotionsDropped uint64
-}
-
 type chainStats struct {
 	promotions        atomic.Uint64
 	promotionsDropped atomic.Uint64
@@ -88,9 +79,10 @@ type Cache struct {
 }
 
 var (
-	_ cache.Interface     = (*Cache)(nil)
-	_ cache.Tiered        = (*Cache)(nil)
-	_ cache.WritePoolUser = (*Cache)(nil)
+	_ cache.Interface        = (*Cache)(nil)
+	_ cache.Tiered           = (*Cache)(nil)
+	_ cache.WritePoolUser    = (*Cache)(nil)
+	_ cache.ChainStatsHolder = (*Cache)(nil)
 )
 
 func init() {
@@ -262,9 +254,9 @@ func (c *Cache) UseWritePool(pool *cache.WritePool) {
 	}
 }
 
-// Stats returns a snapshot of the chain's promotion counters.
-func (c *Cache) Stats() ChainStats {
-	return ChainStats{
+// ChainStats returns a snapshot of the chain's promotion counters.
+func (c *Cache) ChainStats() cache.ChainStats {
+	return cache.ChainStats{
 		Promotions:        c.stats.promotions.Load(),
 		PromotionsDropped: c.stats.promotionsDropped.Load(),
 	}

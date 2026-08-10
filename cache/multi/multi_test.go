@@ -92,7 +92,7 @@ func TestGet(t *testing.T) {
 		if _, ok := hot.Value(key); !ok {
 			t.Error("the tile was not promoted into the hot tier")
 		}
-		if stats := c.Stats(); stats.Promotions != 1 {
+		if stats := c.ChainStats(); stats.Promotions != 1 {
 			t.Errorf("promotions: got %d, expected 1", stats.Promotions)
 		}
 	})
@@ -736,7 +736,7 @@ func TestPromotionIsDetached(t *testing.T) {
 	if !waitFor(t, time.Second, func() bool { _, ok := hot.Value(key); return ok }) {
 		t.Error("the detached promotion never landed")
 	}
-	if stats := c.Stats(); stats.Promotions != 1 {
+	if stats := c.ChainStats(); stats.Promotions != 1 {
 		t.Errorf("promotions: got %d, expected 1", stats.Promotions)
 	}
 }
@@ -774,7 +774,7 @@ func TestPromotionIsDroppable(t *testing.T) {
 		t.Fatalf("got (%v, %v), expected (true, nil) — a dropped promotion must not fail the read", hit, err)
 	}
 
-	if stats := c.Stats(); stats.PromotionsDropped != 1 {
+	if stats := c.ChainStats(); stats.PromotionsDropped != 1 {
 		t.Errorf("promotions dropped: got %d, expected 1", stats.PromotionsDropped)
 	}
 	if _, ok := hot.Value(key); ok {

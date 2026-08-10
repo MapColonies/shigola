@@ -2,6 +2,7 @@ package prometheus
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -19,6 +20,31 @@ type cache struct {
 	durationSeconds   *prometheus.HistogramVec
 	responseSizeBytes *prometheus.HistogramVec
 	errors            *prometheus.CounterVec
+	readTimeouts      *prometheus.CounterVec
+}
+
+// registerOrReuse registers c, or returns the equivalent collector that is
+// already registered.
+//
+// MustRegister panics on a duplicate, and there are two ways to reach one:
+// SetObservability can be called more than once against the same process-wide
+// default registry, and a chain registers the per-tier family once per tier.
+// Reusing the existing collector is what makes re-instrumentation idempotent
+// rather than fatal.
+func registerOrReuse[T prometheus.Collector](registry prometheus.Registerer, c T) T {
+	err := registry.Register(c)
+	if err == nil {
+		return c
+	}
+
+	var already prometheus.AlreadyRegisteredError
+	if errors.As(err, &already) {
+		if existing, ok := already.ExistingCollector.(T); ok {
+			return existing
+		}
+	}
+
+	panic(err)
 }
 
 func newCache(registry prometheus.Registerer, prefix string, observeVars []string, subCache tegolaCache.Interface) *cache {
@@ -47,10 +73,23 @@ func newCache(registry prometheus.Registerer, prefix string, observeVars []strin
 		},
 		names,
 	)
+	// Prefixed. It was registered as a bare "errors" until 2026-08-10, unlike
+	// every sibling in this constructor — which squats a maximally generic name
+	// in the global metric namespace and, more immediately, collides between
+	// *any* two cache instrumentations regardless of their prefixes. That
+	// collision is what makes the whole-cache and per-tier families
+	// unregisterable together. **This renames a metric that exists today.**
 	c.errors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "errors",
+			Name: prefix + "_errors_total",
 			Help: "A counter of the number of tile errors",
+		},
+		names,
+	)
+	c.readTimeouts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: prefix + "_read_timeouts_total",
+			Help: "A counter of reads abandoned because their timeout_ms deadline expired",
 		},
 		names,
 	)
@@ -74,14 +113,13 @@ func newCache(registry prometheus.Registerer, prefix string, observeVars []strin
 	)
 
 	// Register our variables
-	registry.MustRegister(
-		c.inFlightGauge,
-		c.hitsCounter,
-		c.missesCounter,
-		c.durationSeconds,
-		c.responseSizeBytes,
-		c.errors,
-	)
+	c.inFlightGauge = registerOrReuse(registry, c.inFlightGauge)
+	c.hitsCounter = registerOrReuse(registry, c.hitsCounter)
+	c.missesCounter = registerOrReuse(registry, c.missesCounter)
+	c.durationSeconds = registerOrReuse(registry, c.durationSeconds)
+	c.responseSizeBytes = registerOrReuse(registry, c.responseSizeBytes)
+	c.errors = registerOrReuse(registry, c.errors)
+	c.readTimeouts = registerOrReuse(registry, c.readTimeouts)
 
 	return &c
 }
@@ -124,9 +162,12 @@ func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, e
 	lbs := co.labels("get", key)
 	now := time.Now()
 	body, ok, err := co.cache.Get(ctx, key)
+	// Observed outside the deadline, deliberately: instrumenting inside it
+	// would drop timed-out reads from the histogram — the very events that
+	// make a too-tight timeout_ms diagnosable.
 	co.durationSeconds.With(lbs).Observe(time.Since(now).Seconds())
 	if err != nil {
-		co.errors.With(lbs).Add(1)
+		co.countReadError(ctx, lbs, err)
 		co.inFlightGauge.Dec()
 		return body, ok, err
 	}
@@ -139,6 +180,32 @@ func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, e
 	co.responseSizeBytes.With(lbs).Observe(float64(len(body)))
 	co.inFlightGauge.Dec()
 	return body, ok, nil
+}
+
+// countReadError attributes a failed read.
+//
+//	ErrTierTimeout          -> _errors_total and _read_timeouts_total
+//	any other error         -> _errors_total
+//	parent context done     -> neither
+//
+// The last row is the point. The middleware passes the request context, so a
+// client disconnecting mid-request fails every in-flight read — and counting
+// those against the cache would make a busy service look permanently broken.
+// Only a deadline the cache derived itself is a cache fault, and it says so by
+// returning the typed error.
+func (co *cache) countReadError(ctx context.Context, lbs prometheus.Labels, err error) {
+	var tierTimeout tegolaCache.ErrTierTimeout
+	if errors.As(err, &tierTimeout) {
+		co.errors.With(lbs).Add(1)
+		co.readTimeouts.With(lbs).Add(1)
+		return
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	co.errors.With(lbs).Add(1)
 }
 
 // Set will observe metrics around setting the tile via the sub cache.

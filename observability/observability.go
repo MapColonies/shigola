@@ -83,6 +83,23 @@ type CacheObserver interface {
 	InstrumentedCache(cacheObject tegolaCache.Interface) tegolaCache.Interface
 }
 
+// TieredCacheObserver instruments one tier of a composite cache, labelled by
+// tier name.
+//
+// A separate optional interface, asserted for, rather than a method on
+// CacheObserver: widening that would break internal/observer.Null and every
+// other implementer for no benefit, since an observer with no notion of tiers
+// simply declines to implement this and the descent stops.
+//
+// Implementations must emit a *different metric family* from InstrumentedCache.
+// The two count different things — a whole-cache hit is one tile served from
+// somewhere in the chain, tier hits are per-tier lookups, several per request —
+// and registering the same metric name once with a tier label and once without
+// is a label-dimension mismatch, which prometheus turns into a startup panic.
+type TieredCacheObserver interface {
+	InstrumentedTierCache(tier string, cacheObject tegolaCache.Interface) tegolaCache.Interface
+}
+
 type Cache interface {
 	tegolaCache.Interface
 	tegolaCache.Wrapped
