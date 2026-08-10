@@ -16,13 +16,16 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 		expectedResponseHeaders map[string]string
 	}
 
+	// our tests don't use the URIPrefix but our server is a singleton so we set
+	// it to the default for these tests. Set once, here, rather than inside each
+	// parallel subtest: NewRouter reads the same package global, so writing it
+	// from every subtest is a data race — one the suite only started reporting
+	// when CI began running -race.
+	server.URIPrefix = "/"
+
 	fn := func(tc tcase) func(t *testing.T) {
 		return func(t *testing.T) {
 			t.Parallel()
-
-			// our tests don't use the URIPrefix but our server is a singleton
-			// so we set it to the default for this test
-			server.URIPrefix = "/"
 
 			var err error
 
