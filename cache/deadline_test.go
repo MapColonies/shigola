@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/go-spatial/tegola/cache"
-	"github.com/go-spatial/tegola/cache/internal/faketier"
 	"github.com/go-spatial/tegola/dict"
+	"github.com/go-spatial/tegola/internal/faketier"
 )
 
 // The deadline tests use a real clock with a wide margin — a short deadline

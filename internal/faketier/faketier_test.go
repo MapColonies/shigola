@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-spatial/tegola/cache"
-	"github.com/go-spatial/tegola/cache/internal/faketier"
+	"github.com/go-spatial/tegola/internal/faketier"
 )
 
 var testKey = &cache.Key{MapName: "osm", Z: 1, X: 2, Y: 3}

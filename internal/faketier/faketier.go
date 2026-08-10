@@ -10,8 +10,10 @@
 // cannot tell a real abort from the caller merely walking away, which is exactly
 // the distinction that ruled out select-over-time.After semantics.
 //
-// It lives under cache/internal so cache, cache/multi and atlas can all import
-// it without it becoming public API.
+// It lives under internal/ so the cache, cache/multi, atlas and server tests
+// can all import it without it becoming public API. Not cache/internal, which
+// only packages under cache/ may import — that would put it out of reach of
+// exactly the atlas and server tests it was written for.
 package faketier
 
 import (
