@@ -484,8 +484,12 @@ func (c *Cache) selectTiers(ctx context.Context, candidates []int) []selection {
 
 // TierNames returns every tier name in the tree, path-qualified, which is the
 // set --cache-tiers is validated against.
+//
+// Reached through cache.TieredOf rather than a direct assertion: by the time
+// the CLI resolves tier names, the configured cache has been wrapped in
+// observability, which forwards nothing.
 func TierNames(c cache.Interface) []string {
-	tiered, ok := c.(cache.Tiered)
+	tiered, ok := cache.TieredOf(c)
 	if !ok {
 		return nil
 	}
@@ -505,7 +509,7 @@ func TierNames(c cache.Interface) []string {
 // one by construction — recursing into a nested chain so the rule is "the last
 // tier of the last tier". It is what `tegola cache seed` targets by default.
 func LastTierName(c cache.Interface) (string, bool) {
-	tiered, ok := c.(cache.Tiered)
+	tiered, ok := cache.TieredOf(c)
 	if !ok {
 		return "", false
 	}

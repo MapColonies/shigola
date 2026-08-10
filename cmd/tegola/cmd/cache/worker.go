@@ -29,20 +29,50 @@ func (s seedPurgeWorkerTileError) Error() string {
 }
 
 // withCacheIntent derives the context every non-serving cache caller needs
-// before it reaches the cache seam.
+// before it reaches the cache seam. All four caller-intent values are set here.
 //
-// WithSynchronousWrites is what stops the seed from losing writes. On the serve
+// **WithSynchronousWrites** is what stops the seed losing writes. On the serve
 // path a cache write is handed to a detached pool and the handler returns; here
 // there is no response to protect, and the process exits as soon as the last
 // tile is generated — so a detached write would be dropped or abandoned at exit
 // and `tegola cache seed` would exit 0 having populated an unknown fraction of
-// what it reported.
+// what it reported. It also restores the error path strict Set exists for:
+// written inline, a joined tier error reaches the worker, which marks the tile
+// failed.
 //
-// It also restores the error path the strict chain Set exists for: written
-// inline, a joined tier error reaches the worker, which marks the tile failed.
+// **WithoutPromotion** stops the seed's own reads warming the hot tier.
+// `seed` without --overwrite reads every tile through the cache before deciding
+// whether to generate it, so with promotion on, a run over a large area would
+// promote every durable-tier tile into the hot tier, in seed order, at seeding
+// throughput — overwriting the live working set with cold tiles. Its scope is
+// the seed's own reads: a concurrent *serve* request promoting during a seed
+// run belongs to a different caller and is not suppressed by this.
+//
+// **WithWriteTiers** bounds what the run may write. It also bounds promotion,
+// so --cache-tiers means one thing and means it completely.
+//
+// **WithInvalidateUnwritten** makes the chain purge the tiers it did not write,
+// after writing the ones it did. Only under --overwrite: without it seed skips
+// existing tiles, so there is nothing to invalidate. With it the operator is
+// stating the content changed, which is exactly when a stale hot tier must stop
+// serving — and with a durable-only default, a re-seed would otherwise leave
+// the hot tier serving pre-update tiles until TTL expiry, so the command
+// documented as the invalidation mechanism would not invalidate what users are
+// served. Harmless when every tier is a target: there is then nothing left to
+// purge.
 func withCacheIntent(worker func(context.Context, MapTile) error) func(context.Context, MapTile) error {
 	return func(ctx context.Context, mt MapTile) error {
-		return worker(cache.WithSynchronousWrites(ctx), mt)
+		ctx = cache.WithSynchronousWrites(ctx)
+		ctx = cache.WithoutPromotion(ctx)
+
+		if len(seedWriteTiers) > 0 {
+			ctx = cache.WithWriteTiers(ctx, seedWriteTiers)
+		}
+		if cacheOverwrite {
+			ctx = cache.WithInvalidateUnwritten(ctx)
+		}
+
+		return worker(ctx, mt)
 	}
 }
 

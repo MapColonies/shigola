@@ -150,6 +150,28 @@ func WritePoolOf(c Interface) *WritePool {
 	return nil
 }
 
+// TieredOf returns the composite cache behind c, if there is one.
+//
+// The decorators forward Tiered, but the observability wrapper does not — so a
+// caller that wants the tier list has to reach through it. Which callers do:
+// `tegola cache seed` resolves --cache-tiers against the tree, and by then the
+// configured cache has already been instrumented.
+func TieredOf(c Interface) (Tiered, bool) {
+	for c != nil {
+		if t, ok := c.(Tiered); ok {
+			return t, true
+		}
+
+		next, ok := unwrap(c)
+		if !ok {
+			return nil, false
+		}
+		c = next
+	}
+
+	return nil, false
+}
+
 // ChainStatsOf returns the promotion-statistics source behind c, if there is
 // one. A live handle rather than a snapshot, because a metrics collector has to
 // re-read it on every scrape.
