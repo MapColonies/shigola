@@ -27,6 +27,38 @@ type Wrapped interface {
 	Original() Interface
 }
 
+// NamedTier pairs one tier of a composite cache with its name.
+//
+// Names are public API. They appear in the tier metric label and in
+// `tegola cache seed --cache-tiers`, which means they end up in dashboards,
+// alerts and cron jobs — renaming a tier, or reordering layers such that a
+// derived collision suffix shifts, silently breaks both.
+type NamedTier struct {
+	Name  string
+	Cache Interface
+}
+
+// Tiered is satisfied by composite caches that want their tiers instrumented
+// individually. It is optional: asserted for, never required.
+//
+// It exists because cache cannot import observability — observability imports
+// cache — so a chain cannot instrument itself. atlas descends through this
+// interface instead, and both of the decorators For applies forward it, or the
+// descent stops at the decorator and every per-tier metric silently disappears.
+type Tiered interface {
+	// Tiers returns this chain's own tiers in read order, free of
+	// observability wrappers but still carrying their read deadlines.
+	// Instrumentation goes *outside* the deadline, so a timed-out read still
+	// lands in the latency histogram.
+	Tiers() []NamedTier
+
+	// WithTiers returns a new cache over the given tiers, still decorated.
+	// A new value rather than a mutation, so instrumentation is idempotent:
+	// the chain keeps its original tiers and re-derives from them each time
+	// rather than wrapping whatever is currently installed.
+	WithTiers(tiers []Interface) Interface
+}
+
 // ParseKey will parse a string in the format /:map/:layer/:z/:x/:y into a Key struct. The :layer value is optional
 // ParseKey also supports other OS delimiters (i.e. Windows - "\")
 func ParseKey(str string) (*Key, error) {
@@ -163,7 +195,24 @@ func Registered() (c []string) {
 }
 
 // For function returns a configured cache of the given type, provided the correct config map.
+//
+// For builds the *outermost* cache. A composite cache must build its children
+// through ForTier instead — see there for why the two are not the same call.
 func For(cacheType string, config dict.Dicter) (Interface, error) {
+	return ForTier(cacheType, config)
+}
+
+// ForTier returns a configured cache of the given type for use as one tier of a
+// composite cache.
+//
+// It applies the read deadline, because a deadline is per-tier by design: every
+// tier carries its own timeout_ms. It does not apply anything that is a
+// property of the outermost cache only.
+//
+// The asymmetry with For is the point, and nothing enforces it: a composite
+// cache written outside this repo that calls For for its children compiles and
+// is silently broken.
+func ForTier(cacheType string, config dict.Dicter) (Interface, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("No cache backends registered.")
 	}
@@ -173,5 +222,21 @@ func For(cacheType string, config dict.Dicter) (Interface, error) {
 		return nil, fmt.Errorf("No cache backends registered by the cache type: (%v)", cacheType)
 	}
 
-	return c(config)
+	// Before construction, so a malformed timeout_ms fails without first
+	// opening connections to the backend.
+	timeout, err := timeoutFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	built, err := c(config)
+	if err != nil {
+		return nil, err
+	}
+
+	if timeout > 0 {
+		built = newDeadlineCache(built, timeout)
+	}
+
+	return built, nil
 }
