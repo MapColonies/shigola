@@ -28,6 +28,24 @@ func (s seedPurgeWorkerTileError) Error() string {
 	return fmt.Sprintf("error %v tile (%+v): %v", cmd, s.Tile, s.Err)
 }
 
+// withCacheIntent derives the context every non-serving cache caller needs
+// before it reaches the cache seam.
+//
+// WithSynchronousWrites is what stops the seed from losing writes. On the serve
+// path a cache write is handed to a detached pool and the handler returns; here
+// there is no response to protect, and the process exits as soon as the last
+// tile is generated — so a detached write would be dropped or abandoned at exit
+// and `tegola cache seed` would exit 0 having populated an unknown fraction of
+// what it reported.
+//
+// It also restores the error path the strict chain Set exists for: written
+// inline, a joined tier error reaches the worker, which marks the tile failed.
+func withCacheIntent(worker func(context.Context, MapTile) error) func(context.Context, MapTile) error {
+	return func(ctx context.Context, mt MapTile) error {
+		return worker(cache.WithSynchronousWrites(ctx), mt)
+	}
+}
+
 func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, mt MapTile) error {
 	return func(ctx context.Context, mt MapTile) error {
 		// track how long the tile generation is taking

@@ -3,10 +3,28 @@ package atlas
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/dict"
 )
+
+// waitFor polls until cond holds or the budget expires. Needed because
+// cache.For detaches writes: a serve-path Set or promotion returns before the
+// backend has been touched.
+func waitFor(t *testing.T, budget time.Duration, cond func() bool) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	return cond()
+}
 
 // TestMultiCacheEndToEnd drives a chain the way a deployment reaches it: built
 // by cache.For from a config dict, over two real backends, with no fakes
@@ -43,8 +61,11 @@ func TestMultiCacheEndToEnd(t *testing.T) {
 		t.Fatalf("building the hot-tier lens: unexpected error: %v", err)
 	}
 
-	// Write the durable tier only — what `tegola cache seed` does by default.
-	seedCtx := cache.WithWriteTiers(ctx, []string{"durable"})
+	// Write the durable tier only — what `tegola cache seed` does by default,
+	// including its synchronous writes. Without those the write is handed to
+	// the detached pool and Set returns before anything has been written, which
+	// is exactly why the CLI path sets the flag.
+	seedCtx := cache.WithSynchronousWrites(cache.WithWriteTiers(ctx, []string{"durable"}))
 	if err := c.Set(seedCtx, key, []byte("tile")); err != nil {
 		t.Fatalf("set: unexpected error: %v", err)
 	}
@@ -57,8 +78,13 @@ func TestMultiCacheEndToEnd(t *testing.T) {
 	if err != nil || !hit || string(val) != "tile" {
 		t.Fatalf("get: got (%q, %v, %v), expected (tile, true, nil)", val, hit, err)
 	}
-	if _, hit, err := hot.Get(ctx, key); err != nil || !hit {
-		t.Fatalf("hot tier after promotion: got (hit %v, err %v), expected (true, nil)", hit, err)
+	// The promotion is detached, so it has not necessarily landed yet — Get
+	// deliberately does not wait on it.
+	if !waitFor(t, 5*time.Second, func() bool {
+		_, hit, err := hot.Get(ctx, key)
+		return err == nil && hit
+	}) {
+		t.Fatal("the tile was never promoted into the hot tier")
 	}
 
 	// Purge clears every tier.

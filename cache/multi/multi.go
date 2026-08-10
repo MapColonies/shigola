@@ -73,14 +73,24 @@ type Cache struct {
 
 	promoteOnHit bool
 
+	// writes is the shared detached-write pool, injected by For/ForTier after
+	// construction. Used for promotion only: promotion is the one write
+	// genuinely on the critical path, since it happens inside Get before the
+	// value is returned, with the client still blocked.
+	//
+	// nil means promote inline, which is what NewChain gives a caller that did
+	// not pass a pool.
+	writes *cache.WritePool
+
 	// stats is shared with every chain derived through WithTiers: those are
 	// re-instrumentations of the same logical chain, not new ones.
 	stats *chainStats
 }
 
 var (
-	_ cache.Interface = (*Cache)(nil)
-	_ cache.Tiered    = (*Cache)(nil)
+	_ cache.Interface     = (*Cache)(nil)
+	_ cache.Tiered        = (*Cache)(nil)
+	_ cache.WritePoolUser = (*Cache)(nil)
 )
 
 func init() {
@@ -137,7 +147,10 @@ func New(config dict.Dicter) (cache.Interface, error) {
 		// the outermost cache only. Building children through For would detach
 		// every tier independently, so the fan-out below would return before
 		// any tier write and the joined error would have nothing to join.
-		tier, err := cache.ForTier(cacheType, layer)
+		// nil: the chain has no pool at construction. It forwards the one it
+		// is later given down to its tiers, which is what makes a nested chain
+		// share the parent's pool rather than build a second one.
+		tier, err := cache.ForTier(cacheType, layer, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -147,12 +160,15 @@ func New(config dict.Dicter) (cache.Interface, error) {
 
 	warnOnMaxZoomInversion(tiers, maxZooms)
 
-	return NewChain(tiers, promote)
+	return NewChain(tiers, promote, nil)
 }
 
 // NewChain builds a chain over already-constructed tiers. Tests use it to get a
-// chain without going through config.
-func NewChain(tiers []cache.NamedTier, promote bool) (*Cache, error) {
+// chain without going through config, and to give it a pool of one or two slots
+// so exhaustion is a two-line setup rather than a 256-goroutine stress test.
+//
+// A nil pool means promotion writes run inline.
+func NewChain(tiers []cache.NamedTier, promote bool, pool *cache.WritePool) (*Cache, error) {
 	if len(tiers) == 0 {
 		return nil, ErrNoLayers
 	}
@@ -161,6 +177,7 @@ func NewChain(tiers []cache.NamedTier, promote bool) (*Cache, error) {
 		original:     make([]cache.NamedTier, len(tiers)),
 		active:       make([]cache.Interface, len(tiers)),
 		promoteOnHit: promote,
+		writes:       pool,
 		stats:        &chainStats{},
 	}
 	copy(c.original, tiers)
@@ -229,7 +246,19 @@ func (c *Cache) WithTiers(tiers []cache.Interface) cache.Interface {
 		original:     c.original,
 		active:       active,
 		promoteOnHit: c.promoteOnHit,
+		writes:       c.writes,
 		stats:        c.stats,
+	}
+}
+
+// UseWritePool takes the shared pool and forwards it to any tier that wants one
+// — which is how a nested chain ends up sharing it rather than running its
+// promotions inline.
+func (c *Cache) UseWritePool(pool *cache.WritePool) {
+	c.writes = pool
+
+	for _, tier := range c.original {
+		cache.InjectWritePool(tier.Cache, pool)
 	}
 }
 
@@ -293,11 +322,29 @@ func (c *Cache) promote(ctx context.Context, hitAt int, key *cache.Key, val []by
 	}
 
 	for _, sel := range c.selectTiers(ctx, candidates) {
-		if err := c.active[sel.index].Set(sel.ctx, key, val); err != nil {
-			log.Errorf("cache/multi: promoting into tier (%v): %v", c.original[sel.index].Name, err)
+		tier := c.active[sel.index]
+		name := c.original[sel.index].Name
+
+		write := func(ctx context.Context) error {
+			if err := tier.Set(ctx, key, val); err != nil {
+				log.Errorf("cache/multi: promoting into tier (%v): %v", name, err)
+				return err
+			}
+
+			c.stats.promotions.Add(1)
+			return nil
+		}
+
+		if c.writes == nil {
+			write(ctx) //nolint:errcheck // logged above; a hit must not become an error
 			continue
 		}
-		c.stats.promotions.Add(1)
+
+		// Detached, so Get does not wait on it, and droppable under
+		// saturation: re-promotion is best-effort by design.
+		if !c.writes.Go(sel.ctx, write) {
+			c.stats.promotionsDropped.Add(1)
+		}
 	}
 }
 

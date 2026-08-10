@@ -8,18 +8,23 @@ import (
 	"time"
 
 	"github.com/go-spatial/tegola/cache"
-	"github.com/go-spatial/tegola/cache/internal/faketier"
 	"github.com/go-spatial/tegola/cache/multi"
 	"github.com/go-spatial/tegola/dict"
+	"github.com/go-spatial/tegola/internal/faketier"
 )
 
 var key = &cache.Key{MapName: "osm", Z: 3, X: 2, Y: 1}
 
 var errBackend = errors.New("backend exploded")
 
-// slowTier is reachable through config as type "fakeslow", for the one test
-// that needs cache.For to build the chain rather than NewChain.
-var slowTier = faketier.New("slow")
+// Tiers reachable through config, for the tests that need cache.For to build
+// the chain rather than NewChain — cache.For is the only path that creates a
+// write pool and applies the detachment decorator.
+var (
+	slowTier         = faketier.New("slow")
+	gatedHotTier     = faketier.New("gatedhot")
+	gatedDurableTier = faketier.New("gateddurable")
+)
 
 // Registered once, because cache.Register is a process-global map with no
 // removal. Construction tests only care about names and errors, so sharing one
@@ -34,6 +39,8 @@ func init() {
 	register("fakehot", faketier.New("fakehot"))
 	register("fakedurable", faketier.New("fakedurable"))
 	register("fakeslow", slowTier)
+	register("fakegatedhot", gatedHotTier)
+	register("fakegateddurable", gatedDurableTier)
 }
 
 // chain builds a two-tier chain over fakes sharing one recorder, which is what
@@ -45,10 +52,12 @@ func chain(t *testing.T, promote bool) (*multi.Cache, *faketier.Tier, *faketier.
 	hot := faketier.NewWithRecorder("hot", rec)
 	durable := faketier.NewWithRecorder("durable", rec)
 
+	// nil pool: promotion runs inline, so these tests can assert on it without
+	// a rendezvous. Detached promotion has its own tests in cache/.
 	c, err := multi.NewChain([]cache.NamedTier{
 		{Name: "hot", Cache: hot},
 		{Name: "durable", Cache: durable},
-	}, promote)
+	}, promote, nil)
 	if err != nil {
 		t.Fatalf("NewChain: unexpected error: %v", err)
 	}
@@ -498,7 +507,7 @@ func nested(t *testing.T) (*multi.Cache, *faketier.Tier, *faketier.Tier, *faketi
 	inner, err := multi.NewChain([]cache.NamedTier{
 		{Name: "inner1", Cache: inner1},
 		{Name: "inner2", Cache: inner2},
-	}, true)
+	}, true, nil)
 	if err != nil {
 		t.Fatalf("inner chain: unexpected error: %v", err)
 	}
@@ -506,7 +515,7 @@ func nested(t *testing.T) (*multi.Cache, *faketier.Tier, *faketier.Tier, *faketi
 	outer, err := multi.NewChain([]cache.NamedTier{
 		{Name: "hot", Cache: hot},
 		{Name: "nested", Cache: inner},
-	}, true)
+	}, true, nil)
 	if err != nil {
 		t.Fatalf("outer chain: unexpected error: %v", err)
 	}
@@ -673,5 +682,181 @@ func TestTopLevelTimeoutBoundsTheChain(t *testing.T) {
 	last := calls[len(calls)-1]
 	if !last.Aborted || !errors.Is(last.CtxErr, context.DeadlineExceeded) {
 		t.Errorf("tier call: got (aborted %v, ctx err %v), expected (true, context.DeadlineExceeded)", last.Aborted, last.CtxErr)
+	}
+}
+
+// waitFor polls until cond holds or the budget expires.
+func waitFor(t *testing.T, budget time.Duration, cond func() bool) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	return cond()
+}
+
+// TestPromotionIsDetached — promotion is the one write genuinely on the
+// critical path, since it happens inside Get with the client still blocked.
+// With a pool it must not be waited on.
+func TestPromotionIsDetached(t *testing.T) {
+	rec := faketier.NewRecorder()
+	hot := faketier.NewWithRecorder("hot", rec)
+	durable := faketier.NewWithRecorder("durable", rec)
+	durable.Seed(key, []byte("tile"))
+
+	gate := faketier.NewGate()
+	hot.GateOn(faketier.OpSet, gate)
+
+	pool := cache.NewWritePool(4, 0)
+	c, err := multi.NewChain([]cache.NamedTier{
+		{Name: "hot", Cache: hot},
+		{Name: "durable", Cache: durable},
+	}, true, pool)
+	if err != nil {
+		t.Fatalf("NewChain: unexpected error: %v", err)
+	}
+
+	// Gated, so a synchronous promotion would hang here.
+	val, hit, err := c.Get(context.Background(), key)
+	if err != nil || !hit || string(val) != "tile" {
+		t.Fatalf("got (%q, %v, %v), expected (tile, true, nil)", val, hit, err)
+	}
+
+	gate.WaitEntered(1)
+	if _, ok := hot.Value(key); ok {
+		t.Fatal("Get waited for the promotion")
+	}
+
+	gate.Release()
+	if !waitFor(t, time.Second, func() bool { _, ok := hot.Value(key); return ok }) {
+		t.Error("the detached promotion never landed")
+	}
+	if stats := c.Stats(); stats.Promotions != 1 {
+		t.Errorf("promotions: got %d, expected 1", stats.Promotions)
+	}
+}
+
+// TestPromotionIsDroppable — re-promotion is best-effort by design, and the
+// drop has to be countable or the hot tier silently stops filling.
+func TestPromotionIsDroppable(t *testing.T) {
+	gate := faketier.NewGate()
+	defer gate.Release()
+
+	blocker := faketier.New("blocker")
+	blocker.GateOn(faketier.OpSet, gate)
+
+	pool := cache.NewWritePool(1, 0)
+
+	// Occupy the only slot with something unrelated.
+	pool.Go(context.Background(), func(ctx context.Context) error {
+		return blocker.Set(ctx, key, []byte("tile"))
+	})
+	gate.WaitEntered(1)
+
+	hot := faketier.New("hot")
+	durable := faketier.New("durable")
+	durable.Seed(key, []byte("tile"))
+
+	c, err := multi.NewChain([]cache.NamedTier{
+		{Name: "hot", Cache: hot},
+		{Name: "durable", Cache: durable},
+	}, true, pool)
+	if err != nil {
+		t.Fatalf("NewChain: unexpected error: %v", err)
+	}
+
+	if _, hit, err := c.Get(context.Background(), key); !hit || err != nil {
+		t.Fatalf("got (%v, %v), expected (true, nil) — a dropped promotion must not fail the read", hit, err)
+	}
+
+	if stats := c.Stats(); stats.PromotionsDropped != 1 {
+		t.Errorf("promotions dropped: got %d, expected 1", stats.PromotionsDropped)
+	}
+	if _, ok := hot.Value(key); ok {
+		t.Error("the promotion ran despite the pool being full")
+	}
+}
+
+// TestChainSetConsumesOneSlot — the chain does not detach again. It is already
+// off the request path, and detaching per tier would consume a slot per tier
+// for one logical write and destroy the joined error the seed path depends on.
+func TestChainSetConsumesOneSlot(t *testing.T) {
+	gate := faketier.NewGate()
+	defer gate.Release()
+
+	gatedHotTier.GateOn(faketier.OpSet, gate)
+	gatedDurableTier.GateOn(faketier.OpSet, gate)
+
+	c, err := cache.For(multi.CacheType, dict.Dict{
+		"layers": []map[string]interface{}{
+			{"type": "fakegatedhot"},
+			{"type": "fakegateddurable"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pool := c.(cache.WritePoolHolder).WritePool()
+
+	if err := c.Set(context.Background(), key, []byte("tile")); err != nil {
+		t.Fatalf("set: unexpected error: %v", err)
+	}
+
+	// Both tier writes are running…
+	gate.WaitEntered(2)
+	// …on one slot.
+	if stats := pool.Stats(); stats.InFlight != 1 {
+		t.Errorf("in flight: got %d, expected 1 slot for the whole fan-out", stats.InFlight)
+	}
+}
+
+// TestNestedChainSharesTheParentPool — one pool per constructed tree, not per
+// chain. Built through cache.For, because that is the only path that creates a
+// pool at all.
+func TestNestedChainSharesTheParentPool(t *testing.T) {
+	c, err := cache.For(multi.CacheType, dict.Dict{
+		"layers": []map[string]interface{}{
+			{"type": "fakehot"},
+			{"type": "multi", "name": "nested", "layers": []map[string]interface{}{
+				{"type": "fakedurable"},
+				{"type": "fakeslow"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	holder, ok := c.(cache.WritePoolHolder)
+	if !ok {
+		t.Fatal("the chain is not a WritePoolHolder, so atlas cannot publish pool stats")
+	}
+	pool := holder.WritePool()
+	if pool == nil {
+		t.Fatal("no pool was created")
+	}
+
+	outer, ok := c.(cache.Tiered)
+	if !ok {
+		t.Fatal("the decorated chain is not cache.Tiered")
+	}
+
+	tiers := outer.Tiers()
+	if len(tiers) != 2 {
+		t.Fatalf("tiers: got %d, expected 2", len(tiers))
+	}
+
+	inner, ok := tiers[1].Cache.(*multi.Cache)
+	if !ok {
+		t.Fatalf("tier 1: got %T, expected the nested chain", tiers[1].Cache)
+	}
+	if inner.WritePoolForTest() != pool {
+		t.Error("the nested chain did not get the parent's pool, so its promotions run inline")
 	}
 }

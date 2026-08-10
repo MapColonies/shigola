@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-spatial/cobra"
 	"github.com/go-spatial/tegola/atlas"
+	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/internal/build"
 	gdcmd "github.com/go-spatial/tegola/internal/cmd"
 	"github.com/go-spatial/tegola/internal/log"
@@ -86,6 +87,26 @@ var serverCmd = &cobra.Command{
 
 			server.SSLCert = string(conf.Webserver.SSLCert)
 			server.SSLKey = string(conf.Webserver.SSLKey)
+		}
+
+		// Drain the detached write pool at shutdown, so a rolling deploy does
+		// not silently discard up to a poolful of writes.
+		//
+		// Registration order is load-bearing and both wrong placements fail
+		// silently. gdcmd.OnComplete runs in *reverse* registration order, and
+		// the required execution order is:
+		//
+		//	1. srv.Shutdown        stop accepting requests, so no new writes
+		//	2. pool drain          let the in-flight ones finish
+		//	3. observability       push final metrics, including how it went
+		//	4. provider cleanup
+		//
+		// so this must be registered after observability.Cleanup and before
+		// shutdown(srv). Registered earlier it drains while requests are still
+		// arriving; later, it drains after the metrics reporting its outcome
+		// were already flushed.
+		if pool := atlas.CacheWritePool(); pool != nil {
+			gdcmd.OnComplete(func() { pool.Drain(cache.DetachedWriteDrain()) })
 		}
 
 		// start our webserver

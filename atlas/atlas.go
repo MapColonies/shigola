@@ -231,6 +231,32 @@ func (a *Atlas) GetCache() cache.Interface {
 	return a.cacher
 }
 
+// CacheWritePool returns the detached-write pool of the configured cache, or
+// nil if there is none.
+//
+// It looks through cache.Wrapped, because the observability wrapper is applied
+// *outside* the detachment decorator that holds the pool — so a direct type
+// assertion on GetCache() finds nothing the moment an observer is configured.
+func (a *Atlas) CacheWritePool() *cache.WritePool {
+	if a == nil {
+		return defaultAtlas.CacheWritePool()
+	}
+
+	for c := a.GetCache(); c != nil; {
+		if h, ok := c.(cache.WritePoolHolder); ok {
+			return h.WritePool()
+		}
+
+		w, ok := c.(cache.Wrapped)
+		if !ok {
+			return nil
+		}
+		c = w.Original()
+	}
+
+	return nil
+}
+
 // SetCache sets the cache backend
 func (a *Atlas) SetCache(c cache.Interface) {
 	if a == nil {
@@ -340,6 +366,10 @@ func SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
 func PurgeMapTile(ctx context.Context, m Map, tile *tegola.Tile) error {
 	return defaultAtlas.PurgeMapTile(ctx, m, tile)
 }
+
+// CacheWritePool returns the defaultAtlas cache's detached-write pool, if it
+// has one
+func CacheWritePool() *cache.WritePool { return defaultAtlas.CacheWritePool() }
 
 // SetObservability sets the observability backend for the defaultAtlas
 func SetObservability(o observability.Interface) { defaultAtlas.SetObservability(o) }

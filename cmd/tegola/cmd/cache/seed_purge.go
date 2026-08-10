@@ -134,9 +134,9 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) error {
 	//cmdName := strings.ToLower(strings.TrimSpace(cmd.CalledAs()))
 	switch cmdName {
 	case "purge":
-		seedPurgeWorker = purgeWorker
+		seedPurgeWorker = withCacheIntent(purgeWorker)
 	case "seed":
-		seedPurgeWorker = seedWorker(cacheOverwrite, cacheLogThreshold)
+		seedPurgeWorker = withCacheIntent(seedWorker(cacheOverwrite, cacheLogThreshold))
 	default:
 
 		return fmt.Errorf("expected purge/seed got (%v) for command name", cmdName)

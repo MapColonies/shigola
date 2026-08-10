@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/go-spatial/geom/encoding/mvt"
 	"github.com/go-spatial/tegola/atlas"
@@ -52,13 +53,28 @@ func TileCacheHandler(a *atlas.Atlas, next http.Handler) http.Handler {
 
 		// cache miss
 		if !hit {
+			// net/http buffers the response, so a tile small enough to sit in
+			// that buffer waits for the handler to return no matter what the
+			// tee below writes. Detaching the cache write without an explicit
+			// flush would move work off the handler without getting bytes out
+			// any sooner, so warn if this response cannot be flushed at all.
+			if _, ok := w.(http.Flusher); !ok {
+				warnUnflushable.Do(func() {
+					log.Warnf("cache middleware: %T is not an http.Flusher, so tile bytes wait for the handler to return", w)
+				})
+			}
+
 			// buffer which will hold a copy of the response for writing to the cache
 			var buff bytes.Buffer
 
 			// overwrite our current responseWriter with a tileCacheResponseWriter
-			w = newTileCacheResponseWriter(w, &buff)
+			tcw := newTileCacheResponseWriter(w, &buff)
+			w = tcw
 
 			next.ServeHTTP(w, r)
+
+			// get the tile to the client before handing the write off
+			tcw.Flush()
 
 			// check if our request context has been canceled
 			if r.Context().Err() != nil {
@@ -88,7 +104,12 @@ func TileCacheHandler(a *atlas.Atlas, next http.Handler) http.Handler {
 	})
 }
 
-func newTileCacheResponseWriter(resp http.ResponseWriter, w io.Writer) http.ResponseWriter {
+// warnUnflushable fires once per process. A response writer that cannot be
+// flushed is a property of the assembled middleware stack, not of one request,
+// so a line per request would say nothing extra.
+var warnUnflushable sync.Once
+
+func newTileCacheResponseWriter(resp http.ResponseWriter, w io.Writer) *tileCacheResponseWriter {
 	return &tileCacheResponseWriter{
 		resp:  resp,
 		multi: io.MultiWriter(w, resp),
@@ -127,4 +148,13 @@ func (w *tileCacheResponseWriter) WriteHeader(i int) {
 	w.status = i
 
 	w.resp.WriteHeader(i)
+}
+
+// Flush forwards to the wrapped writer if it can be flushed. Flushing has to
+// work through the whole stack, not one wrapper — see
+// gzipDecompressResponseWriter.Flush.
+func (w *tileCacheResponseWriter) Flush() {
+	if f, ok := w.resp.(http.Flusher); ok {
+		f.Flush()
+	}
 }

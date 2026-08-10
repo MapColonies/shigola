@@ -59,6 +59,49 @@ type Tiered interface {
 	WithTiers(tiers []Interface) Interface
 }
 
+// WritePoolUser is implemented by caches that detach writes of their own —
+// today only a composite cache, for promotion, which happens inside Get with
+// the client still waiting.
+//
+// The pool is injected after construction rather than passed to the
+// constructor because InitFunc takes only a config dict, and widening it would
+// break every in-tree backend and every out-of-tree implementation. Injection
+// happens inside For/ForTier, before the cache is visible to any caller, so
+// there is no window in which a chain exists without its pool.
+//
+// An implementer must forward the pool to any tier that wants one, which is
+// what makes a nested chain share the parent's pool: one pool per constructed
+// tree, not per chain.
+type WritePoolUser interface {
+	UseWritePool(*WritePool)
+}
+
+// WritePoolHolder lets atlas reach the pool to register a collector over its
+// Stats. Implemented by the detachment decorator.
+type WritePoolHolder interface {
+	WritePool() *WritePool
+}
+
+// InjectWritePool gives c the pool if it wants one, looking through the
+// decorators this package applies on the way.
+//
+// Exported because a composite cache forwarding the pool to its tiers lives in
+// another package and cannot see those decorators itself.
+func InjectWritePool(c Interface, pool *WritePool) {
+	if pool == nil || c == nil {
+		return
+	}
+
+	switch v := c.(type) {
+	case WritePoolUser:
+		v.UseWritePool(pool)
+	case *deadlineCache:
+		InjectWritePool(v.cache, pool)
+	case *tieredDeadlineCache:
+		InjectWritePool(v.cache, pool)
+	}
+}
+
 // ParseKey will parse a string in the format /:map/:layer/:z/:x/:y into a Key struct. The :layer value is optional
 // ParseKey also supports other OS delimiters (i.e. Windows - "\")
 func ParseKey(str string) (*Key, error) {
@@ -196,23 +239,37 @@ func Registered() (c []string) {
 
 // For function returns a configured cache of the given type, provided the correct config map.
 //
-// For builds the *outermost* cache. A composite cache must build its children
-// through ForTier instead — see there for why the two are not the same call.
+// For builds the *outermost* cache: it creates the write pool, applies the read
+// deadline and applies the detachment decorator. A composite cache must build
+// its children through ForTier instead — see there for why the two are not the
+// same call.
 func For(cacheType string, config dict.Dicter) (Interface, error) {
-	return ForTier(cacheType, config)
+	pool := NewWritePool(detachedWriteSlots, detachedWriteTimeout)
+
+	c, err := ForTier(cacheType, config, pool)
+	if err != nil {
+		return nil, err
+	}
+
+	return newDetachedCache(c, pool), nil
 }
 
 // ForTier returns a configured cache of the given type for use as one tier of a
 // composite cache.
 //
 // It applies the read deadline, because a deadline is per-tier by design: every
-// tier carries its own timeout_ms. It does not apply anything that is a
-// property of the outermost cache only.
+// tier carries its own timeout_ms. It does not detach, because detachment is a
+// property of the outermost cache only — detaching per tier would make a
+// composite Set return before any tier write, leaving the joined error nothing
+// to join and silently under-seeding.
 //
 // The asymmetry with For is the point, and nothing enforces it: a composite
 // cache written outside this repo that calls For for its children compiles and
 // is silently broken.
-func ForTier(cacheType string, config dict.Dicter) (Interface, error) {
+//
+// pool may be nil, which a composite cache passes when building its own tiers:
+// it has no pool at construction and forwards the one it is later given.
+func ForTier(cacheType string, config dict.Dicter, pool *WritePool) (Interface, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("No cache backends registered.")
 	}
@@ -233,6 +290,9 @@ func ForTier(cacheType string, config dict.Dicter) (Interface, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Before the decorator goes on, so the injection sees the cache itself.
+	InjectWritePool(built, pool)
 
 	if timeout > 0 {
 		built = newDeadlineCache(built, timeout)
