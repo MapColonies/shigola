@@ -172,5 +172,15 @@ func (co *cache) Purge(ctx context.Context, key *tegolaCache.Key) error {
 	return nil
 }
 
-func (co cache) Wrapped() tegolaCache.Interface { return co.cache }
-func (co cache) IsObserver() bool               { return true }
+// Original returns the cache this one instruments. It is the cache.Wrapped
+// half of observability.Cache, which is how atlas unwraps an already
+// instrumented cache instead of instrumenting it a second time. The method was
+// named Wrapped() until 2026-08-10, which no interface required and nothing
+// called, so the assertion below is the whole point of the rename.
+func (co cache) Original() tegolaCache.Interface { return co.cache }
+func (co cache) IsObserver() bool                { return true }
+
+var (
+	_ observability.Cache  = (*cache)(nil)
+	_ tegolaCache.Wrapped  = (*cache)(nil)
+)
