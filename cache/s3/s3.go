@@ -326,7 +326,21 @@ func (s3c *Cache) Set(ctx context.Context, key *cache.Key, val []byte) error {
 		input.CacheControl = aws.String(s3c.CacheControl)
 	}
 
-	_, err = s3c.Client.PutObject(&input)
+	// PutObjectWithContext, not PutObject: the latter attaches no context, so
+	// a caller's cancellation or deadline has nothing to act through. Get and
+	// Purge already use the WithContext variants — Set alone did not.
+	//
+	// It matters beyond tidiness. cache/s3 builds aws.Config with no
+	// HTTPClient, so the SDK falls back to http.DefaultClient, which has
+	// Timeout: 0 and a transport that bounds dialling and the TLS handshake
+	// and nothing else. Once the request is on the wire, waiting for S3 is
+	// unbounded at the Go level — and an unbounded write holds a detached
+	// write-pool slot forever, so enough of them over a process lifetime
+	// empty the pool and every write is dropped until a restart.
+	//
+	// In the vendored SDK the only difference between the two calls is
+	// req.SetContext(ctx).
+	_, err = s3c.Client.PutObjectWithContext(ctx, &input)
 	if err != nil {
 		return err
 	}
