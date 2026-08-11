@@ -14,8 +14,10 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	"github.com/go-spatial/geom"
+	"github.com/go-spatial/geom/cmp"
 	"github.com/go-spatial/geom/encoding/mvt"
 	"github.com/go-spatial/geom/slippy"
+	"github.com/go-spatial/geom/winding"
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/basic"
 	"github.com/go-spatial/tegola/dict"
@@ -75,6 +77,237 @@ func (m Map) TileGridSRID() uint64 {
 		return tegola.WebMercator
 	}
 	return m.TileSRID
+}
+
+func prepareGeometryForMVT(geo geom.Geometry, tileExtent *geom.Extent, pixelExtent float64) geom.Geometry {
+	switch g := geo.(type) {
+	case geom.Polygon:
+		return preparePolygonForMVT(g, tileExtent, pixelExtent)
+	case geom.MultiPolygon:
+		polys := g.Polygons()
+		prepared := make(geom.MultiPolygon, 0, len(polys))
+		for _, poly := range polys {
+			pp := preparePolygonForMVT(geom.Polygon(poly), tileExtent, pixelExtent)
+			if len(pp) > 0 {
+				prepared = append(prepared, pp)
+			}
+		}
+		if len(prepared) == 0 {
+			return nil
+		}
+		return prepared
+	default:
+		return mvt.PrepareGeo(geo, tileExtent, pixelExtent)
+	}
+}
+
+func preparePolygonForMVT(poly geom.Polygon, tileExtent *geom.Extent, pixelExtent float64) geom.Polygon {
+	rings := poly.LinearRings()
+	prepared := make(geom.Polygon, 0, len(rings))
+	for _, ring := range rings {
+		pr := prepareRingForMVT(ring, tileExtent, pixelExtent)
+		if len(pr) >= 3 {
+			prepared = append(prepared, pr)
+		}
+	}
+	if len(prepared) == 0 {
+		return nil
+	}
+
+	order := winding.Order{YPositiveDown: false}
+	return geom.Polygon(order.RectifyPolygon([][][2]float64(prepared)))
+}
+
+func prepareRingForMVT(ring [][2]float64, tileExtent *geom.Extent, pixelExtent float64) [][2]float64 {
+	if len(ring) < 3 {
+		return nil
+	}
+	prepared := make([][2]float64, 0, len(ring))
+	for _, pt := range ring {
+		npt := preparePointForMVT(pt, tileExtent, pixelExtent)
+		if len(prepared) > 0 && sameMVTPoint(prepared[len(prepared)-1], npt) {
+			continue
+		}
+		prepared = append(prepared, npt)
+	}
+	if len(prepared) > 1 && sameMVTPoint(prepared[0], prepared[len(prepared)-1]) {
+		prepared = prepared[:len(prepared)-1]
+	}
+	if len(prepared) < 3 {
+		return nil
+	}
+	return prepared
+}
+
+func preparePointForMVT(pt [2]float64, tileExtent *geom.Extent, pixelExtent float64) [2]float64 {
+	return [2]float64{
+		(pt[0] - tileExtent.MinX()) / tileExtent.XSpan() * pixelExtent,
+		(tileExtent.MaxY() - pt[1]) / tileExtent.YSpan() * pixelExtent,
+	}
+}
+
+func sameMVTPoint(a, b [2]float64) bool {
+	return int64(a[0]) == int64(b[0]) && int64(a[1]) == int64(b[1]) ||
+		cmp.HiCMP.PointEqual(a, b)
+}
+
+func pixelBufferedExtent(buffer uint64) *geom.Extent {
+	b := float64(buffer)
+	extent := float64(mvt.DefaultExtent)
+	return geom.NewExtent([2]float64{-b, -b}, [2]float64{extent + b, extent + b})
+}
+
+func clipGeometryToExtent(geo geom.Geometry, extent *geom.Extent) geom.Geometry {
+	switch g := geo.(type) {
+	case geom.Polygon:
+		return clipPolygonToExtent(g, extent)
+	case geom.MultiPolygon:
+		polys := g.Polygons()
+		clipped := make(geom.MultiPolygon, 0, len(polys))
+		for _, poly := range polys {
+			cp := clipPolygonToExtent(geom.Polygon(poly), extent)
+			if len(cp) > 0 {
+				clipped = append(clipped, cp)
+			}
+		}
+		if len(clipped) == 0 {
+			return nil
+		}
+		return clipped
+	default:
+		return geo
+	}
+}
+
+func clipPolygonToExtent(poly geom.Polygon, extent *geom.Extent) geom.Polygon {
+	rings := poly.LinearRings()
+	clipped := make(geom.Polygon, 0, len(rings))
+	for _, ring := range rings {
+		cr := clipRingToExtent(ring, extent)
+		if len(cr) >= 4 {
+			clipped = append(clipped, cr)
+		}
+	}
+	if len(clipped) == 0 {
+		return nil
+	}
+	return clipped
+}
+
+type clipEdge uint8
+
+const (
+	clipLeft clipEdge = iota
+	clipRight
+	clipBottom
+	clipTop
+)
+
+func clipRingToExtent(ring [][2]float64, extent *geom.Extent) [][2]float64 {
+	pts := openRing(ring)
+	for _, edge := range []clipEdge{clipLeft, clipRight, clipBottom, clipTop} {
+		pts = clipRingToEdge(pts, extent, edge)
+		if len(pts) == 0 {
+			return nil
+		}
+	}
+	if len(pts) < 3 {
+		return nil
+	}
+	return closeRing(pts)
+}
+
+func openRing(ring [][2]float64) [][2]float64 {
+	if len(ring) == 0 {
+		return nil
+	}
+	pts := append([][2]float64(nil), ring...)
+	last := len(pts) - 1
+	if pts[0] == pts[last] {
+		pts = pts[:last]
+	}
+	return pts
+}
+
+func closeRing(ring [][2]float64) [][2]float64 {
+	if len(ring) == 0 {
+		return nil
+	}
+	if ring[0] != ring[len(ring)-1] {
+		ring = append(ring, ring[0])
+	}
+	return ring
+}
+
+func clipRingToEdge(ring [][2]float64, extent *geom.Extent, edge clipEdge) [][2]float64 {
+	if len(ring) == 0 {
+		return nil
+	}
+	out := make([][2]float64, 0, len(ring)+1)
+	prev := ring[len(ring)-1]
+	prevInside := pointInsideEdge(prev, extent, edge)
+	for _, curr := range ring {
+		currInside := pointInsideEdge(curr, extent, edge)
+		switch {
+		case currInside && !prevInside:
+			out = append(out, intersectClipEdge(prev, curr, extent, edge), curr)
+		case currInside && prevInside:
+			out = append(out, curr)
+		case !currInside && prevInside:
+			out = append(out, intersectClipEdge(prev, curr, extent, edge))
+		}
+		prev = curr
+		prevInside = currInside
+	}
+	return out
+}
+
+func pointInsideEdge(pt [2]float64, extent *geom.Extent, edge clipEdge) bool {
+	switch edge {
+	case clipLeft:
+		return pt[0] >= extent.MinX()
+	case clipRight:
+		return pt[0] <= extent.MaxX()
+	case clipBottom:
+		return pt[1] >= extent.MinY()
+	case clipTop:
+		return pt[1] <= extent.MaxY()
+	default:
+		return false
+	}
+}
+
+func intersectClipEdge(a, b [2]float64, extent *geom.Extent, edge clipEdge) [2]float64 {
+	dx := b[0] - a[0]
+	dy := b[1] - a[1]
+	switch edge {
+	case clipLeft:
+		return intersectVertical(a, dx, dy, extent.MinX())
+	case clipRight:
+		return intersectVertical(a, dx, dy, extent.MaxX())
+	case clipBottom:
+		return intersectHorizontal(a, dx, dy, extent.MinY())
+	case clipTop:
+		return intersectHorizontal(a, dx, dy, extent.MaxY())
+	default:
+		return b
+	}
+}
+
+func intersectVertical(a [2]float64, dx, dy, x float64) [2]float64 {
+	if dx == 0 {
+		return [2]float64{x, a[1]}
+	}
+	t := (x - a[0]) / dx
+	return [2]float64{x, a[1] + t*dy}
+}
+
+func intersectHorizontal(a [2]float64, dx, dy, y float64) [2]float64 {
+	if dy == 0 {
+		return [2]float64{a[0], y}
+	}
+	t := (y - a[1]) / dy
+	return [2]float64{a[0] + t*dx, y}
 }
 
 // HasMVTProvider indicates if map is a mvt provider based map
@@ -270,13 +503,12 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 					}
 				}
 
-				// TODO (arolek): change out the tile type for VTile. tegola.Tile will be deprecated
-				tegolaTile := tegola.TileFromSlippyTile(tile)
-
 				sg := tegolaGeo
 				// multiple ways to turn off simplification. check the atlas init() function
 				// for how the second two conditions are set
 				if !l.DontSimplify && simplifyGeometries && tile.Z < slippy.Zoom(simplificationMaxZoom) {
+					// TODO (arolek): change out the tile type for VTile. tegola.Tile will be deprecated
+					tegolaTile := tegola.TileFromSlippyTile(tile)
 					sg = simplify.SimplifyGeometry(tegolaGeo, tegolaTile.ZEpislon())
 				}
 
@@ -286,12 +518,7 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 					// CleanGeometry is expecting to operate in pixel coordinates so the clipRegion
 					// will need to be in this same coordinate system. this will change when the new
 					// make valid routing is implemented
-					pbb, err := tegolaTile.PixelBufferedBounds()
-					if err != nil {
-						return fmt.Errorf("err calculating tile pixel buffer bounds: %w", err)
-					}
-
-					clipRegion = geom.NewExtent([2]float64{pbb[0], pbb[1]}, [2]float64{pbb[2], pbb[3]})
+					clipRegion = pixelBufferedExtent(m.TileBuffer)
 				}
 
 				// TODO: remove this geom conversion step once the simplify function uses geom types
@@ -300,13 +527,24 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 					return err
 				}
 
+				if !l.DontClip {
+					clipExtent, _ := ptile.BufferedExtent()
+					geo = clipGeometryToExtent(geo, clipExtent)
+					if geo == nil {
+						return nil
+					}
+				}
+
 				// TODO(arolek): currently the validate.CleanGeometry method does not operate
 				// well on geometries that are not scaled to tile coordinate space. this will change
 				// with the adoption of the new make valid routine. once implemented, the clipRegion
 				// calculation will need to be in the same coordinate space as the geometry the
 				// make valid function will be operating on.
 				ext, _ := ptile.Extent()
-				geo = mvt.PrepareGeo(geo, ext, float64(mvt.DefaultExtent))
+				geo = prepareGeometryForMVT(geo, ext, float64(mvt.DefaultExtent))
+				if geo == nil {
+					return nil
+				}
 
 				// TODO: remove this geom conversion step once the validate function uses geom types
 				sg, err = convert.ToTegola(geo)
