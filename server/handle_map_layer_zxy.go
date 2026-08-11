@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"log/slog"
 
 	"github.com/dimfeld/httptreemux"
 	"github.com/go-spatial/geom"
@@ -18,7 +18,6 @@ import (
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/internal/log"
-	"github.com/go-spatial/tegola/maths"
 	"github.com/go-spatial/tegola/observability"
 	"github.com/go-spatial/tegola/provider"
 )
@@ -48,7 +47,7 @@ type HandleMapLayerZXY struct {
 }
 
 // parseURI reads the request URI and extracts the various values for the request
-func (req *HandleMapLayerZXY) parseURI(r *http.Request) error {
+func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
 	var err error
 
 	params := httptreemux.ContextParams(r.Context())
@@ -67,12 +66,21 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request) error {
 	}
 	req.z = uint(placeholder)
 
-	maxXYatZ := maths.Exp2(placeholder) - 1
+	gridWidth, gridHeight, err := tegola.TileGridSize(tileSRID, slippy.Zoom(req.z))
+	if err != nil {
+		log.Warnf("invalid tile_srid (%v)", tileSRID)
+		return err
+	}
+	maxXatZ := uint64(gridWidth - 1)
+	maxYatZ := uint64(gridHeight - 1)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("WorldCRS84Quad tile grid for z/%v: width=%v height=%v max_x=%v max_y=%v", req.z, gridWidth, gridHeight, maxXatZ, maxYatZ)
+	}
 
 	x := params["x"]
 	placeholder, err = strconv.ParseUint(x, 10, 32)
-	if err != nil || placeholder > maxXYatZ {
-		log.Warnf("invalid X value (%v)", x)
+	if err != nil || placeholder > maxXatZ {
+		log.Warnf("invalid X value (%v) for tile_srid %v at z/%v; max_x=%v", x, tileSRID, req.z, maxXatZ)
 		return fmt.Errorf("invalid X value (%v)", x)
 	}
 	req.x = uint(placeholder)
@@ -81,8 +89,8 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request) error {
 	y := params["y"]
 	yParts := strings.Split(y, ".")
 	placeholder, err = strconv.ParseUint(yParts[0], 10, 32)
-	if err != nil || placeholder > maxXYatZ {
-		log.Warnf("invalid Y value (%v)", yParts[0])
+	if err != nil || placeholder > maxYatZ {
+		log.Warnf("invalid Y value (%v) for tile_srid %v at z/%v; max_y=%v", yParts[0], tileSRID, req.z, maxYatZ)
 		return fmt.Errorf("invalid Y value (%v)", yParts[0])
 	}
 
@@ -114,11 +122,8 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request) error {
 //
 // param - configurable query parameters and their values
 func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// parse our URI
-	if err := req.parseURI(r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	routeParams := httptreemux.ContextParams(r.Context())
+	req.mapName = routeParams["map_name"]
 
 	// lookup our Map
 	m, err := req.Atlas.Map(req.mapName)
@@ -127,6 +132,16 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Error(errMsg)
 		http.Error(w, errMsg, http.StatusNotFound)
 		return
+	}
+
+	// parse our URI
+	tileSRID := m.TileGridSRID()
+	if err := req.parseURI(r, tileSRID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("handling WorldCRS84Quad tile request map=%v layer=%v z=%v x=%v y=%v tile_srid=%v", req.mapName, req.layerName, req.z, req.x, req.y, tileSRID)
 	}
 
 	// filter down the layers we need for this zoom
@@ -155,7 +170,8 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Check to see that the zxy is within the bounds of the map.
 		// TODO(@ear7h): use a more efficient version of Intersect that doesn't
 		// make a new extent
-		ext3857, err := slippy.Extent(webmercatorGrid, tile)
+		var ext4326 *geom.Extent
+		extent, err := tileExtent(tileSRID, tile)
 		if err != nil {
 			msg := fmt.Sprintf("map (%v -- %v) does not contains tile at %v/%v/%v. Unable to generate extent.", req.mapName, m.Bounds, req.z, req.x, req.y)
 			log.Debug(msg, err)
@@ -163,19 +179,24 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		points4326, err := proj.Inverse(proj.WebMercator, ext3857[:])
-		if err != nil {
-			msg := fmt.Sprintf("Unable to convert 3857 to 4326 for map (%v -- %v) and tile %v/%v/%v -- %v.", req.mapName, m.Bounds, req.z, req.x, req.y, ext3857)
-			log.Error(msg)
-			http.Error(w, msg, http.StatusNotFound)
-			return
-		}
+		if tileSRID == tegola.WGS84 {
+			ext4326 = extent
+			log.Debugf("WorldCRS84Quad tile extent map=%v z=%v x=%v y=%v extent=%v", req.mapName, req.z, req.x, req.y, ext4326)
+		} else {
+			points4326, err := proj.Inverse(proj.WebMercator, extent[:])
+			if err != nil {
+				msg := fmt.Sprintf("Unable to convert 3857 to 4326 for map (%v -- %v) and tile %v/%v/%v -- %v.", req.mapName, m.Bounds, req.z, req.x, req.y, extent)
+				log.Error(msg)
+				http.Error(w, msg, http.StatusNotFound)
+				return
+			}
 
-		ext4326 := &geom.Extent{}
-		copy(ext4326[:], points4326)
+			ext4326 = &geom.Extent{}
+			copy(ext4326[:], points4326)
+		}
 		if _, intersect := m.Bounds.Intersect(ext4326); !intersect {
 			msg := fmt.Sprintf("map (%v -- %v) does not contains tile at %v/%v/%v -- %v", req.mapName, m.Bounds, req.z, req.x, req.y, ext4326)
-			log.Debug(msg)
+			log.Debugf("%v tile_srid=%v", msg, tileSRID)
 			http.Error(w, msg, http.StatusNotFound)
 			return
 		}
@@ -227,7 +248,7 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// check for tile size warnings
 	if len(pbyte) > MaxTileSize {
-		slog.Default().Info("tile is rather large", 
+		slog.Default().Info("tile is rather large",
 			slog.String("map", req.mapName),
 			slog.String("layer", req.layerName),
 			slog.Uint64("z", uint64(req.z)),
@@ -236,6 +257,13 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Int("size_kb", len(pbyte)/1024),
 		)
 	}
+}
+
+func tileExtent(tileSRID uint64, tile slippy.Tile) (*geom.Extent, error) {
+	if tileSRID == tegola.WGS84 {
+		return tegola.WorldCRS84QuadExtent(tile)
+	}
+	return slippy.Extent(webmercatorGrid, tile)
 }
 
 func extractParameters(m atlas.Map, r *http.Request) (provider.Params, error) {

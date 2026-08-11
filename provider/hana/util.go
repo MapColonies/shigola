@@ -17,6 +17,7 @@ import (
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/basic"
 	"github.com/go-spatial/tegola/internal/env"
+	"github.com/go-spatial/tegola/internal/log"
 	"github.com/go-spatial/tegola/provider"
 )
 
@@ -101,7 +102,7 @@ func getLayerSQL(tblname string) string {
 func getLayerRows(pool *connectionPoolCollector, sql string, extent *geom.Extent, srid uint64, withBBox bool) (*sql.Rows, error) {
 	ctx := context.Background()
 	if withBBox {
-		rows, err := pool.QueryContextWithBBox(ctx, sql, extent, srid, false)
+		rows, err := pool.QueryContextWithBBox(ctx, sql, extent, tegola.WebMercator, srid, false)
 		if err := ctxErr(ctx, err); err != nil {
 			return nil, err
 		}
@@ -239,19 +240,31 @@ func fromWebMercator(srid uint64, geometry geom.Geometry) (geom.Geometry, error)
 	return basic.FromWebMercator(srid, geometry)
 }
 
-func getBBoxCoordinates(extent *geom.Extent, srid uint64) (geom.Point, geom.Point, error) {
-	// TODO: it's currently assumed the tile will always be in WebMercator. Need to support different projections
-	minGeo, err := fromWebMercator(srid, geom.Point{extent.MinX(), extent.MinY()})
+func getBBoxCoordinates(extent *geom.Extent, tileSRID uint64, srid uint64) (geom.Point, geom.Point, error) {
+	toSRID := srid
+	if isPlanarEquivalentSrid(toSRID) {
+		toSRID -= PLANAR_SRID_OFFSET
+	}
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: transforming WorldCRS84Quad BBOX coordinates tile_srid=%v layer_srid=%v transform_srid=%v extent=%v", tileSRID, srid, toSRID, extent)
+	}
+
+	minGeo, err := basic.Transform(tileSRID, toSRID, geom.Point{extent.MinX(), extent.MinY()})
 	if err != nil {
 		return geom.Point{}, geom.Point{}, fmt.Errorf("Error trying to convert tile point: %w ", err)
 	}
 
-	maxGeo, err := fromWebMercator(srid, geom.Point{extent.MaxX(), extent.MaxY()})
+	maxGeo, err := basic.Transform(tileSRID, toSRID, geom.Point{extent.MaxX(), extent.MaxY()})
 	if err != nil {
 		return geom.Point{}, geom.Point{}, fmt.Errorf("Error trying to convert tile point: %w ", err)
 	}
 
-	return minGeo.(geom.Point), maxGeo.(geom.Point), nil
+	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("hana: transformed WorldCRS84Quad BBOX coordinates tile_srid=%v layer_srid=%v min=%v max=%v", tileSRID, srid, minPt, maxPt)
+	}
+
+	return minPt, maxPt, nil
 }
 
 func getBBoxFilter(dbVersion uint, geomField string, srid uint64) string {

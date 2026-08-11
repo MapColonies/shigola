@@ -119,8 +119,9 @@ func genSQL(
 // !GEOM_TYPE! - the geom field type if defined otherwise ""
 func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) (string, error) {
 	var (
-		extent  *geom.Extent
-		geoType string
+		extent   *geom.Extent
+		geoType  string
+		tileSRID uint64
 	)
 
 	if lyr == nil {
@@ -129,19 +130,21 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 	srid := lyr.SRID()
 
 	if withBuffer {
-		extent, _ = tile.BufferedExtent()
+		extent, tileSRID = tile.BufferedExtent()
 	} else {
-		extent, _ = tile.Extent()
+		extent, tileSRID = tile.Extent()
+	}
+	if tileSRID == tegola.WGS84 {
+		z, x, y := tile.ZXY()
+		log.Debugf("postgis: replacing tokens for WorldCRS84Quad tile z=%v x=%v y=%v tile_srid=%v layer_srid=%v with_buffer=%v extent=%v", z, x, y, tileSRID, srid, withBuffer, extent)
 	}
 
-	// TODO: leverage helper functions for minx / miny to make this easier to follow
-	// TODO: it's currently assumed the tile will always be in WebMercator. Need to support different projections
-	minGeo, err := basic.FromWebMercator(srid, geom.Point{extent.MinX(), extent.MinY()})
+	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MinX(), extent.MinY()})
 	if err != nil {
 		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
 	}
 
-	maxGeo, err := basic.FromWebMercator(srid, geom.Point{extent.MaxX(), extent.MaxY()})
+	maxGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MaxX(), extent.MaxY()})
 	if err != nil {
 		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
 	}
@@ -156,6 +159,9 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 		maxPt.Y(),
 		srid,
 	)
+	if tileSRID == tegola.WGS84 {
+		log.Debugf("postgis: WorldCRS84Quad BBOX tile_srid=%v layer_srid=%v min=%v max=%v bbox=%v", tileSRID, srid, minPt, maxPt, bbox)
+	}
 
 	extent, _ = tile.Extent()
 	// TODO: Always convert to meter if we support different projections

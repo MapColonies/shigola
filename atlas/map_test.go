@@ -10,13 +10,33 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	"github.com/go-spatial/geom"
+	"github.com/go-spatial/geom/encoding/mvt"
 	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
 	"github.com/go-spatial/geom/slippy"
+	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/internal/p"
+	"github.com/go-spatial/tegola/provider"
 	"github.com/go-spatial/tegola/provider/test"
 	"github.com/go-spatial/tegola/provider/test/emptycollection"
 )
+
+type polygonProvider struct {
+	geometry geom.Geometry
+	srid     uint64
+}
+
+func (p polygonProvider) Layers() ([]provider.LayerInfo, error) { return nil, nil }
+
+func (p polygonProvider) TileFeatures(ctx context.Context, layer string, t provider.Tile, queryParams provider.Params, fn func(f *provider.Feature) error) error {
+	return fn(&provider.Feature{
+		ID:       1,
+		Geometry: p.geometry,
+		SRID:     p.srid,
+		Tags:     map[string]interface{}{},
+	})
+}
 
 func TestMapFilterLayersByZoom(t *testing.T) {
 	testcases := []struct {
@@ -204,6 +224,146 @@ func TestMapFilterLayersByName(t *testing.T) {
 		if !reflect.DeepEqual(output, tc.expected) {
 			t.Errorf("testcase (%v) failed. output \n\n%+v\n\n does not match expected \n\n%+v", i, output, tc.expected)
 		}
+	}
+}
+
+func TestEncodeWorldCRS84QuadClipsPolygonsBeforeMVTPrepare(t *testing.T) {
+	largePolygon := geom.Polygon{{
+		{30, 30},
+		{40, 30},
+		{40, 35},
+		{30, 35},
+		{30, 30},
+	}}
+
+	atlasMap := atlas.NewWebMercatorMap("crs84")
+	atlasMap.TileSRID = tegola.WGS84
+	atlasMap.TileBuffer = 64
+	atlasMap.Layers = []atlas.Layer{{
+		Name:              "polygons",
+		ProviderLayerName: "polygons",
+		MinZoom:           0,
+		MaxZoom:           22,
+		DontClean:         true,
+		Provider: polygonProvider{
+			geometry: largePolygon,
+			srid:     tegola.WGS84,
+		},
+	}}
+
+	out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+
+	tile := decodeGzippedVectorTile(t, out)
+	if len(tile.Layers) != 1 {
+		t.Fatalf("expected 1 layer, got %d", len(tile.Layers))
+	}
+	if len(tile.Layers[0].Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(tile.Layers[0].Features))
+	}
+
+	feature := tile.Layers[0].Features[0]
+	geometry, err := mvt.DecodeGeometry(feature.GetType(), feature.GetGeometry())
+	if err != nil {
+		t.Fatalf("DecodeGeometry() error = %v", err)
+	}
+	assertGeometryWithinBufferedExtent(t, geometry, -64, 4096+64)
+}
+
+func TestEncodeWorldCRS84QuadCleansClippedPolygons(t *testing.T) {
+	largePolygon := geom.Polygon{{
+		{30, 30},
+		{40, 30},
+		{40, 35},
+		{30, 35},
+		{30, 30},
+	}}
+
+	atlasMap := atlas.NewWebMercatorMap("crs84")
+	atlasMap.TileSRID = tegola.WGS84
+	atlasMap.TileBuffer = 64
+	atlasMap.Layers = []atlas.Layer{{
+		Name:              "polygons",
+		ProviderLayerName: "polygons",
+		MinZoom:           0,
+		MaxZoom:           22,
+		Provider: polygonProvider{
+			geometry: largePolygon,
+			srid:     tegola.WGS84,
+		},
+	}}
+
+	out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+
+	tile := decodeGzippedVectorTile(t, out)
+	if len(tile.Layers) != 1 {
+		t.Fatalf("expected 1 layer, got %d", len(tile.Layers))
+	}
+	if len(tile.Layers[0].Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(tile.Layers[0].Features))
+	}
+
+	feature := tile.Layers[0].Features[0]
+	geometry, err := mvt.DecodeGeometry(feature.GetType(), feature.GetGeometry())
+	if err != nil {
+		t.Fatalf("DecodeGeometry() error = %v", err)
+	}
+	assertGeometryWithinBufferedExtent(t, geometry, -64, 4096+64)
+}
+
+func decodeGzippedVectorTile(t *testing.T, data []byte) vectorTile.Tile {
+	t.Helper()
+
+	var buf bytes.Buffer
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("gzip.NewReader() error = %v", err)
+	}
+	defer r.Close()
+
+	if _, err = io.Copy(&buf, r); err != nil {
+		t.Fatalf("io.Copy() error = %v", err)
+	}
+
+	var tile vectorTile.Tile
+	if err = proto.Unmarshal(buf.Bytes(), &tile); err != nil {
+		t.Fatalf("proto.Unmarshal() error = %v", err)
+	}
+
+	return tile
+}
+
+func assertGeometryWithinBufferedExtent(t *testing.T, geometry geom.Geometry, min, max float64) {
+	t.Helper()
+
+	checkPoint := func(pt geom.Point) {
+		if pt.X() < min || pt.X() > max || pt.Y() < min || pt.Y() > max {
+			t.Fatalf("decoded MVT coordinate outside buffered extent: %v", pt)
+		}
+	}
+
+	switch g := geometry.(type) {
+	case geom.Polygon:
+		for _, ring := range g.LinearRings() {
+			for _, pt := range ring {
+				checkPoint(geom.Point(pt))
+			}
+		}
+	case geom.MultiPolygon:
+		for _, polygon := range g.Polygons() {
+			for _, ring := range polygon {
+				for _, pt := range ring {
+					checkPoint(geom.Point(pt))
+				}
+			}
+		}
+	default:
+		t.Fatalf("expected polygon geometry, got %T", geometry)
 	}
 }
 

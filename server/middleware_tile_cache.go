@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-spatial/geom/encoding/mvt"
+	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/internal/log"
@@ -35,12 +36,28 @@ func TileCacheHandler(a *atlas.Atlas, next http.Handler) http.Handler {
 			return
 		}
 
+		keyPath := strings.TrimPrefix(r.URL.Path, path.Join(URIPrefix, "maps"))
+		mapName := cacheKeyMapName(keyPath)
+		m, err := a.Map(mapName)
+		if err != nil {
+			log.Errorf("cache middleware: map lookup err: %v", err)
+			next.ServeHTTP(w, r)
+			return
+		}
+		tileSRID := m.TileGridSRID()
+		if tileSRID != tegola.WebMercator {
+			log.Debugf("cache middleware: parsing key for map=%v tile_srid=%v key_path=%v", mapName, tileSRID, keyPath)
+		}
+
 		// parse our URI into a cache key structure (remove any configured URIPrefix + "maps/" )
-		key, err := cache.ParseKey(strings.TrimPrefix(r.URL.Path, path.Join(URIPrefix, "maps")))
+		key, err := cache.ParseKeyForTileSRID(keyPath, tileSRID)
 		if err != nil {
 			log.Errorf("cache middleware: ParseKey err: %v", err)
 			next.ServeHTTP(w, r)
 			return
+		}
+		if tileSRID != tegola.WebMercator {
+			log.Debugf("cache middleware: parsed key=%v tile_srid=%v", key, tileSRID)
 		}
 
 		// use the URL path as the key
@@ -109,6 +126,16 @@ func TileCacheHandler(a *atlas.Atlas, next http.Handler) http.Handler {
 // so a line per request would say nothing extra.
 var warnUnflushable sync.Once
 
+func cacheKeyMapName(keyPath string) string {
+	keyParts := strings.Split(strings.TrimLeft(keyPath, "/"), "/")
+	if len(keyParts) == 0 {
+		return ""
+	}
+	return keyParts[0]
+}
+
+// The concrete return type is from the layered-cache branch: the handler calls
+// Flush() on it directly, which an http.ResponseWriter does not expose.
 func newTileCacheResponseWriter(resp http.ResponseWriter, w io.Writer) *tileCacheResponseWriter {
 	return &tileCacheResponseWriter{
 		resp:  resp,

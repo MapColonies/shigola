@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-spatial/geom/encoding/mvt"
-	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/internal/faketier"
 	"github.com/go-spatial/tegola/server"
@@ -67,7 +66,11 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 			tier := faketier.New("blocking")
 			tier.GateOn(faketier.OpSet, gate)
 
-			a := &atlas.Atlas{}
+			// A real map, not a bare atlas: the middleware looks the map up to
+			// get its tile-grid SRID before it parses the cache key, and
+			// bypasses the cache entirely when the lookup fails. Without one
+			// the gate below is never entered and this test hangs.
+			a := newTestMapWithLayers(testLayer1)
 			a.SetCache(tier)
 
 			tileHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +84,7 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
-			req, err := http.NewRequest(http.MethodGet, srv.URL+"/maps/osm/1/1/1.pbf", nil)
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/maps/"+testMapName+"/1/1/1.pbf", nil)
 			if err != nil {
 				t.Fatalf("request: %v", err)
 			}
@@ -134,7 +137,7 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 
 			// Sanity: the write really was still blocked throughout.
 			gate.WaitEntered(1)
-			if _, ok := tier.Value(&cache.Key{MapName: "osm", Z: 1, X: 1, Y: 1}); ok {
+			if _, ok := tier.Value(&cache.Key{MapName: testMapName, Z: 1, X: 1, Y: 1}); ok {
 				t.Error("the cache write completed, so this proved nothing")
 			}
 		}
@@ -158,7 +161,7 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 // the test above — it is what passed while the flush no-opped — but it fails
 // fast and names the type if either wrapper loses its Flush.
 func TestResponseWritersAreFlushers(t *testing.T) {
-	a := &atlas.Atlas{}
+	a := newTestMapWithLayers(testLayer1)
 	a.SetCache(faketier.New("noop"))
 
 	var (
@@ -178,7 +181,7 @@ func TestResponseWritersAreFlushers(t *testing.T) {
 		server.TileCacheHandler(a, tileHandler).ServeHTTP(w, r)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/maps/osm/1/1/1.pbf", nil)
+	req := httptest.NewRequest(http.MethodGet, "/maps/"+testMapName+"/1/1/1.pbf", nil)
 	req.Header.Set("Accept-Encoding", "gzip;q=0")
 	server.GZipHandler(gzipProbe).ServeHTTP(httptest.NewRecorder(), req)
 
@@ -193,7 +196,7 @@ func TestResponseWritersAreFlushers(t *testing.T) {
 // TestFlushWithoutAFlushableWriter — a response writer that cannot be flushed
 // must degrade to today's behaviour rather than panicking, and say so once.
 func TestFlushWithoutAFlushableWriter(t *testing.T) {
-	a := &atlas.Atlas{}
+	a := newTestMapWithLayers(testLayer1)
 	a.SetCache(faketier.New("noop"))
 
 	tileHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +205,7 @@ func TestFlushWithoutAFlushableWriter(t *testing.T) {
 		w.Write(gzipTile(t, "tile"))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/maps/osm/1/1/1.pbf", nil)
+	req := httptest.NewRequest(http.MethodGet, "/maps/"+testMapName+"/1/1/1.pbf", nil)
 	w := &unflushableWriter{ResponseRecorder: httptest.NewRecorder()}
 
 	server.TileCacheHandler(a, tileHandler).ServeHTTP(w, req)
