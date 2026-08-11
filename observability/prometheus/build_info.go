@@ -34,7 +34,13 @@ func NewBuildInfo(registry prometheus.Registerer) {
 			},
 		)
 	}
-	registry.MustRegister(BuildInfo)
+
+	// Not MustRegister: NewBuildInfo runs on every prometheus.New, and every
+	// observer registers against the same process-wide default registry — so
+	// constructing a second observer panicked here, before it could do anything
+	// else. That made SetObservability effectively single-shot, which the
+	// layered cache's idempotent re-instrumentation depends on not being.
+	BuildInfo = registerOrReuse(registry, BuildInfo)
 }
 
 func PublishBuildInfo() {

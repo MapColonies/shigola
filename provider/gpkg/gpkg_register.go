@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	conf "github.com/go-spatial/tegola/config"
 	_ "github.com/mattn/go-sqlite3"
@@ -41,7 +42,8 @@ type featureTableDetails struct {
 }
 
 // Creates a config instance of the type NewTileProvider() requires including all available feature
-//    tables in the gpkg at 'gpkgPath'.
+//
+//	tables in the gpkg at 'gpkgPath'.
 func AutoConfig(gpkgPath string) (map[string]interface{}, error) {
 	// Get all feature tables
 	db, err := sql.Open("sqlite3", gpkgPath)
@@ -395,25 +397,39 @@ func NewTileProvider(config dict.Dicter, maps []provider.Map) (provider.Tiler, e
 	}
 
 	// track the provider so we can clean it up later
+	providersLock.Lock()
 	providers = append(providers, p)
+	providersLock.Unlock()
 
 	return &p, err
 }
 
 // reference to all instantiated providers
-var providers []Provider
+//
+// Guarded, because NewTileProvider can be called concurrently — config
+// registration builds providers in sequence, but nothing stops a caller doing
+// otherwise, and the test suite does. Cleanup then races an append.
+var (
+	providersLock sync.Mutex
+	providers     []Provider
+)
 
 // Cleanup will close all database connections and destroy all previously instantiated Provider instances
 func Cleanup() {
-	if len(providers) > 0 {
+	providersLock.Lock()
+	// take the slice and release the lock before closing, so a Close that
+	// blocks does not hold up an unrelated NewTileProvider
+	closing := providers
+	providers = make([]Provider, 0)
+	providersLock.Unlock()
+
+	if len(closing) > 0 {
 		log.Infof("cleaning up gpkg providers")
 	}
 
-	for i := range providers {
-		if err := providers[i].Close(); err != nil {
+	for i := range closing {
+		if err := closing[i].Close(); err != nil {
 			log.Errorf("err closing connection: %v", err)
 		}
 	}
-
-	providers = make([]Provider, 0)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-spatial/geom/encoding/mvt"
 
 	"github.com/go-spatial/tegola/atlas"
+	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/cmd/internal/register"
 	"github.com/go-spatial/tegola/config"
 	"github.com/go-spatial/tegola/dict"
@@ -81,13 +82,13 @@ func init() {
 	// check if a cache backend is provided
 	if len(conf.Cache) != 0 {
 		// register the cache backend
-		cache, err := register.Cache(conf.Cache)
+		cacher, err := register.Cache(conf.Cache)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
 		}
-		if cache != nil {
-			atlas.SetCache(cache)
+		if cacher != nil {
+			atlas.SetCache(cacher)
 		}
 	}
 
@@ -119,13 +120,30 @@ func init() {
 	mux = server.NewRouter(nil)
 }
 
+// synchronousCacheWrites makes every request write to the cache inline.
+//
+// Lambda freezes the execution environment as soon as the handler returns, so a
+// detached write has no goroutine left to run on: it is lost, silently, on
+// every cache miss. There is no shutdown hook to drain from either — a freeze
+// is not a shutdown.
+//
+// The cost is the one detachment exists to avoid: the response waits on the
+// cache save. On Lambda that trade is already made for us, since billing runs
+// until the handler returns and a background write would be unbilled and
+// unfinished rather than free.
+func synchronousCacheWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(cache.WithSynchronousWrites(r.Context())))
+	})
+}
+
 func main() {
 	build.Commands = []string{"lambda"}
 	// the second argument here tells algnhsa to watch for the MVT MimeType Content-Type headers
 	// if it detects this in the response the payload will be base64 encoded. Lambda needs to be configured
 	// to handle binary responses so it can convert the base64 encoded payload back into binary prior
 	// to sending to the client
-	algnhsa.ListenAndServe(mux, &algnhsa.Options{
+	algnhsa.ListenAndServe(synchronousCacheWrites(mux), &algnhsa.Options{
 		BinaryContentTypes: []string{mvt.MimeType},
 		UseProxyPath:       true,
 	})

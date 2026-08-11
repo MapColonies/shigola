@@ -58,8 +58,11 @@ jobs:
         # The credentials were exposed on purpose
         # more information see: https://github.com/go-spatial/tegola/pull/893#discussion_r1136602372
         HANA_CONNECTION_STRING: "hdb://TEGOLACI:iZgd6$nOdhf@917df316-4e01-4a10-be54-eac1b6ab15fb.hana.prod-us10.hanacloud.ondemand.com:443?TLSInsecureSkipVerify&TLSServerName=host&timeout=1000&max_connections=10"
+      # -race, not just -covermode atomic: atomic is race-safe *counting*, not
+      # race *detection*. The cache write path runs a goroutine pool, detached
+      # contexts and a concurrent tier fan-out, none of which -covermode checks.
       run: |
-        go test -mod vendor -covermode atomic -coverprofile=profile.cov ./...
+        go test -mod vendor -race -covermode atomic -coverprofile=profile.cov ./...
 
     - name: Send coverage report to Coveralls
       env:

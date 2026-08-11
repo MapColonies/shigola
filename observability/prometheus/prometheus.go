@@ -2,6 +2,7 @@ package prometheus
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -34,6 +35,13 @@ const (
 
 	httpAPI    = "tegola_api"
 	httpViewer = "tegola_viewer"
+
+	// cachePrefix is the whole-cache family: one hit means "served from
+	// somewhere". No tier label.
+	cachePrefix = "tegola_cache"
+	// tierCachePrefix is the per-tier family, carrying a tier label. Its
+	// cardinality is the whole-cache cardinality multiplied by the tier count.
+	tierCachePrefix = "tegola_cache_tier"
 )
 
 func init() {
@@ -156,8 +164,28 @@ func (obs *observer) Shutdown() {
 	cleanUpFunctionsLck.Unlock()
 }
 
+// MustRegister registers collectors, treating an exact duplicate as a no-op.
+//
+// The registry is process-wide, so anything registered from a per-object
+// lifecycle — the cache write-pool collectors, per-map collectors — is
+// registered again whenever that object is rebuilt or a second observer is
+// constructed. MustRegister on the raw registry panics on that, which makes
+// SetObservability single-shot in practice.
+//
+// Only AlreadyRegisteredError is tolerated, and that is narrow: the registry
+// returns it when an *equal* collector is already present. A genuinely
+// conflicting registration — same metric name, different label dimensions —
+// returns a different error and still panics, which is what should happen.
 func (obs *observer) MustRegister(collectors ...observability.Collector) {
-	obs.registry.MustRegister(collectors...)
+	for _, c := range collectors {
+		if err := obs.registry.Register(c); err != nil {
+			var already prometheus.AlreadyRegisteredError
+			if errors.As(err, &already) {
+				continue
+			}
+			panic(err)
+		}
+	}
 }
 
 func (_ *observer) CollectorConfig(_ string) map[string]interface{} {
@@ -197,8 +225,37 @@ func (obs *observer) InstrumentedCache(cacheObject tegolaCache.Interface) tegola
 		// if we are nil assume no metrics recording is going to happen
 		return cacheObject
 	}
-	return newCache(obs.registry, "tegola_cache", obs.observeVars, cacheObject)
+	return newCache(obs.registry, cachePrefix, obs.observeVars, cacheObject)
 }
+
+// InstrumentedTierCache instruments one tier of a composite cache.
+//
+// A separate metric family, not the same one with a tier label added. Two
+// reasons, and the second would matter on its own:
+//
+// It panics otherwise. WrapRegistererWith merges the label into constLabels,
+// const label *names* feed dimHash, and the registry rejects a second
+// descriptor with the same fully-qualified name and a different dimHash —
+// through MustRegister, which panics rather than returning. Registering
+// tegola_cache_hits_total once without a tier label and once with one would
+// therefore fail at startup on the first chain deployment with an observer
+// configured.
+//
+// And they count different things. A whole-cache hit is one tile served from
+// somewhere in the chain; tier hits are per-tier lookups, several per request.
+// sum(tegola_cache_tier_hits_total) is *not* the chain hit count, and separate
+// names make that impossible to get wrong by accident.
+func (obs *observer) InstrumentedTierCache(tier string, cacheObject tegolaCache.Interface) tegolaCache.Interface {
+	if obs == nil {
+		return cacheObject
+	}
+
+	registry := prometheus.WrapRegistererWith(prometheus.Labels{"tier": tier}, obs.registry)
+
+	return newCache(registry, tierCachePrefix, obs.observeVars, cacheObject)
+}
+
+var _ observability.TieredCacheObserver = (*observer)(nil)
 
 var (
 	cleanUpFunctionsLck sync.Mutex

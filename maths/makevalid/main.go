@@ -252,13 +252,19 @@ func destructure5(ctx context.Context, hm hitmap.Interface, cpbx *geom.Extent, p
 					continue
 				}
 			}
-			ringCols[i], err = plyg.BuildRingCol(
+			// col and err are declared here, not assigned to the enclosing
+			// scope's err: every worker shares that variable, so assigning to
+			// it from numWorkers goroutines is a data race. Nothing reads it
+			// after wg.Wait() — the function re-checks ctx.Err() instead — so
+			// scoping the error to the worker changes no behaviour.
+			col, err := plyg.BuildRingCol(
 				ctx,
 				hm,
 				x2pts[xs[i]],
 				x2pts[xs[i+1]],
 				pt2MaxY,
 			)
+			ringCols[i] = col
 			if err != nil {
 				switch err {
 				case context.Canceled:

@@ -1,0 +1,32 @@
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    container_name: tegola-dev
+    command: sleep infinity
+    working_dir: /workspace/tegola
+    volumes:
+      - ..:/workspace/tegola:cached
+      - go-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      CGO_ENABLED: "1"
+      PGHOST: postgis
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_started
+      postgis:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+volumes:
+  go-cache:
+  go-build-cache:

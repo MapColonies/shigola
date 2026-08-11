@@ -85,3 +85,16 @@ func (w *gzipDecompressResponseWriter) WriteHeader(i int) {
 	w.status = i
 	w.resp.WriteHeader(i)
 }
+
+// Flush forwards to the wrapped writer if it can be flushed.
+//
+// Without this the tile cache middleware's flush silently no-ops for every
+// client that does not send Accept-Encoding: gzip — which is ordinary traffic,
+// not a corner case, since GZipHandler substitutes this wrapper for exactly
+// those requests. Asserting http.Flusher on the cache middleware's own writer
+// looks like it covers the case and does not.
+func (w *gzipDecompressResponseWriter) Flush() {
+	if f, ok := w.resp.(http.Flusher); ok {
+		f.Flush()
+	}
+}
