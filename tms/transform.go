@@ -75,7 +75,27 @@ func (t webMercatorTransformer) ToGeographic(x, y float64) (float64, float64, er
 	lon := x / t.radius * 180.0 / math.Pi
 	lat := (2*math.Atan(math.Exp(y/t.radius)) - math.Pi/2) * 180.0 / math.Pi
 
-	return lon, lat, nil
+	return wrapLongitude(lon), lat, nil
+}
+
+// wrapLongitude brings a longitude back into [-180, 180] by whole turns.
+//
+// PROJ normalises longitude this way, so morecantile's own test pins the wrapped
+// value for an x far outside the grid — the arithmetic alone would report
+// something like -254 degrees. Values already in range are returned untouched, so
+// that +180 stays +180 rather than folding to -180 and inverting the grid's
+// eastern edge.
+func wrapLongitude(lon float64) float64 {
+	if lon >= -180 && lon <= 180 {
+		return lon
+	}
+
+	wrapped := math.Mod(lon+180, 360)
+	if wrapped < 0 {
+		wrapped += 360
+	}
+
+	return wrapped - 180
 }
 
 func (t webMercatorTransformer) FromGeographic(lon, lat float64) (float64, float64, error) {

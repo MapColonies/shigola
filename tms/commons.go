@@ -42,18 +42,12 @@ type BoundingBox struct {
 	Top    float64
 }
 
-// validateTile rejects a tile whose zoom could not name a TileMatrix.
+// There is deliberately no tile-validation helper here.
 //
-// It stands in for morecantile's _parse_tile_arg, which mostly exists to accept
-// either a Tile or three loose ints — an arity Go's type system already
-// guarantees. What remains is the zoom check, so this validates rather than
-// converting.
-func validateTile(t Tile) error {
-	if t.Z < 0 {
-		return TileArgParsingError{
-			Message: fmt.Sprintf("tile zoom must not be negative, got %d", t.Z),
-		}
-	}
-
-	return nil
-}
+// morecantile's _parse_tile_arg exists to accept either a Tile or three loose
+// ints, an arity Go's type system already guarantees, and it performs no range
+// check of its own. In particular a negative zoom is a legitimate tile index:
+// OGC types a tileMatrix id as ^-?[0-9]+$, and CDB1GlobalGrid really does define
+// zoom levels -10 through 21. Rejecting negative zooms would make that grid
+// unusable. Whether a zoom names a matrix at all is Matrix's business, and
+// whether a tile lies inside the matrix is IsValid's.

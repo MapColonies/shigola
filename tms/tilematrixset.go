@@ -13,6 +13,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-spatial/geom"
 )
@@ -239,10 +240,21 @@ func (t *TileMatrixSet) Matrix(zoom int) (TileMatrix, error) {
 			zoom)}
 	}
 
+	// Synthesis only ever extends the grid downwards, past its deepest matrix.
+	// A zoom below the shallowest matrix, or one missing from the middle of the
+	// range, cannot be derived by extending the scale ratio and must be an error
+	// — returning the deepest matrix instead would silently answer with the wrong
+	// resolution. morecantile loops forever on both inputs.
 	if zoom < t.MinZoom() {
 		return TileMatrix{}, InvalidZoomError{Message: fmt.Sprintf(
 			"tileMatrix not found for level %d: below the TileMatrixSet's minimum zoom (%d)",
 			zoom, t.MinZoom())}
+	}
+
+	if zoom <= t.MaxZoom() {
+		return TileMatrix{}, InvalidZoomError{Message: fmt.Sprintf(
+			"tileMatrix not found for level %d: it is missing from the TileMatrixSet's range (%d..%d)",
+			zoom, t.MinZoom(), t.MaxZoom())}
 	}
 
 	ratio, err := t.scaleRatio()
@@ -372,10 +384,6 @@ func (t *TileMatrixSet) MinMax(zoom int) (Extrema, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.is_valid.
 func (t *TileMatrixSet) IsValid(tile Tile, strict bool) bool {
-	if err := validateTile(tile); err != nil {
-		return false
-	}
-
 	disableOverzoom := t.variable || strict
 	if tile.Z < t.MinZoom() || (disableOverzoom && tile.Z > t.MaxZoom()) {
 		return false
@@ -526,10 +534,6 @@ func (t *TileMatrixSet) LowerRightXY(tile Tile) (Coords, error) {
 // tileFrame resolves the matrix, coalesce factor and origin a tile's geometry
 // is computed against — the common preamble of the corner and bounds methods.
 func (t *TileMatrixSet) tileFrame(tile Tile) (TileMatrix, int64, Coords, error) {
-	if err := validateTile(tile); err != nil {
-		return TileMatrix{}, 0, Coords{}, err
-	}
-
 	m, err := t.Matrix(tile.Z)
 	if err != nil {
 		return TileMatrix{}, 0, Coords{}, err
@@ -917,10 +921,6 @@ func (t *TileMatrixSet) Neighbors(tile Tile) ([]Tile, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.parent.
 func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
-	if err := validateTile(tile); err != nil {
-		return nil, err
-	}
-
 	if tile.Z == t.MinZoom() {
 		return nil, nil
 	}
@@ -943,10 +943,6 @@ func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.children.
 func (t *TileMatrixSet) Children(tile Tile, zoom int) ([]Tile, error) {
-	if err := validateTile(tile); err != nil {
-		return nil, err
-	}
-
 	if zoom >= 0 && tile.Z > zoom {
 		return nil, InvalidZoomError{Message: "zoom must be greater than that of the input tile"}
 	}
@@ -1011,9 +1007,9 @@ func (t *TileMatrixSet) relatives(tile Tile, targetZoom int) ([]Tile, error) {
 	return tiles, nil
 }
 
-// sortedTiles returns the set's tiles ordered by z, then y, then x — the
-// ordering Python's sorted() gives a set of (x, y, z) named tuples, adjusted for
-// this port's field order.
+// sortedTiles returns the set's tiles ordered by x, then y, then z — the ordering
+// Python's sorted() gives a set of (x, y, z) named tuples, which morecantile's
+// neighbour expectations are written against.
 func sortedTiles(set map[Tile]struct{}) []Tile {
 	out := make([]Tile, 0, len(set))
 	for tile := range set {
@@ -1045,13 +1041,17 @@ func (t *TileMatrixSet) Quadkey(tile Tile) (string, error) {
 		return "", NoQuadkeySupportError{Identifier: t.def.ID}
 	}
 
-	if err := validateTile(tile); err != nil {
-		return "", err
-	}
-
-	qk := make([]byte, 0, tile.Z)
+	qk := make([]byte, 0, max(tile.Z, 0))
 
 	for z := tile.Z; z > t.MinZoom(); z-- {
+		// A quadkey digit is read off bit z-1 of the indices, so a zoom at or
+		// below zero has no bit to read. Go panics on a negative shift count
+		// where Python raises, so this reports the same condition as an error.
+		if z < 1 {
+			return "", QuadKeyError{Message: fmt.Sprintf(
+				"cannot form a quadkey digit at zoom %d; quadkeys need zoom levels above zero", z)}
+		}
+
 		digit := 0
 		mask := int64(1) << (z - 1)
 
@@ -1150,7 +1150,9 @@ func (t *TileMatrixSet) ZoomForRes(res float64, minZoom, maxZoom int, strategy s
 	}
 
 	if zoomLevel > 0 && math.Abs(res-matrixRes)/matrixRes > 1e-8 {
-		switch strategy {
+		// morecantile lower-cases the strategy before comparing, so "LOWER" and
+		// "Auto" are accepted too.
+		switch strings.ToLower(strategy) {
 		case ZoomStrategyLower:
 			zoomLevel = max(zoomLevel-1, minZoom)
 		case ZoomStrategyUpper:
@@ -1263,7 +1265,11 @@ func (t *TileMatrixSet) Feature(tile Tile, opts FeatureOptions) (map[string]any,
 		},
 	}
 
-	if opts.Projected {
+	// GeoJSON is defined in WGS 84, so a feature only names its CRS when it is in
+	// some other one. A grid that is already EPSG:4326 therefore emits no crs
+	// member even when asked for projected coordinates, matching morecantile's
+	// `if feature_crs != WGS84_CRS` guard.
+	if opts.Projected && normalizeCRSKey(t.crs.authority, t.crs.code) != "EPSG:4326" {
 		feat["crs"] = map[string]any{
 			"type":       "name",
 			"properties": map[string]any{"name": t.crs.uri},
