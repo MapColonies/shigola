@@ -60,6 +60,28 @@ func CreateOptions(c dict.Dicter) (opts *redis.Options, err error) {
 			return nil, err
 		}
 
+		// An explicit password key overrides whatever the uri carried. A uri is
+		// parsed by net/url, so a password has to survive percent-decoding to
+		// appear in one: '^', '[', '{', '|', '<', a space and a backslash are
+		// rejected outright, a bare '%' is read as a broken escape, and a '#'
+		// truncates the uri at that point — quietly, when what follows still
+		// parses. Percent-encoding solves all of that, but only if the operator
+		// knows to do it, and the failure it prevents is an authentication error
+		// several layers from its cause. This key is the way to hand redis a
+		// password verbatim while the uri keeps describing the connection.
+		//
+		// Presence wins rather than non-emptiness: password = "" asks for no
+		// password, and silently falling back to the uri's would be the same
+		// class of surprise this exists to remove.
+		if v, ok := c.Interface(ConfigKeyPassword); ok && v != nil {
+			password, err := c.String(ConfigKeyPassword, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			opts.Password = password
+		}
+
 		return opts, nil
 	}
 
