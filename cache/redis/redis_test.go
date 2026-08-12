@@ -67,6 +67,14 @@ func TestCreateOptions(t *testing.T) {
 				t.Fatalf("unexpected error: %q", err)
 				return
 			}
+			// Without this the case falls through to compareOptions with a nil
+			// tc.expected — a segfault that takes the whole binary down and every
+			// other subtest's result with it, rather than one clean failure.
+			// TestNew guards the same way.
+			if tc.expectedErr != nil && err == nil {
+				t.Fatalf("expected err %v, got nil", tc.expectedErr)
+				return
+			}
 			if tc.expectedErr != nil && err != nil {
 				if reflect.TypeOf(err) != reflect.TypeOf(tc.expectedErr) {
 					t.Errorf("invalid error type. expected %T, got %T", tc.expectedErr, err)
@@ -125,6 +133,70 @@ func TestCreateOptions(t *testing.T) {
 				DB:       0,
 				Addr:     "127.0.0.1:6379",
 				Password: "",
+			},
+		},
+		// A password with characters a uri cannot carry literally. Every one of
+		// these breaks or is silently mangled inside a uri unless percent-encoded;
+		// the point of the key is that it needs no encoding at all.
+		"test uri with password key": {
+			config: map[string]any{
+				"uri":      "redis://127.0.0.1:6379/0",
+				"password": "Aa1^%$#!",
+			},
+			expected: &goredis.Options{
+				Network:  "tcp",
+				DB:       0,
+				Addr:     "127.0.0.1:6379",
+				Password: "Aa1^%$#!",
+			},
+		},
+		"test password key overrides the uri password": {
+			config: map[string]any{
+				"uri":      "redis://user:fromuri@127.0.0.1:6379/0",
+				"password": "fromkey",
+			},
+			expected: &goredis.Options{
+				Network:  "tcp",
+				DB:       0,
+				Addr:     "127.0.0.1:6379",
+				Password: "fromkey",
+			},
+		},
+		// present but empty asks for no password, rather than falling back to
+		// the one in the uri
+		"test empty password key clears the uri password": {
+			config: map[string]any{
+				"uri":      "redis://user:fromuri@127.0.0.1:6379/0",
+				"password": "",
+			},
+			expected: &goredis.Options{
+				Network:  "tcp",
+				DB:       0,
+				Addr:     "127.0.0.1:6379",
+				Password: "",
+			},
+		},
+		// absent leaves the uri's password alone — the pre-existing behaviour
+		"test uri password survives an absent password key": {
+			config: map[string]any{
+				"uri": "redis://user:fromuri@127.0.0.1:6379/0",
+			},
+			expected: &goredis.Options{
+				Network:  "tcp",
+				DB:       0,
+				Addr:     "127.0.0.1:6379",
+				Password: "fromuri",
+			},
+		},
+		"test bad password with uri": {
+			config: map[string]any{
+				"uri":      "redis://127.0.0.1:6379/0",
+				"password": 1,
+			},
+			expectedErr: dict.ErrKeyType{
+				Key:   "password",
+				Value: 1,
+				T:     reflect.TypeOf(""),
 			},
 		},
 		"test ssl config": {
