@@ -44,12 +44,12 @@ func TestMetersPerUnit(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			nfo, err := tc.crs.info()
+			meta, err := tc.crs.info()
 			if err != nil {
 				t.Fatalf("resolving CRS info: %v", err)
 			}
 
-			got, err := metersPerUnit(nfo)
+			got, err := meta.metersPerUnit()
 			if err != nil {
 				t.Fatalf("metersPerUnit: %v", err)
 			}
@@ -72,77 +72,89 @@ func TestMetersPerUnitUnsupportedCRS(t *testing.T) {
 }
 
 func TestLonsContainAntimeridian(t *testing.T) {
-	tests := []struct {
+	tests := map[string]struct {
 		lon1, lon2 float64
 		expected   bool
 	}{
-		{-180, 180, false},
-		{179, -179, true},
+		"whole world does not contain it": {lon1: -180, lon2: 180, expected: false},
+		"straddling pair contains it":     {lon1: 179, lon2: -179, expected: true},
 	}
 
-	for _, tc := range tests {
-		if got := lonsContainAntimeridian(tc.lon1, tc.lon2); got != tc.expected {
-			t.Errorf("lonsContainAntimeridian(%v, %v) = %v, want %v",
-				tc.lon1, tc.lon2, got, tc.expected)
-		}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := lonsContainAntimeridian(tc.lon1, tc.lon2); got != tc.expected {
+				t.Errorf("lonsContainAntimeridian(%v, %v) = %v, want %v",
+					tc.lon1, tc.lon2, got, tc.expected)
+			}
+		})
 	}
 }
 
 func TestIsPowerOfTwo(t *testing.T) {
-	for _, tc := range []struct {
+	tests := map[string]struct {
 		n        int64
 		expected bool
 	}{
-		{8, true},
-		{7, false},
-		{1, true},
-		{0, false},
-	} {
-		if got := isPowerOfTwo(tc.n); got != tc.expected {
-			t.Errorf("isPowerOfTwo(%d) = %v, want %v", tc.n, got, tc.expected)
-		}
+		"eight": {n: 8, expected: true},
+		"seven": {n: 7, expected: false},
+		"one":   {n: 1, expected: true},
+		"zero":  {n: 0, expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := isPowerOfTwo(tc.n); got != tc.expected {
+				t.Errorf("isPowerOfTwo(%d) = %v, want %v", tc.n, got, tc.expected)
+			}
+		})
 	}
 }
 
 func TestTruncateCoordinates(t *testing.T) {
 	bbox := BoundingBox{Left: -180, Bottom: -90, Right: 180, Top: 90}
 
-	tests := []struct {
+	tests := map[string]struct {
 		lng, lat         float64
 		wantLng, wantLat float64
 	}{
-		{-181, 0, -180, 0},
-		{181, 0, 180, 0},
-		{0, -91, 0, -90},
-		{0, 91, 0, 90},
-		{10, 20, 10, 20},
+		"west of the box":   {lng: -181, lat: 0, wantLng: -180, wantLat: 0},
+		"east of the box":   {lng: 181, lat: 0, wantLng: 180, wantLat: 0},
+		"south of the box":  {lng: 0, lat: -91, wantLng: 0, wantLat: -90},
+		"north of the box":  {lng: 0, lat: 91, wantLng: 0, wantLat: 90},
+		"inside is untouch": {lng: 10, lat: 20, wantLng: 10, wantLat: 20},
 	}
 
-	for _, tc := range tests {
-		gotLng, gotLat := truncateCoordinates(tc.lng, tc.lat, bbox)
-		if gotLng != tc.wantLng || gotLat != tc.wantLat {
-			t.Errorf("truncateCoordinates(%v, %v) = (%v, %v), want (%v, %v)",
-				tc.lng, tc.lat, gotLng, gotLat, tc.wantLng, tc.wantLat)
-		}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			gotLng, gotLat := truncateCoordinates(tc.lng, tc.lat, bbox)
+			if gotLng != tc.wantLng || gotLat != tc.wantLat {
+				t.Errorf("truncateCoordinates(%v, %v) = (%v, %v), want (%v, %v)",
+					tc.lng, tc.lat, gotLng, gotLat, tc.wantLng, tc.wantLat)
+			}
+		})
 	}
 }
 
 func TestPointInBBox(t *testing.T) {
 	bbox := BoundingBox{Left: -10, Bottom: -10, Right: 10, Top: 10}
 
-	for _, tc := range []struct {
+	tests := map[string]struct {
 		point    Coords
 		expected bool
 	}{
-		{Coords{0, 0}, true},
-		{Coords{-10, -10}, true},
-		{Coords{10, 10}, true},
-		{Coords{10.00001, 0}, false},
-		{Coords{0, -10.00001}, false},
-	} {
-		if got := pointInBBox(tc.point, bbox, defaultPointInBBoxPrecision); got != tc.expected {
-			t.Errorf("pointInBBox(%v) = %v, want %v", tc.point, got, tc.expected)
-		}
+		"centre":             {point: Coords{X: 0, Y: 0}, expected: true},
+		"lower-left corner":  {point: Coords{X: -10, Y: -10}, expected: true},
+		"upper-right corner": {point: Coords{X: 10, Y: 10}, expected: true},
+		"just east of it":    {point: Coords{X: 10.00001, Y: 0}, expected: false},
+		"just south of it":   {point: Coords{X: 0, Y: -10.00001}, expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := pointInBBox(tc.point, bbox, defaultPointInBBoxPrecision); got != tc.expected {
+				t.Errorf("pointInBBox(%v) = %v, want %v", tc.point, got, tc.expected)
+			}
+		})
 	}
 }
 

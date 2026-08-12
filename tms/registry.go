@@ -116,6 +116,10 @@ func (r *Registry) Register(id string, ctor Factory) error {
 
 // Replace registers a grid factory, overriding any existing registration and
 // discarding anything already cached for that id.
+//
+// This is the Go spelling of morecantile's register(custom_tms, overwrite=True),
+// and exists for the same reason: a deployment may need to serve a locally
+// corrected definition of a bundled grid.
 func (r *Registry) Replace(id string, ctor Factory) error {
 	if id == "" {
 		return InvalidIdentifierError{Identifier: id}
@@ -228,6 +232,9 @@ func Registered() []string { return Default.Registered() }
 // Register adds a grid factory to the Default registry.
 func Register(id string, ctor Factory) error { return Default.Register(id, ctor) }
 
+// Available reports whether a grid is registered and servable by this build.
+func Available(id string) bool { return Default.Available(id) }
+
 func init() {
 	if err := registerBundled(Default); err != nil {
 		// The bundled definitions are compiled in, so a failure here means the
@@ -245,7 +252,7 @@ func registerBundled(r *Registry) error {
 	}
 
 	if len(entries) == 0 {
-		return errors.New("no embedded grid definitions found")
+		return errors.New("tms: no embedded grid definitions found")
 	}
 
 	for _, entry := range entries {
@@ -291,24 +298,22 @@ func bundledFactory(id, entry string) Factory {
 // gatingReason reports why a grid is not activated in this build, or nil when it
 // is servable.
 //
-// Note that the two reasons are genuinely different: most gated grids are
-// projected and simply have no arithmetic Transformer, but the variable-width
-// grids are geographic — a transform exists — and are held back because
-// coalesced columns do not fit tegola's tile pipeline.
+// The three reasons are genuinely different, and each must name itself honestly.
+// Most gated grids are projected and have no arithmetic Transformer. The
+// variable-width grids are geographic — a transform does exist — and are held
+// back because coalesced columns do not fit tegola's tile pipeline. The last case
+// is a grid this build could serve but has not been asked to.
 func gatingReason(grid *TileMatrixSet) error {
-	if !grid.TransformAvailable() {
+	switch {
+	case !grid.TransformAvailable():
 		return ErrNoTransformBackend
-	}
-
-	if grid.IsVariable() {
+	case grid.IsVariable():
 		return ErrVariableWidthUnsupported
+	case !activeGrids[grid.ID()]:
+		return ErrGridNotActivated
+	default:
+		return nil
 	}
-
-	if !activeGrids[grid.ID()] {
-		return fmt.Errorf("%w: not in this build's activation set", ErrNoTransformBackend)
-	}
-
-	return nil
 }
 
 // LoadDefinition returns a bundled grid definition and its original JSON,

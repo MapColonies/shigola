@@ -21,7 +21,16 @@ var ErrNoTransformBackend = errors.New("tms: no coordinate transform backend for
 // ErrTMSVersion1 is returned when parsing a TileMatrixSet document that uses
 // OGC TMS 1.0 keywords (supportedCRS / topLeftCorner). Only TMS 2.0 documents
 // are supported, matching morecantile's DeprecationError.
-var ErrTMSVersion1 = errors.New("tms: TileMatrixSet document must be version 2.0 (found 1.0 keywords supportedCRS/topLeftCorner)")
+var ErrTMSVersion1 = errors.New("tms: tileMatrixSet document must be version 2.0, found the 1.0 keywords supportedCRS or topLeftCorner")
+
+// ErrGridNotActivated reports a grid this build is capable of serving but does
+// not list in its activation set.
+//
+// It exists so that the activation set stays the authority on which grids are
+// offered: a grid that gains a transform backend does not become available until
+// it is deliberately activated, and until then it says so accurately rather than
+// borrowing ErrNoTransformBackend's reason.
+var ErrGridNotActivated = errors.New("tms: tileMatrixSet is not in this build's activation set")
 
 // InvalidIdentifierError reports a tileMatrixSetId that is not registered.
 type InvalidIdentifierError struct {

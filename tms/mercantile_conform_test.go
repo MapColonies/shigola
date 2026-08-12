@@ -136,26 +136,25 @@ func TestMercantileConformExtendedZoom(t *testing.T) {
 		t.Fatalf("MaxZoom = %d, want 24 — this test is about zooms beyond it", grid.MaxZoom())
 	}
 
-	for _, tc := range []struct {
-		x, y int64
-		zoom int
-	}{
-		{1000, 1000, 25},
-		{2000, 2000, 26},
-		{2000, 2000, 27},
-		{2000, 2000, 30},
-	} {
-		tile := Tile{X: tc.x, Y: tc.y, Z: tc.zoom}
+	tests := map[string]Tile{
+		"one level past the deepest matrix": {X: 1000, Y: 1000, Z: 25},
+		"two levels past":                   {X: 2000, Y: 2000, Z: 26},
+		"three levels past":                 {X: 2000, Y: 2000, Z: 27},
+		"six levels past":                   {X: 2000, Y: 2000, Z: 30},
+	}
 
-		got, err := grid.XYBounds(tile)
-		if err != nil {
-			t.Fatalf("XYBounds(%v): %v", tile, err)
-		}
+	for name, tile := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := grid.XYBounds(tile)
+			if err != nil {
+				t.Fatalf("XYBounds(%v): %v", tile, err)
+			}
 
-		want := mercantileXYBounds(tc.x, tc.y, tc.zoom)
+			want := mercantileXYBounds(tile.X, tile.Y, tile.Z)
 
-		assertBoundsClose(t, got, [4]float64{want.Left, want.Bottom, want.Right, want.Top},
-			"synthesised XYBounds"+tile.String())
+			assertBoundsClose(t, got, [4]float64{want.Left, want.Bottom, want.Right, want.Top},
+				"synthesised XYBounds"+tile.String())
+		})
 	}
 }
 

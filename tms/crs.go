@@ -245,7 +245,7 @@ func (c CRS) info() (crsInfo, error) {
 		return crsInfo{}, err
 	}
 
-	nfo, ok := crsTable[id]
+	meta, ok := crsTable[id]
 	if !ok {
 		return crsInfo{}, UnsupportedCRSError{
 			CRS:    id,
@@ -253,7 +253,7 @@ func (c CRS) info() (crsInfo, error) {
 		}
 	}
 
-	return nfo, nil
+	return meta, nil
 }
 
 // parseCRSIdentifier reduces the CRS spellings that appear in TileMatrixSet
@@ -312,32 +312,32 @@ func normalizeCRSKey(authority, code string) string {
 	return strings.ToUpper(authority) + ":" + strings.ToUpper(code)
 }
 
-// CRSToURI returns the canonical OGC definition-server URI for the CRS,
+// ToURI returns the canonical OGC definition-server URI for the CRS,
 // equivalent to morecantile's CRS_to_uri.
-func (c CRS) CRSToURI() (string, error) {
-	nfo, err := c.info()
+func (c CRS) ToURI() (string, error) {
+	meta, err := c.info()
 	if err != nil {
 		return "", err
 	}
 
-	return nfo.uri, nil
+	return meta.uri, nil
 }
 
 // EPSG returns the CRS's EPSG code, or 0 when the CRS is not an EPSG one (for
 // instance OGC:CRS84).
 func (c CRS) EPSG() (uint64, error) {
-	nfo, err := c.info()
+	meta, err := c.info()
 	if err != nil {
 		return 0, err
 	}
 
-	if nfo.authority != "EPSG" {
+	if meta.authority != "EPSG" {
 		return 0, nil
 	}
 
-	code, err := strconv.ParseUint(nfo.code, 10, 64)
+	code, err := strconv.ParseUint(meta.code, 10, 64)
 	if err != nil {
-		return 0, UnsupportedCRSError{CRS: nfo.uri, Reason: "EPSG code is not numeric"}
+		return 0, UnsupportedCRSError{CRS: meta.uri, Reason: "EPSG code is not numeric"}
 	}
 
 	return code, nil
@@ -350,16 +350,16 @@ func (c CRS) EPSG() (uint64, error) {
 // uses metres for the horizontal dimensions then metersPerUnit is 1; if it uses
 // degrees then metersPerUnit is 2*pi*a/360, where a is the ellipsoid's
 // semi-major axis.
-func metersPerUnit(nfo crsInfo) (float64, error) {
-	switch nfo.unit {
+func (c crsInfo) metersPerUnit() (float64, error) {
+	switch c.unit {
 	case unitMetre:
 		return 1.0, nil
 	case unitDegree:
-		return 2 * math.Pi * nfo.semiMajorMetre / 360.0, nil
+		return 2 * math.Pi * c.semiMajorMetre / 360.0, nil
 	default:
 		return 0, UnsupportedCRSError{
-			CRS:    nfo.uri,
-			Reason: fmt.Sprintf("unit %q has no metersPerUnit conversion", nfo.unit),
+			CRS:    c.uri,
+			Reason: fmt.Sprintf("unit %q has no metersPerUnit conversion", c.unit),
 		}
 	}
 }

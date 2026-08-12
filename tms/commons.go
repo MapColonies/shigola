@@ -42,15 +42,18 @@ type BoundingBox struct {
 	Top    float64
 }
 
-// parseTileArg validates a tile the way morecantile's _parse_tile_arg does:
-// Go's type system already guarantees the arity morecantile has to check for,
-// so this only rejects a zoom that cannot name a TileMatrix.
-func parseTileArg(t Tile) (Tile, error) {
+// validateTile rejects a tile whose zoom could not name a TileMatrix.
+//
+// It stands in for morecantile's _parse_tile_arg, which mostly exists to accept
+// either a Tile or three loose ints — an arity Go's type system already
+// guarantees. What remains is the zoom check, so this validates rather than
+// converting.
+func validateTile(t Tile) error {
 	if t.Z < 0 {
-		return Tile{}, TileArgParsingError{
+		return TileArgParsingError{
 			Message: fmt.Sprintf("tile zoom must not be negative, got %d", t.Z),
 		}
 	}
 
-	return t, nil
+	return nil
 }

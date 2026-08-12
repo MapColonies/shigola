@@ -75,12 +75,12 @@ type TileMatrixSet struct {
 // conversions fail. Callers that need a transform should check
 // TransformAvailable — the Registry does this for them.
 func New(def Definition, raw []byte) (*TileMatrixSet, error) {
-	nfo, err := def.CRS.info()
+	crsMeta, err := def.CRS.info()
 	if err != nil {
 		return nil, err
 	}
 
-	mpu, err := metersPerUnit(nfo)
+	metersPerUnit, err := crsMeta.metersPerUnit()
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func New(def Definition, raw []byte) (*TileMatrixSet, error) {
 		}
 	}
 
-	invert := nfo.axisInverted
+	invert := crsMeta.axisInverted
 	if len(def.OrderedAxes) > 0 {
 		invert = orderedAxisInverted(def.OrderedAxes)
 	}
@@ -121,9 +121,9 @@ func New(def Definition, raw []byte) (*TileMatrixSet, error) {
 		raw:           raw,
 		matrixIdx:     idx,
 		invertAxis:    invert,
-		crs:           nfo,
-		metersPerUnit: mpu,
-		transformer:   transformerFor(nfo),
+		crs:           crsMeta,
+		metersPerUnit: metersPerUnit,
+		transformer:   crsMeta.transformer(),
 		quadtree:      checkQuadkeySupport(def.TileMatrices),
 		variable:      variable,
 	}, nil
@@ -372,7 +372,7 @@ func (t *TileMatrixSet) MinMax(zoom int) (Extrema, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.is_valid.
 func (t *TileMatrixSet) IsValid(tile Tile, strict bool) bool {
-	if _, err := parseTileArg(tile); err != nil {
+	if err := validateTile(tile); err != nil {
 		return false
 	}
 
@@ -526,17 +526,16 @@ func (t *TileMatrixSet) LowerRightXY(tile Tile) (Coords, error) {
 // tileFrame resolves the matrix, coalesce factor and origin a tile's geometry
 // is computed against — the common preamble of the corner and bounds methods.
 func (t *TileMatrixSet) tileFrame(tile Tile) (TileMatrix, int64, Coords, error) {
-	parsed, err := parseTileArg(tile)
+	if err := validateTile(tile); err != nil {
+		return TileMatrix{}, 0, Coords{}, err
+	}
+
+	m, err := t.Matrix(tile.Z)
 	if err != nil {
 		return TileMatrix{}, 0, Coords{}, err
 	}
 
-	m, err := t.Matrix(parsed.Z)
-	if err != nil {
-		return TileMatrix{}, 0, Coords{}, err
-	}
-
-	cf, err := m.CoalesceFactor(parsed.Y)
+	cf, err := m.CoalesceFactor(tile.Y)
 	if err != nil {
 		return TileMatrix{}, 0, Coords{}, err
 	}
@@ -550,29 +549,23 @@ func (t *TileMatrixSet) tileFrame(tile Tile) (TileMatrix, int64, Coords, error) 
 // coordinate transform for any grid.
 //
 // Ported from morecantile.models.TileMatrixSet.xy_bounds.
+// The box is composed from the two corners rather than recomputing the same
+// arithmetic a third time. morecantile's xy_bounds does repeat it, but the
+// duplication is not load-bearing: a tile's box is exactly its upper-left and
+// lower-right corners, so composing them keeps the corner-of-origin rule in one
+// place.
 func (t *TileMatrixSet) XYBounds(tile Tile) (BoundingBox, error) {
-	m, cf, origin, err := t.tileFrame(tile)
+	ul, err := t.UpperLeftXY(tile)
 	if err != nil {
 		return BoundingBox{}, err
 	}
 
-	col := math.Floor(float64(tile.X) / float64(cf))
-	spanX := m.CellSize * float64(cf) * float64(m.TileWidth)
-	spanY := m.CellSize * float64(m.TileHeight)
-
-	left := origin.X + col*spanX
-	right := origin.X + (col+1)*spanX
-
-	var bottom, top float64
-	if m.CornerOfOrigin == CornerTopLeft {
-		top = origin.Y - float64(tile.Y)*spanY
-		bottom = origin.Y - float64(tile.Y+1)*spanY
-	} else {
-		bottom = origin.Y + float64(tile.Y)*spanY
-		top = origin.Y + float64(tile.Y+1)*spanY
+	lr, err := t.LowerRightXY(tile)
+	if err != nil {
+		return BoundingBox{}, err
 	}
 
-	return BoundingBox{Left: left, Bottom: bottom, Right: right, Top: top}, nil
+	return BoundingBox{Left: ul.X, Bottom: lr.Y, Right: lr.X, Top: ul.Y}, nil
 }
 
 // UpperLeft returns a tile's upper-left corner in geographic coordinates.
@@ -779,20 +772,19 @@ func (t *TileMatrixSet) Tiles(west, south, east, north float64, zooms []int, tru
 		east, north = truncateCoordinates(east, north, bbox)
 	}
 
-	type box struct{ w, s, e, n float64 }
-
-	boxes := []box{{west, south, east, north}}
+	boxes := []BoundingBox{{Left: west, Bottom: south, Right: east, Top: north}}
 	if west > east {
-		boxes = []box{
-			{bbox.Left, south, east, north},
-			{west, south, bbox.Right, north},
+		// The box crosses the antimeridian, so cover each side separately.
+		boxes = []BoundingBox{
+			{Left: bbox.Left, Bottom: south, Right: east, Top: north},
+			{Left: west, Bottom: south, Right: bbox.Right, Top: north},
 		}
 	}
 
 	var tiles []Tile
 
 	for _, b := range boxes {
-		w, s, e, n := b.w, b.s, b.e, b.n
+		w, s, e, n := b.Left, b.Bottom, b.Right, b.Top
 
 		// Clamp bounding values.
 		esContain180th := lonsContainAntimeridian(e, bbox.Right)
@@ -925,25 +917,24 @@ func (t *TileMatrixSet) Neighbors(tile Tile) ([]Tile, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.parent.
 func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
-	parsed, err := parseTileArg(tile)
-	if err != nil {
+	if err := validateTile(tile); err != nil {
 		return nil, err
 	}
 
-	if parsed.Z == t.MinZoom() {
+	if tile.Z == t.MinZoom() {
 		return nil, nil
 	}
 
-	if zoom >= 0 && parsed.Z <= zoom {
+	if zoom >= 0 && tile.Z <= zoom {
 		return nil, InvalidZoomError{Message: "zoom must be less than that of the input tile"}
 	}
 
-	target := parsed.Z - 1
+	target := tile.Z - 1
 	if zoom >= 0 {
 		target = zoom
 	}
 
-	return t.relatives(parsed, target)
+	return t.relatives(tile, target)
 }
 
 // Children returns the tiles at a deeper zoom covered by a tile.
@@ -952,21 +943,20 @@ func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.children.
 func (t *TileMatrixSet) Children(tile Tile, zoom int) ([]Tile, error) {
-	parsed, err := parseTileArg(tile)
-	if err != nil {
+	if err := validateTile(tile); err != nil {
 		return nil, err
 	}
 
-	if zoom >= 0 && parsed.Z > zoom {
+	if zoom >= 0 && tile.Z > zoom {
 		return nil, InvalidZoomError{Message: "zoom must be greater than that of the input tile"}
 	}
 
-	target := parsed.Z + 1
+	target := tile.Z + 1
 	if zoom >= 0 {
 		target = zoom
 	}
 
-	return t.relatives(parsed, target)
+	return t.relatives(tile, target)
 }
 
 // relatives returns the tiles at targetZoom covering the given tile. It is the
@@ -1055,22 +1045,21 @@ func (t *TileMatrixSet) Quadkey(tile Tile) (string, error) {
 		return "", NoQuadkeySupportError{Identifier: t.def.ID}
 	}
 
-	parsed, err := parseTileArg(tile)
-	if err != nil {
+	if err := validateTile(tile); err != nil {
 		return "", err
 	}
 
-	qk := make([]byte, 0, parsed.Z)
+	qk := make([]byte, 0, tile.Z)
 
-	for z := parsed.Z; z > t.MinZoom(); z-- {
+	for z := tile.Z; z > t.MinZoom(); z-- {
 		digit := 0
 		mask := int64(1) << (z - 1)
 
-		if parsed.X&mask != 0 {
+		if tile.X&mask != 0 {
 			digit++
 		}
 
-		if parsed.Y&mask != 0 {
+		if tile.Y&mask != 0 {
 			digit += 2
 		}
 

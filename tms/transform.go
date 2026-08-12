@@ -105,22 +105,21 @@ func (t unavailableTransformer) err() error {
 	return UnsupportedCRSError{CRS: t.crs, Reason: ErrNoTransformBackend.Error()}
 }
 
-// transformerFor returns the Transformer for a CRS, which is
+// transformer returns the Transformer for the CRS, which is
 // unavailableTransformer when this build has no arithmetic conversion for it.
 //
 // Extending the set of usable grids means adding a case here, not touching any
 // call site.
-func transformerFor(nfo crsInfo) Transformer {
-	if nfo.geographic {
+func (c crsInfo) transformer() Transformer {
+	if c.geographic {
 		return identityTransformer{}
 	}
 
-	key := normalizeCRSKey(nfo.authority, nfo.code)
-	if key == "EPSG:3857" {
-		return webMercatorTransformer{radius: nfo.semiMajorMetre}
+	if normalizeCRSKey(c.authority, c.code) == "EPSG:3857" {
+		return webMercatorTransformer{radius: c.semiMajorMetre}
 	}
 
-	return unavailableTransformer{crs: nfo.uri}
+	return unavailableTransformer{crs: c.uri}
 }
 
 // transformBoundsToGeographic converts a box in the grid's CRS to geographic

@@ -93,8 +93,45 @@ func TestGatedGridsReportWhy(t *testing.T) {
 	}
 }
 
-// Available is a package-level convenience mirroring Registry.Available.
-func Available(id string) bool { return Default.Available(id) }
+// TestGridNotActivatedReason covers the gating branch no bundled grid currently
+// reaches: a grid this build could serve but has not activated.
+//
+// It is worth pinning because the branch is a trap. Wiring a Transformer for, say,
+// EPSG:3395 would move WorldMercatorWGS84Quad into it, and if it borrowed
+// ErrNoTransformBackend the grid would report having no transform while holding
+// one.
+func TestGridNotActivatedReason(t *testing.T) {
+	def, raw, err := LoadDefinition("WorldCRS84Quad")
+	if err != nil {
+		t.Fatalf("LoadDefinition: %v", err)
+	}
+
+	// Geographic CRS, so a transform exists; fixed-width, so not variable; and an
+	// id outside the activation set.
+	def.ID = "SomeUnactivatedGrid"
+
+	grid, err := New(def, raw)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if !grid.TransformAvailable() {
+		t.Fatal("the grid should have a transform, or this test proves nothing")
+	}
+
+	if grid.IsVariable() {
+		t.Fatal("the grid should be fixed-width, or this test proves nothing")
+	}
+
+	reason := gatingReason(grid)
+	if !errors.Is(reason, ErrGridNotActivated) {
+		t.Errorf("gatingReason = %v, want ErrGridNotActivated", reason)
+	}
+
+	if errors.Is(reason, ErrNoTransformBackend) {
+		t.Error("a grid that has a transform must not report ErrNoTransformBackend")
+	}
+}
 
 // TestInvalidIdentifier is morecantile's test_invalid_tms. An unknown id must be
 // distinguishable from a known-but-gated one.

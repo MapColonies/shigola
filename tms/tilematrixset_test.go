@@ -334,23 +334,25 @@ func TestQuadkeyUnsupported(t *testing.T) {
 func TestIsValid(t *testing.T) {
 	grid := mustGrid(t, "WebMercatorQuad")
 
-	tests := []struct {
+	tests := map[string]struct {
 		tile Tile
 		want bool
 	}{
-		{Tile{X: 0, Y: 0, Z: 0}, true},
-		{Tile{X: 1, Y: 0, Z: 0}, false},  // zoom 0 holds only one tile
-		{Tile{X: 0, Y: 0, Z: -1}, false}, // below MinZoom
-		{Tile{X: 0, Y: 0, Z: 24}, true},  // MaxZoom
-		{Tile{X: 0, Y: 0, Z: 25}, false}, // past MaxZoom, strict
-		{Tile{X: -1, Y: 0, Z: 1}, false},
-		{Tile{X: 0, Y: -1, Z: 1}, false},
+		"root tile":                {tile: Tile{X: 0, Y: 0, Z: 0}, want: true},
+		"zoom 0 holds one tile":    {tile: Tile{X: 1, Y: 0, Z: 0}, want: false},
+		"below MinZoom":            {tile: Tile{X: 0, Y: 0, Z: -1}, want: false},
+		"at MaxZoom":               {tile: Tile{X: 0, Y: 0, Z: 24}, want: true},
+		"past MaxZoom when strict": {tile: Tile{X: 0, Y: 0, Z: 25}, want: false},
+		"negative column":          {tile: Tile{X: -1, Y: 0, Z: 1}, want: false},
+		"negative row":             {tile: Tile{X: 0, Y: -1, Z: 1}, want: false},
 	}
 
-	for _, tc := range tests {
-		if got := grid.IsValid(tc.tile, true); got != tc.want {
-			t.Errorf("IsValid(%v) = %v, want %v", tc.tile, got, tc.want)
-		}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := grid.IsValid(tc.tile, true); got != tc.want {
+				t.Errorf("IsValid(%v) = %v, want %v", tc.tile, got, tc.want)
+			}
+		})
 	}
 }
 
