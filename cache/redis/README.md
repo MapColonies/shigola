@@ -30,5 +30,11 @@ The rediscache config supports the following properties:
   After this zoom, Set() calls will return before doing work.
 - `ttl` (int): [Optional] the key ttl time in seconds. Defaults to 0
   (the key has no expiration time).
+- `key_prefix` (string): [Optional] a string prepended to every cache key, so one
+  Redis instance can be shared rather than dedicated to this cache. Defaults to ''
+  (no prefix, i.e. keys are exactly what they were before this option existed).
+  The prefix is concatenated verbatim — **supply your own separator**:
+  `key_prefix = "tegola:"` gives keys like `tegola:mymap/mylayer/10/511/340`,
+  whereas `key_prefix = "tegola"` gives `tegolamymap/mylayer/10/511/340`.
 - `ssl` (bool): [Optional] encrypt connection to the Redis server.
   Defaults to false (no SSL/TLS)

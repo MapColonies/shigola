@@ -264,6 +264,68 @@ func compareOptions(t *testing.T, actual, expected *goredis.Options) {
 	}
 }
 
+// TestRedisKey pins how key_prefix composes with cache.Key. It needs no redis, so
+// unlike every other test in this file it is not gated behind RUN_REDIS_TESTS —
+// key composition is worth checking on a bare `go test ./...`.
+func TestRedisKey(t *testing.T) {
+	type tcase struct {
+		keyPrefix string
+		key       cache.Key
+		expected  string
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			t.Parallel()
+
+			rc := &redis.RedisCache{KeyPrefix: tc.keyPrefix}
+
+			if got := rc.RedisKeyForTest(&tc.key); got != tc.expected {
+				t.Errorf("wrong key, expected %q got %q", tc.expected, got)
+			}
+		}
+	}
+
+	key := cache.Key{MapName: "osm", LayerName: "water", Z: 10, X: 511, Y: 340}
+
+	tests := map[string]tcase{
+		"no prefix": {
+			keyPrefix: "",
+			key:       key,
+			expected:  "osm/water/10/511/340",
+		},
+		"colon separated prefix": {
+			keyPrefix: "tegola:",
+			key:       key,
+			expected:  "tegola:osm/water/10/511/340",
+		},
+		// The documented sharp edge of concatenating rather than path-joining: a
+		// prefix without a separator runs into the map name. Pinned so it cannot
+		// change silently.
+		"prefix without a separator": {
+			keyPrefix: "tegola",
+			key:       key,
+			expected:  "tegolaosm/water/10/511/340",
+		},
+		// filepath.Join would collapse the doubled slash here. Concatenation does
+		// not touch the prefix, which is what lets ':' namespacing survive.
+		"prefix is passed through verbatim": {
+			keyPrefix: "tegola//",
+			key:       key,
+			expected:  "tegola//osm/water/10/511/340",
+		},
+		"prefix on a key with no map or layer": {
+			keyPrefix: "tegola:",
+			key:       cache.Key{Z: 0, X: 1, Y: 2},
+			expected:  "tegola:0/1/2",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
 // TestNew will run tests against a live redis instance — 127.0.0.1:6379 unless
 // REDIS_TEST_ADDRESS says otherwise.
 func TestNew(t *testing.T) {
@@ -335,6 +397,11 @@ func TestNew(t *testing.T) {
 		"implicit config": {
 			config: map[string]any{},
 		},
+		"explicit config with key_prefix": {
+			config: map[string]any{
+				"key_prefix": "tegola:",
+			},
+		},
 		"bad config address": {
 			config: map[string]any{"address": 0},
 			expectedErr: dict.ErrKeyType{
@@ -357,6 +424,14 @@ func TestNew(t *testing.T) {
 				Key:   "ttl",
 				Value: "fails",
 				T:     reflect.TypeOf(1),
+			},
+		},
+		"bad config key_prefix": {
+			config: map[string]any{"key_prefix": 1},
+			expectedErr: dict.ErrKeyType{
+				Key:   "key_prefix",
+				Value: 1,
+				T:     reflect.TypeOf(""),
 			},
 		},
 		"bad address": {
@@ -649,5 +724,79 @@ func TestMaxZoom(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+// TestKeyPrefix checks the property TestRedisKey cannot: that the prefix reaches
+// the wire on all three operations. A prefix honoured by Set but not Purge would
+// leave keys no tegola can delete, and one honoured by Set but not Get would miss
+// everything it wrote — both pass a round-trip test that only talks to itself, so
+// this one reads the raw key with a client of its own.
+func TestKeyPrefix(t *testing.T) {
+	ttools.ShouldSkip(t, TESTENV)
+
+	ctx := context.Background()
+
+	const keyPrefix = "tegola-prefix-test:"
+	key := cache.Key{MapName: "prefixtest", LayerName: "water", Z: 4, X: 2, Y: 3}
+	val := []byte("\x53\x69\x6c\x61\x73")
+
+	prefixed, err := redis.New(withTestAddress(dict.Dict{"key_prefix": keyPrefix}))
+	if err != nil {
+		t.Fatalf("unexpected err, expected %v got %v", nil, err)
+	}
+
+	unprefixed, err := redis.New(withTestAddress(dict.Dict{}))
+	if err != nil {
+		t.Fatalf("unexpected err, expected %v got %v", nil, err)
+	}
+
+	// a client of our own, so the assertions do not depend on the code under test
+	// to tell us what it wrote
+	raw := goredis.NewClient(&goredis.Options{Addr: testAddress})
+	defer raw.Close()
+
+	if err := prefixed.Set(ctx, &key, val); err != nil {
+		t.Fatalf("set failed with err, expected %v got %v", nil, err)
+	}
+	// belt and braces: whatever the assertions below do, do not leave the key behind
+	defer raw.Del(ctx, keyPrefix+key.String())
+
+	got, err := raw.Get(ctx, keyPrefix+key.String()).Bytes()
+	if err != nil {
+		t.Fatalf("expected %q to exist, got err %v", keyPrefix+key.String(), err)
+	}
+	if !reflect.DeepEqual(got, val) {
+		t.Errorf("wrong value at %q, expected %v got %v", keyPrefix+key.String(), val, got)
+	}
+
+	// nothing may be written at the unprefixed key
+	if err := raw.Get(ctx, key.String()).Err(); err != goredis.Nil {
+		t.Errorf("expected %q to not exist, got err %v", key.String(), err)
+	}
+
+	// the isolation property the option exists for: a cache without the prefix
+	// cannot see a prefixed cache's tiles
+	if _, hit, err := unprefixed.Get(ctx, &key); err != nil {
+		t.Errorf("read failed with error, expected %v got %v", nil, err)
+	} else if hit {
+		t.Error("unprefixed cache hit a prefixed key, expected a miss")
+	}
+
+	// and the prefixed cache reads back its own write
+	if out, hit, err := prefixed.Get(ctx, &key); err != nil {
+		t.Errorf("read failed with error, expected %v got %v", nil, err)
+	} else if !hit {
+		t.Error("prefixed cache missed its own write, expected a hit")
+	} else if !reflect.DeepEqual(out, val) {
+		t.Errorf("read failed, expected %v got %v", val, out)
+	}
+
+	// a purge through the prefixed cache must reach the prefixed key
+	if err := prefixed.Purge(ctx, &key); err != nil {
+		t.Fatalf("purge failed with err, expected %v got %v", nil, err)
+	}
+	if err := raw.Get(ctx, keyPrefix+key.String()).Err(); err != goredis.Nil {
+		t.Errorf("expected %q to be purged, got err %v", keyPrefix+key.String(), err)
 	}
 }

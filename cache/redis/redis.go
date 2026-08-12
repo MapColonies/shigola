@@ -18,26 +18,28 @@ import (
 const CacheType = "redis"
 
 const (
-	ConfigKeyNetwork  = "network"
-	ConfigKeyAddress  = "address"
-	ConfigKeyPassword = "password"
-	ConfigKeyDB       = "db"
-	ConfigKeyMaxZoom  = "max_zoom"
-	ConfigKeyTTL      = "ttl"
-	ConfigKeySSL      = "ssl"
-	ConfigKeyURI      = "uri"
+	ConfigKeyNetwork   = "network"
+	ConfigKeyAddress   = "address"
+	ConfigKeyPassword  = "password"
+	ConfigKeyDB        = "db"
+	ConfigKeyMaxZoom   = "max_zoom"
+	ConfigKeyTTL       = "ttl"
+	ConfigKeySSL       = "ssl"
+	ConfigKeyURI       = "uri"
+	ConfigKeyKeyPrefix = "key_prefix"
 )
 
 var (
 	// default values
-	defaultNetwork  = "tcp"
-	defaultAddress  = "127.0.0.1:6379"
-	defaultPassword = ""
-	defaultURI      = ""
-	defaultDB       = 0
-	defaultMaxZoom  = uint(tegola.MaxZ)
-	defaultTTL      = 0
-	defaultSSL      = false
+	defaultNetwork   = "tcp"
+	defaultAddress   = "127.0.0.1:6379"
+	defaultPassword  = ""
+	defaultURI       = ""
+	defaultDB        = 0
+	defaultMaxZoom   = uint(tegola.MaxZ)
+	defaultTTL       = 0
+	defaultSSL       = false
+	defaultKeyPrefix = ""
 )
 
 func init() {
@@ -141,10 +143,16 @@ func New(c dict.Dicter) (rcache cache.Interface, err error) {
 		return nil, err
 	}
 
+	keyPrefix, err := c.String(ConfigKeyKeyPrefix, &defaultKeyPrefix)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RedisCache{
 		Redis:      client,
 		MaxZoom:    maxZoom,
 		Expiration: time.Duration(ttl) * time.Second,
+		KeyPrefix:  keyPrefix,
 	}, nil
 }
 
@@ -152,6 +160,22 @@ type RedisCache struct {
 	Redis      *redis.Client
 	Expiration time.Duration
 	MaxZoom    uint
+
+	// KeyPrefix is prepended to every key, so one redis instance can be shared
+	// rather than dedicated to this cache. Empty means no prefix, which is
+	// byte-for-byte the keys this cache wrote before the option existed.
+	//
+	// It is concatenated, not path-joined, so redis' own ':' namespacing works
+	// as written — and so the separator is the operator's to supply: "tegola:"
+	// gives "tegola:map/layer/z/x/y" where "tegola" gives "tegolamap/layer/z/x/y".
+	KeyPrefix string
+}
+
+// redisKey composes the key this cache actually reads and writes. Every operation
+// goes through it: a prefix applied to Set but not Purge would leave keys that
+// nothing can delete.
+func (rdc *RedisCache) redisKey(key *cache.Key) string {
+	return rdc.KeyPrefix + key.String()
 }
 
 func (rdc *RedisCache) Set(ctx context.Context, key *cache.Key, val []byte) error {
@@ -160,12 +184,12 @@ func (rdc *RedisCache) Set(ctx context.Context, key *cache.Key, val []byte) erro
 	}
 
 	return rdc.Redis.
-		Set(ctx, key.String(), val, rdc.Expiration).
+		Set(ctx, rdc.redisKey(key), val, rdc.Expiration).
 		Err()
 }
 
 func (rdc *RedisCache) Get(ctx context.Context, key *cache.Key) (val []byte, hit bool, err error) {
-	val, err = rdc.Redis.Get(ctx, key.String()).Bytes()
+	val, err = rdc.Redis.Get(ctx, rdc.redisKey(key)).Bytes()
 
 	switch err {
 	case nil: // cache hit
@@ -178,5 +202,5 @@ func (rdc *RedisCache) Get(ctx context.Context, key *cache.Key) (val []byte, hit
 }
 
 func (rdc *RedisCache) Purge(ctx context.Context, key *cache.Key) (err error) {
-	return rdc.Redis.Del(ctx, key.String()).Err()
+	return rdc.Redis.Del(ctx, rdc.redisKey(key)).Err()
 }
