@@ -228,11 +228,25 @@ func ParseKey(str string) (*Key, error) {
 
 // ParseKeyForGrid will parse a key, validate z/x/y against grid's matrix at that
 // zoom, and record the grid on the returned Key.
+//
+// What it parses is a *request path* — ":map/:layer/:z/:x/:y", the map and layer
+// optional — which names no grid, because tegola's native routes do not. The
+// grid comes from the caller, which knows it from the map being served.
+//
+// It deliberately does not parse what Key.String writes. That form leads with
+// the grid id, and with the layer segment absent it has exactly as many parts as
+// a request path that has one, so the two cannot be told apart without guessing
+// which of "osm" and "WebMercatorQuad" is the map. Key.String is how a key is
+// written to a backend, not a format read back in.
 func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 	var err error
 	var key Key
 
-	key.TileMatrixSetId = grid.ID()
+	if grid == nil {
+		return nil, fmt.Errorf("cache: no tile matrix set to parse key %v against", str)
+	}
+
+	key.TileMatrixSetID = grid.ID()
 
 	// convert to all slashes to forward slashes. without this reading from certain OSes (i.e. windows)
 	// will fail our keyParts check since it uses backslashes.
@@ -323,7 +337,7 @@ func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 }
 
 type Key struct {
-	// TileMatrixSetId names the grid the tile was cut in. Without it the 2:1
+	// TileMatrixSetID names the grid the tile was cut in. Without it the 2:1
 	// WorldCRS84Quad grid and the square WebMercatorQuad grid collide at equal
 	// z/x/y and one grid's tiles are served for the other's (ADR-0007).
 	//
@@ -333,7 +347,7 @@ type Key struct {
 	//
 	// An unset value means WebMercatorQuad, the grid tegola served before this
 	// field existed.
-	TileMatrixSetId string
+	TileMatrixSetID string
 	MapName         string
 	LayerName       string
 	Z               uint
@@ -341,8 +355,31 @@ type Key struct {
 	Y               uint
 }
 
+// NewKey builds the cache key of one tile of one map, in one tiling scheme.
+//
+// The four call sites that used to assemble this literal — the seed path, the
+// purge path, the seed worker's existence check, and the OGC tile handler — must
+// agree exactly: a field one of them sets and another forgets makes a tile that
+// is written under one key and looked for under another, which reads as a cache
+// that never hits rather than as a bug.
+func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) Key {
+	var id string
+	if grid != nil {
+		id = grid.ID()
+	}
+
+	return Key{
+		TileMatrixSetID: id,
+		MapName:         mapName,
+		LayerName:       layerName,
+		Z:               z,
+		X:               x,
+		Y:               y,
+	}
+}
+
 func (k Key) String() string {
-	tileMatrixSetId := k.TileMatrixSetId
+	tileMatrixSetId := k.TileMatrixSetID
 	if tileMatrixSetId == "" {
 		tileMatrixSetId = tms.WebMercatorQuad
 	}

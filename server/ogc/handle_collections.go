@@ -1,7 +1,6 @@
 package ogc
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -117,6 +116,9 @@ func (s *Service) HandleTileSets(w http.ResponseWriter, r *http.Request) {
 					Type:  MediaTypeJSON,
 					Title: grid.ID(),
 				},
+				// The tile template, so a client can fetch tiles straight from
+				// the list without first fetching each tileset.
+				s.tileTemplateLink(r, c, grid),
 			},
 		})
 	}
@@ -174,10 +176,28 @@ func (s *Service) collectionGrid(c Collection, id string) (*tms.TileMatrixSet, e
 	}
 
 	if !c.Map.SupportsTileGrid(grid.ID()) {
-		return nil, errors.New("collection " + c.ID + " is not served in tile matrix set " + id)
+		return nil, ErrTileSetNotFound{CollectionID: c.ID, TileMatrixSetID: grid.ID()}
 	}
 
 	return grid, nil
+}
+
+// tileTemplateLink is the templated tile URL of one tileset.
+//
+// Both the tilesets list and the tileset metadata carry it, and a client fills
+// it in itself, so the two must describe the same URL.
+func (s *Service) tileTemplateLink(r *http.Request, c Collection, grid *tms.TileMatrixSet) Link {
+	base := []string{"collections", c.ID, "tiles", grid.ID()}
+
+	return Link{
+		// OGC orders a tile path {tileMatrix}/{tileRow}/{tileCol} — z/y/x,
+		// transposed from tegola's native z/x/y.
+		Rel:       relItem,
+		Href:      s.hrefTemplate(r, base, "{tileMatrix}", "{tileRow}", "{tileCol}") + "?f=mvt",
+		Type:      MediaTypeMVT,
+		Title:     "tiles of this tileset",
+		Templated: true,
+	}
 }
 
 // tileSetMetadata builds a tileset's metadata document.
@@ -201,16 +221,7 @@ func (s *Service) tileSetMetadata(r *http.Request, c Collection, grid *tms.TileM
 				Type:  MediaTypeJSON,
 				Title: grid.ID(),
 			},
-			{
-				// The tile URL template. OGC orders a tile path
-				// {tileMatrix}/{tileRow}/{tileCol} — z/y/x, transposed from
-				// tegola's native z/x/y.
-				Rel:       relItem,
-				Href:      s.hrefTemplate(r, base, "{tileMatrix}", "{tileRow}", "{tileCol}") + "?f=mvt",
-				Type:      MediaTypeMVT,
-				Title:     "tiles of this tileset",
-				Templated: true,
-			},
+			s.tileTemplateLink(r, c, grid),
 		},
 	}
 
@@ -231,31 +242,28 @@ func geoDataLayers(m atlas.Map) []GeoDataLayer {
 
 	for i := range m.Layers {
 		layers = append(layers, GeoDataLayer{
-			ID:            m.Layers[i].MVTName(),
-			DataType:      dataTypeVector,
-			GeometryType:  geometryDimension(m.Layers[i].GeomType),
-			MinTileMatrix: strconv.FormatUint(uint64(m.Layers[i].MinZoom), 10),
-			MaxTileMatrix: strconv.FormatUint(uint64(m.Layers[i].MaxZoom), 10),
+			ID:                m.Layers[i].MVTName(),
+			DataType:          dataTypeVector,
+			GeometryDimension: geometryDimension(m.Layers[i].GeomType),
+			MinTileMatrix:     strconv.FormatUint(uint64(m.Layers[i].MinZoom), 10),
+			MaxTileMatrix:     strconv.FormatUint(uint64(m.Layers[i].MaxZoom), 10),
 		})
 	}
 
 	return layers
 }
 
-// geometryDimension names a layer's geometry dimension as OGC does: points,
-// curves, surfaces. An empty string means the layer's type is not known ahead of
-// time, in which case the field is omitted rather than guessed.
-func geometryDimension(g geom.Geometry) string {
-	switch g.(type) {
-	case geom.Point, geom.MultiPoint:
-		return "points"
-	case geom.Line, geom.LineString, geom.MultiLineString:
-		return "curves"
-	case geom.Polygon, geom.MultiPolygon:
-		return "surfaces"
-	default:
-		return ""
+// geometryDimension gives a layer's geometry dimension the number OGC gives it.
+//
+// A layer whose geometry is not known ahead of time returns nil, so the field is
+// omitted rather than reported as 0 — which would claim the layer holds points.
+func geometryDimension(g geom.Geometry) *int {
+	class, ok := classifyGeometry(g)
+	if !ok {
+		return nil
 	}
+
+	return &class.dimension
 }
 
 // tileMatrixLimits computes, for each zoom the collection's layers cover, the
@@ -269,11 +277,7 @@ func tileMatrixLimits(m atlas.Map, grid *tms.TileMatrixSet) []TileMatrixLimits {
 		return nil
 	}
 
-	minZoom, maxZoom := m.Layers[0].MinZoom, m.Layers[0].MaxZoom
-	for i := range m.Layers {
-		minZoom = min(minZoom, m.Layers[i].MinZoom)
-		maxZoom = max(maxZoom, m.Layers[i].MaxZoom)
-	}
+	minZoom, maxZoom := zoomRange(m)
 
 	limits := make([]TileMatrixLimits, 0, maxZoom-minZoom+1)
 

@@ -51,7 +51,8 @@ func tileNameValidate(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return fmt.Errorf("unable to prase tile string (%v): %v", tileString, err)
 	}
-	return nil
+
+	return validateTileInGrid(tileNameTile, seedPurgeGrid)
 }
 
 func tileNameCommand(cmd *cobra.Command, args []string) (err error) {

@@ -360,7 +360,7 @@ func TestRedisKey(t *testing.T) {
 	}
 
 	key := cache.Key{
-		TileMatrixSetId: tms.WebMercatorQuad,
+		TileMatrixSetID: tms.WebMercatorQuad,
 		MapName:         "osm",
 		LayerName:       "water",
 		Z:               10, X: 511, Y: 340,
@@ -402,7 +402,7 @@ func TestRedisKey(t *testing.T) {
 		"another grid, same prefix and tile": {
 			keyPrefix: "tegola:",
 			key: cache.Key{
-				TileMatrixSetId: tms.WorldCRS84Quad,
+				TileMatrixSetID: tms.WorldCRS84Quad,
 				MapName:         "osm",
 				LayerName:       "water",
 				Z:               10, X: 511, Y: 340,

@@ -107,19 +107,14 @@ func boundsOrWorld(bounds *geom.Extent) [4]float64 {
 	return [4]float64{bounds.MinX(), bounds.MinY(), bounds.MaxX(), bounds.MaxY()}
 }
 
-// geomType maps a layer's geometry to TileJSON's vocabulary. It is the same
-// mapping the /capabilities endpoint makes.
+// geomType maps a layer's geometry to TileJSON's vocabulary.
 func geomType(g geom.Geometry) tilejson.GeomType {
-	switch g.(type) {
-	case geom.Point, geom.MultiPoint:
-		return tilejson.GeomTypePoint
-	case geom.Line, geom.LineString, geom.MultiLineString:
-		return tilejson.GeomTypeLine
-	case geom.Polygon, geom.MultiPolygon:
-		return tilejson.GeomTypePolygon
-	default:
+	class, ok := classifyGeometry(g)
+	if !ok {
 		return tilejson.GeomTypeUnknown
 	}
+
+	return class.tileJSON
 }
 
 func strPtr(s string) *string { return &s }

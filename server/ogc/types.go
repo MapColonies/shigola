@@ -140,13 +140,24 @@ type TileMatrixLimits struct {
 
 // GeoDataLayer describes one vector layer inside a tileset's tiles.
 type GeoDataLayer struct {
-	ID            string `json:"id"`
-	Title         string `json:"title,omitempty"`
-	DataType      string `json:"dataType"`
-	GeometryType  string `json:"geometryDimension,omitempty"`
-	MinTileMatrix string `json:"minTileMatrix,omitempty"`
-	MaxTileMatrix string `json:"maxTileMatrix,omitempty"`
+	ID       string `json:"id"`
+	Title    string `json:"title,omitempty"`
+	DataType string `json:"dataType"`
+	// GeometryDimension is the topological dimension of the layer's geometry,
+	// as OGC types it: 0 points, 1 curves, 2 surfaces, 3 solids. It is a pointer
+	// so that an unknown dimension is omitted rather than reported as 0, which
+	// would claim the layer holds points.
+	GeometryDimension *int   `json:"geometryDimension,omitempty"`
+	MinTileMatrix     string `json:"minTileMatrix,omitempty"`
+	MaxTileMatrix     string `json:"maxTileMatrix,omitempty"`
 }
+
+// Geometry dimensions, as numbered by OGC.
+const (
+	dimensionPoints   = 0
+	dimensionCurves   = 1
+	dimensionSurfaces = 2
+)
 
 // TileSetMetadata is the /collections/{collectionId}/tiles/{tileMatrixSetId}
 // document: everything a client needs to request tiles of one collection in one

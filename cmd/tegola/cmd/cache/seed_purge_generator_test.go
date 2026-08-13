@@ -262,3 +262,82 @@ func TestResolveSeedPurgeGrid(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateBoundsSRID covers what --bounds-srid may say now that it no longer
+// selects the tiling scheme.
+//
+// --bounds describes the bounds and nothing else, and the bounds are validated
+// as lng/lat, so a projected srid never described them. Saying so beats
+// accepting the flag and ignoring it: a run whose bounds meant metres would
+// silently seed the wrong area.
+func TestValidateBoundsSRID(t *testing.T) {
+	tests := map[string]struct {
+		srid    int
+		wantErr bool
+	}{
+		"the geographic default":       {srid: 4326},
+		"a projected srid is rejected": {srid: 3857, wantErr: true},
+		"world mercator is rejected":   {srid: 3395, wantErr: true},
+		"an unknown srid is rejected":  {srid: 1234, wantErr: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateBoundsSRID(tc.srid)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("validateBoundsSRID(%d) = nil, want an error", tc.srid)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("validateBoundsSRID(%d) = %v, want nil", tc.srid, err)
+			}
+		})
+	}
+}
+
+// TestValidateTileInGrid covers the check that a named tile exists in the
+// scheme the run operates in.
+//
+// The two active schemes differ in width — WorldCRS84Quad has 2*2^z columns
+// where WebMercatorQuad has 2^z — so a tile name valid in one can name nothing
+// in the other. Seeding it would generate and store a tile no request can ask
+// for, and the run would report success.
+func TestValidateTileInGrid(t *testing.T) {
+	tests := map[string]struct {
+		gridID  string
+		tile    slippy.Tile
+		wantErr bool
+	}{
+		"z0 x0 in WebMercatorQuad":            {gridID: tms.WebMercatorQuad, tile: slippy.Tile{Z: 0, X: 0, Y: 0}},
+		"z0 x1 is off WebMercatorQuad":        {gridID: tms.WebMercatorQuad, tile: slippy.Tile{Z: 0, X: 1, Y: 0}, wantErr: true},
+		"z0 x1 is on WorldCRS84Quad":          {gridID: tms.WorldCRS84Quad, tile: slippy.Tile{Z: 0, X: 1, Y: 0}},
+		"z0 y1 is off WorldCRS84Quad":         {gridID: tms.WorldCRS84Quad, tile: slippy.Tile{Z: 0, X: 0, Y: 1}, wantErr: true},
+		"a zoom beyond the scheme's matrices": {gridID: tms.WebMercatorQuad, tile: slippy.Tile{Z: 99, X: 0, Y: 0}, wantErr: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			grid, err := tms.Get(tc.gridID)
+			if err != nil {
+				t.Fatalf("tms.Get(%q): %v", tc.gridID, err)
+			}
+
+			err = validateTileInGrid(tc.tile, grid)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("validateTileInGrid(%v, %v) = nil, want an error", tc.tile, tc.gridID)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("validateTileInGrid(%v, %v) = %v, want nil", tc.tile, tc.gridID, err)
+			}
+		})
+	}
+}

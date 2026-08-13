@@ -523,3 +523,84 @@ func TestTileSetTileJSON(t *testing.T) {
 		t.Errorf("canonical tileMatrixSetId = %q, want %q", canonical.TileMatrixSetID, tms.WorldCRS84Quad)
 	}
 }
+
+// TestTileSetItemHasTemplatedTileLink covers what a client needs from the
+// tilesets list to fetch tiles without first fetching the tileset: the tile URL
+// template. Without it the list describes tilesets a client cannot use directly.
+func TestTileSetItemHasTemplatedTileLink(t *testing.T) {
+	var doc ogc.TileSets
+	w := get(t, newRouterFor(t, newAtlas(t, tms.WorldCRS84Quad)), "/collections/osm/tiles", &doc)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	if len(doc.Tilesets) == 0 {
+		t.Fatal("no tilesets")
+	}
+
+	for _, ts := range doc.Tilesets {
+		var item *ogc.Link
+		for i := range ts.Links {
+			if ts.Links[i].Rel == "item" {
+				item = &ts.Links[i]
+			}
+		}
+
+		if item == nil {
+			t.Errorf("tileset %v has no item link", ts.TileMatrixSetID)
+			continue
+		}
+
+		if !item.Templated {
+			t.Errorf("tileset %v item link is not marked templated", ts.TileMatrixSetID)
+		}
+
+		want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID + "/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
+		if item.Href != want {
+			t.Errorf("tileset %v item href = %q, want %q", ts.TileMatrixSetID, item.Href, want)
+		}
+	}
+}
+
+// TestGeometryDimensionIsAnInteger pins the type OGC gives geometryDimension in
+// tileset metadata: an integer 0-3 (points, curves, surfaces, solids), not a
+// name. A string there is a conformance failure on the tileset class, and a
+// client reading it as a number gets nothing.
+func TestGeometryDimensionIsAnInteger(t *testing.T) {
+	var raw struct {
+		Layers []map[string]any `json:"layers"`
+	}
+
+	w := get(t, newRouterFor(t, newAtlas(t)), "/collections/osm/tiles/WebMercatorQuad", &raw)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	if len(raw.Layers) != 2 {
+		t.Fatalf("layers = %d, want 2", len(raw.Layers))
+	}
+
+	// newAtlas gives water a Polygon geometry and roads a LineString.
+	want := map[string]float64{"water": 2, "roads": 1}
+
+	for _, layer := range raw.Layers {
+		id, _ := layer["id"].(string)
+
+		dimension, ok := layer["geometryDimension"]
+		if !ok {
+			t.Errorf("layer %v has no geometryDimension", id)
+			continue
+		}
+
+		got, ok := dimension.(float64)
+		if !ok {
+			t.Errorf("layer %v geometryDimension = %#v, want a number", id, dimension)
+			continue
+		}
+
+		if got != want[id] {
+			t.Errorf("layer %v geometryDimension = %v, want %v", id, got, want[id])
+		}
+	}
+}

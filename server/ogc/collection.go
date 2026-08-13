@@ -52,6 +52,20 @@ func (e ErrCollectionNotFound) Error() string {
 	return fmt.Sprintf("collection %q not found", e.ID)
 }
 
+// ErrTileSetNotFound reports a tiling scheme a collection is not served in.
+//
+// It is distinct from an unknown scheme: this one exists, the collection's map
+// simply does not offer it. Both are a 404 to a client, which cannot act on the
+// difference, but a log reader can.
+type ErrTileSetNotFound struct {
+	CollectionID    string
+	TileMatrixSetID string
+}
+
+func (e ErrTileSetNotFound) Error() string {
+	return fmt.Sprintf("collection %q is not served in tile matrix set %q", e.CollectionID, e.TileMatrixSetID)
+}
+
 // collections enumerates every collection this service publishes: one
 // Map-collection per map, plus one Layer-collection per layer of it.
 //

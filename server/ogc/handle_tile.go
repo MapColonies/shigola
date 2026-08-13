@@ -63,14 +63,7 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := cache.Key{
-		TileMatrixSetId: grid.ID(),
-		MapName:         c.Map.Name,
-		LayerName:       c.LayerName,
-		Z:               uint(tile.Z),
-		X:               uint(tile.X),
-		Y:               uint(tile.Y),
-	}
+	key := cache.NewKey(grid, c.Map.Name, c.LayerName, uint(tile.Z), uint(tile.X), uint(tile.Y))
 
 	// The same key the native routes use, so a tile seeded or served through
 	// /maps/... is served here too rather than generated a second time.

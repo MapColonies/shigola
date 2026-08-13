@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -168,7 +167,7 @@ func init() {
 	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheTileMatrixSet, "tile-matrix-set", "", "", "the tiling scheme to seed or purge, by tileMatrixSetId. one run covers one scheme. defaults to the map's own scheme when --map is given, otherwise WebMercatorQuad. every targeted map must support it")
 
 	SeedPurgeCmd.Flags().StringVarP(&cacheBounds, "bounds", "", "-180,-85.0511,180,85.0511", "lng/lat bounds to seed the cache with in the format: minx, miny, maxx, maxy")
-	SeedPurgeCmd.Flags().IntVarP(&cacheBoundsSRID, "bounds-srid", "", int(proj.EPSG4326), "the srid of the grid system for bounds.")
+	SeedPurgeCmd.Flags().IntVarP(&cacheBoundsSRID, "bounds-srid", "", int(proj.EPSG4326), "the srid --bounds are given in. only 4326 (lng/lat) is supported; use --tile-matrix-set to choose the tiling scheme")
 
 	SeedPurgeCmd.PersistentPreRunE = seedPurgeCmdValidatePersistent
 	SeedPurgeCmd.PreRunE = seedPurgeCmdValidate
@@ -180,16 +179,33 @@ func init() {
 	SeedPurgeCmd.AddCommand(TileNameCmd)
 }
 
-// mustWebMercatorQuad returns the default grid, which is bundled and active in
-// every build — a failure here means the tms package's embedded definitions are
-// broken, the same condition its own init panics on.
-func mustWebMercatorQuad() *tms.TileMatrixSet {
-	grid, err := tms.Get(tms.WebMercatorQuad)
-	if err != nil {
-		panic("cache: default tile matrix set is unavailable: " + err.Error())
+// validateTileInGrid reports whether a named tile exists in the run's scheme.
+//
+// The active schemes differ in width — WorldCRS84Quad has 2*2^z columns where
+// WebMercatorQuad has 2^z — so a tile name valid in one can name nothing in the
+// other. Left unchecked, seeding it would generate and store a tile no request
+// can ask for, and the run would report success.
+func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
+	if grid == nil {
+		// The parent command resolves the run's scheme before this runs, so a
+		// nil here means that ordering changed. Check against the default rather
+		// than panicking in a CLI, and rather than skipping the check silently.
+		grid = atlas.DefaultTileGrid()
 	}
 
-	return grid
+	cols, rows, err := grid.MatrixSize(int(tile.Z))
+	if err != nil {
+		return fmt.Errorf("tile matrix set %v has no tile matrix %v: %w", grid.ID(), tile.Z, err)
+	}
+
+	if int64(tile.X) >= cols || int64(tile.Y) >= rows {
+		return fmt.Errorf(
+			"tile %v/%v/%v is outside tile matrix set %v, whose matrix at zoom %v is %d columns by %d rows",
+			tile.Z, tile.X, tile.Y, grid.ID(), tile.Z, cols, rows,
+		)
+	}
+
+	return nil
 }
 
 // resolveSeedPurgeGrid picks the TileMatrixSet this run enumerates tiles in and
@@ -316,15 +332,30 @@ func AvailableSrcConversions() []proj.EPSGCode {
 	}
 }
 
+// validateBoundsSRID checks what --bounds-srid is allowed to say.
+//
+// The flag describes --bounds, which are validated as lng/lat and handed to the
+// tiling scheme as geographic coordinates; it does not, and no longer appears
+// to, select the scheme the run enumerates — that is --tile-matrix-set.
+//
+// So a projected srid describes nothing the flag can honour. It is rejected
+// rather than accepted and ignored: a run whose bounds were meant as metres
+// would otherwise seed a silently wrong area and report success.
+func validateBoundsSRID(srid int) error {
+	switch proj.EPSGCode(srid) {
+	case proj.WGS84:
+		return nil
+	default:
+		return fmt.Errorf(
+			"--bounds-srid=%d: bounds are lng/lat, so only %d is supported. to seed another tiling scheme use --tile-matrix-set",
+			srid, int(proj.WGS84),
+		)
+	}
+}
+
 func seedPurgeCmdValidate(cmd *cobra.Command, args []string) (err error) {
-	// validate the cache-bounds-srid
-	if !IsKnownSrcConversionSRID(proj.EPSGCode(cacheBoundsSRID)) {
-		var str strings.Builder
-		str.WriteString(fmt.Sprintf("SRID=%d is not a know conversion  ePSG code\n known codes are:", cacheBoundsSRID))
-		for _, code := range AvailableSrcConversions() {
-			str.WriteString(fmt.Sprintf(" %d\n", int(code)))
-		}
-		return errors.New(str.String())
+	if err := validateBoundsSRID(cacheBoundsSRID); err != nil {
+		return err
 	}
 
 	// validate and set bounds flag
@@ -395,7 +426,7 @@ func generateTilesForBounds(ctx context.Context, bounds [4]float64, zooms []uint
 	}
 
 	if grid == nil {
-		grid = mustWebMercatorQuad()
+		grid = atlas.DefaultTileGrid()
 	}
 
 	go func() {

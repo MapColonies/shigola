@@ -124,13 +124,7 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 			//	cache key. it must name the same grid SeedMapTile will write
 			//	under, or the existence check reads a key nothing writes and
 			//	every tile looks absent.
-			key := cache.Key{
-				TileMatrixSetId: m.TileGrid().ID(),
-				MapName:         mt.MapName,
-				Z:               uint(z),
-				X:               x,
-				Y:               y,
-			}
+			key := cache.NewKey(m.TileGrid(), mt.MapName, "", uint(z), x, y)
 
 			//	read the tile from the cache
 			_, hit, err := c.Get(ctx, &key)
