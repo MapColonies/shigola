@@ -141,7 +141,7 @@ func TestGenerateTilesForBounds(t *testing.T) {
 			// see: https://github.com/go-spatial/tegola/issues/880#issuecomment-2556563251
 			zooms:  []uint{10},
 			bounds: [4]float64{5.9, 45.8, 10.5, 47.8},
-			grid:   mustGridForTest(),
+			grid:   mustTestGrid(t, tms.WebMercatorQuad),
 			tiles: sTiles{
 				slippy.Tile{Z: 10, X: 528, Y: 356}, slippy.Tile{Z: 10, X: 528, Y: 357}, slippy.Tile{Z: 10, X: 528, Y: 358}, slippy.Tile{Z: 10, X: 528, Y: 359}, slippy.Tile{Z: 10, X: 528, Y: 360}, slippy.Tile{Z: 10, X: 528, Y: 361}, slippy.Tile{Z: 10, X: 528, Y: 362}, slippy.Tile{Z: 10, X: 528, Y: 363}, slippy.Tile{Z: 10, X: 528, Y: 364}, slippy.Tile{Z: 10, X: 528, Y: 365},
 				slippy.Tile{Z: 10, X: 529, Y: 356}, slippy.Tile{Z: 10, X: 529, Y: 357}, slippy.Tile{Z: 10, X: 529, Y: 358}, slippy.Tile{Z: 10, X: 529, Y: 359}, slippy.Tile{Z: 10, X: 529, Y: 360}, slippy.Tile{Z: 10, X: 529, Y: 361}, slippy.Tile{Z: 10, X: 529, Y: 362}, slippy.Tile{Z: 10, X: 529, Y: 363}, slippy.Tile{Z: 10, X: 529, Y: 364}, slippy.Tile{Z: 10, X: 529, Y: 365},
@@ -165,17 +165,6 @@ func TestGenerateTilesForBounds(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 
-}
-
-// mustGridForTest is the grid the old slippy-based enumeration produced for
-// lng/lat bounds: WebMercator indices.
-func mustGridForTest() *tms.TileMatrixSet {
-	grid, err := tms.Get(tms.WebMercatorQuad)
-	if err != nil {
-		panic(err)
-	}
-
-	return grid
 }
 
 // TestResolveSeedPurgeGrid covers the rule that one run means one tiling
@@ -340,4 +329,60 @@ func TestValidateTileInGrid(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTileFamilyStaysInsideGrid checks the assumption the tile-name and
+// tile-list zoom expansion rests on: that walking a tile's family with
+// slippy.RangeFamilyAt yields tiles that exist in the run's scheme.
+//
+// RangeFamilyAt halves and doubles x and y, which is quadtree arithmetic. That
+// looks like it assumes a square 2^z pyramid, and WorldCRS84Quad is 2*2^z by
+// 2^z — but its columns and rows both double per zoom, so it is a quadtree too
+// and the arithmetic holds. This test is what says so, rather than the reading.
+func TestTileFamilyStaysInsideGrid(t *testing.T) {
+	for _, gridID := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad} {
+		t.Run(gridID, func(t *testing.T) {
+			grid, err := tms.Get(gridID)
+			if err != nil {
+				t.Fatalf("tms.Get(%q): %v", gridID, err)
+			}
+
+			// start from every tile of zoom 1, so a 2:1 scheme's extra columns
+			// are covered
+			cols, rows, err := grid.MatrixSize(1)
+			if err != nil {
+				t.Fatalf("MatrixSize: %v", err)
+			}
+
+			for x := int64(0); x < cols; x++ {
+				for y := int64(0); y < rows; y++ {
+					start := slippy.Tile{Z: 1, X: uint(x), Y: uint(y)}
+
+					for _, zoom := range []uint{0, 1, 2, 5} {
+						slippy.RangeFamilyAt(start, slippy.Zoom(zoom), func(tile slippy.Tile) bool {
+							if err := validateTileInGrid(tile, grid); err != nil {
+								t.Errorf("family of %v at zoom %d produced %v: %v", start, zoom, tile, err)
+								return false
+							}
+
+							return true
+						})
+					}
+				}
+			}
+		})
+	}
+}
+
+// mustTestGrid resolves a tiling scheme, failing the test if this build cannot
+// serve it.
+func mustTestGrid(t *testing.T, id string) *tms.TileMatrixSet {
+	t.Helper()
+
+	grid, err := tms.Get(id)
+	if err != nil {
+		t.Fatalf("tms.Get(%q): %v", id, err)
+	}
+
+	return grid
 }

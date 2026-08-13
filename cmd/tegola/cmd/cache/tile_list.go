@@ -123,6 +123,15 @@ func generateTilesForTileList(ctx context.Context, tilelist io.Reader, explicit 
 				return
 			}
 
+			// A list is written for one tiling scheme, and names in it can be
+			// meaningless in another — WorldCRS84Quad is twice as wide as
+			// WebMercatorQuad. Seeding such a tile stores something no request
+			// can ask for, and the run would report success.
+			if err = validateTileInGrid(tile, seedPurgeGrid); err != nil {
+				tce.setError(fmt.Errorf("tile (%v) on line [%v]: %w", txt, lineNumber, err))
+				return
+			}
+
 			if explicit || len(zooms) == 0 {
 				select {
 				case tce.channel <- tile:

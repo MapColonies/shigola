@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-spatial/geom/slippy"
+	"github.com/go-spatial/tegola/tms"
 )
 
 func TestGenerateTilesForTileList(t *testing.T) {
@@ -47,6 +48,13 @@ func TestGenerateTilesForTileList(t *testing.T) {
 			} else {
 				in = strings.NewReader(tc.tileList)
 			}
+
+			// The command resolves the run's tiling scheme before any tile is
+			// generated, and the generator now checks names against it. Stand
+			// that precondition up here, since this calls the generator direct.
+			restore := seedPurgeGrid
+			seedPurgeGrid = mustTestGrid(t, tms.WebMercatorQuad)
+			defer func() { seedPurgeGrid = restore }()
 
 			tilechannel := generateTilesForTileList(context.Background(), in, tc.explicit, tc.zooms, tc.format)
 			tiles := make(sTiles, 0, len(tc.tiles))

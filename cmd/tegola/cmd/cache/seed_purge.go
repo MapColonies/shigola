@@ -188,9 +188,11 @@ func init() {
 func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 	if grid == nil {
 		// The parent command resolves the run's scheme before this runs, so a
-		// nil here means that ordering changed. Check against the default rather
-		// than panicking in a CLI, and rather than skipping the check silently.
-		grid = atlas.DefaultTileGrid()
+		// nil here means that ordering changed. Falling back to the default
+		// would defeat the check: in a WorldCRS84Quad run it would validate
+		// against WebMercatorQuad and pass exactly the tiles this exists to
+		// reject.
+		return fmt.Errorf("no tile matrix set has been resolved for this run")
 	}
 
 	cols, rows, err := grid.MatrixSize(int(tile.Z))
@@ -314,22 +316,6 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 
 	return nil
 
-}
-
-func IsKnownSrcConversionSRID(code proj.EPSGCode) bool {
-	return code == proj.EPSG3395 ||
-		code == proj.WebMercator ||
-		code == proj.WGS84 ||
-		code == proj.WorldEquidistantCylindrical
-}
-
-func AvailableSrcConversions() []proj.EPSGCode {
-	return []proj.EPSGCode{
-		proj.EPSG3395,
-		proj.WebMercator,
-		proj.WGS84,
-		proj.WorldEquidistantCylindrical,
-	}
 }
 
 // validateBoundsSRID checks what --bounds-srid is allowed to say.

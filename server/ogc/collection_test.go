@@ -540,26 +540,27 @@ func TestTileSetItemHasTemplatedTileLink(t *testing.T) {
 	}
 
 	for _, ts := range doc.Tilesets {
-		var item *ogc.Link
-		for i := range ts.Links {
-			if ts.Links[i].Rel == "item" {
-				item = &ts.Links[i]
+		t.Run(ts.TileMatrixSetID, func(t *testing.T) {
+			var item *ogc.Link
+			for i := range ts.Links {
+				if ts.Links[i].Rel == "item" {
+					item = &ts.Links[i]
+				}
 			}
-		}
 
-		if item == nil {
-			t.Errorf("tileset %v has no item link", ts.TileMatrixSetID)
-			continue
-		}
+			if item == nil {
+				t.Fatalf("tileset %v has no item link", ts.TileMatrixSetID)
+			}
 
-		if !item.Templated {
-			t.Errorf("tileset %v item link is not marked templated", ts.TileMatrixSetID)
-		}
+			if !item.Templated {
+				t.Errorf("tileset %v item link is not marked templated", ts.TileMatrixSetID)
+			}
 
-		want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID + "/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
-		if item.Href != want {
-			t.Errorf("tileset %v item href = %q, want %q", ts.TileMatrixSetID, item.Href, want)
-		}
+			want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID + "/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
+			if item.Href != want {
+				t.Errorf("tileset %v item href = %q, want %q", ts.TileMatrixSetID, item.Href, want)
+			}
+		})
 	}
 }
 
@@ -587,20 +588,20 @@ func TestGeometryDimensionIsAnInteger(t *testing.T) {
 	for _, layer := range raw.Layers {
 		id, _ := layer["id"].(string)
 
-		dimension, ok := layer["geometryDimension"]
-		if !ok {
-			t.Errorf("layer %v has no geometryDimension", id)
-			continue
-		}
+		t.Run(id, func(t *testing.T) {
+			dimension, ok := layer["geometryDimension"]
+			if !ok {
+				t.Fatalf("layer %v has no geometryDimension", id)
+			}
 
-		got, ok := dimension.(float64)
-		if !ok {
-			t.Errorf("layer %v geometryDimension = %#v, want a number", id, dimension)
-			continue
-		}
+			got, ok := dimension.(float64)
+			if !ok {
+				t.Fatalf("layer %v geometryDimension = %#v, want a number", id, dimension)
+			}
 
-		if got != want[id] {
-			t.Errorf("layer %v geometryDimension = %v, want %v", id, got, want[id])
-		}
+			if got != want[id] {
+				t.Errorf("layer %v geometryDimension = %v, want %v", id, got, want[id])
+			}
+		})
 	}
 }

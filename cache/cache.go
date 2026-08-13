@@ -214,7 +214,7 @@ func InjectWritePool(c Interface, pool *WritePool) {
 // ParseKey will parse a string in the format /:map/:layer/:z/:x/:y into a Key struct. The :layer value is optional
 // ParseKey also supports other OS delimiters (i.e. Windows - "\")
 //
-// The path carries no tileMatrixSetId — tegola's native routes do not name a
+// The path carries no tileMatrixSetID — tegola's native routes do not name a
 // grid — so the tile is read as a WebMercatorQuad one. Use ParseKeyForGrid when
 // the grid is known.
 func ParseKey(str string) (*Key, error) {
@@ -363,13 +363,12 @@ type Key struct {
 // is written under one key and looked for under another, which reads as a cache
 // that never hits rather than as a bug.
 func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) Key {
-	var id string
-	if grid != nil {
-		id = grid.ID()
-	}
-
+	// grid is required, and deliberately not defaulted: an empty id reads as
+	// WebMercatorQuad, so accepting nil here would file another scheme's tiles
+	// under WebMercatorQuad's keys — silently, and only for the caller that got
+	// it wrong. ParseKeyForGrid rejects nil for the same reason.
 	return Key{
-		TileMatrixSetID: id,
+		TileMatrixSetID: grid.ID(),
 		MapName:         mapName,
 		LayerName:       layerName,
 		Z:               z,
@@ -379,13 +378,13 @@ func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) Ke
 }
 
 func (k Key) String() string {
-	tileMatrixSetId := k.TileMatrixSetID
-	if tileMatrixSetId == "" {
-		tileMatrixSetId = tms.WebMercatorQuad
+	tileMatrixSetID := k.TileMatrixSetID
+	if tileMatrixSetID == "" {
+		tileMatrixSetID = tms.WebMercatorQuad
 	}
 
 	return filepath.Join(
-		tileMatrixSetId,
+		tileMatrixSetID,
 		k.MapName,
 		k.LayerName,
 		strconv.FormatUint(uint64(k.Z), 10),
