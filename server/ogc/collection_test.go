@@ -470,3 +470,56 @@ func TestCollectionJSONShape(t *testing.T) {
 		}
 	}
 }
+
+// TestTileSetTileJSON covers the TileJSON 3.0 representation of a tileset.
+func TestTileSetTileJSON(t *testing.T) {
+	r := newRouterFor(t, newAtlas(t, tms.WebMercatorQuad, tms.WorldCRS84Quad))
+
+	var doc map[string]any
+	w := get(t, r, "/collections/osm/tiles/WorldCRS84Quad?f=tilejson", &doc)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+
+	if got := doc["tilejson"]; got != "3.0.0" {
+		t.Errorf("tilejson = %v, want 3.0.0", got)
+	}
+
+	// The point of 3.0: a tileset can say it is not WebMercator. Without this a
+	// client renders CRS84 tiles as though they were WebMercator ones.
+	if got := doc["crs"]; got == nil || got == "" {
+		t.Error("tilejson has no crs, so a client cannot tell which scheme it is")
+	}
+
+	if got := doc["tileMatrixSetId"]; got != tms.WorldCRS84Quad {
+		t.Errorf("tileMatrixSetId = %v, want %v", got, tms.WorldCRS84Quad)
+	}
+
+	tiles, ok := doc["tiles"].([]any)
+	if !ok || len(tiles) == 0 {
+		t.Fatalf("tiles = %v, want at least one template", doc["tiles"])
+	}
+
+	// The template must keep the OGC path order, or a client substituting its
+	// own z/x/y fetches transposed tiles.
+	want := "http://tegola.io/collections/osm/tiles/WorldCRS84Quad/{z}/{y}/{x}?f=mvt"
+	if tiles[0] != want {
+		t.Errorf("tiles[0] = %v, want %v", tiles[0], want)
+	}
+
+	layers, ok := doc["vector_layers"].([]any)
+	if !ok || len(layers) != 2 {
+		t.Errorf("vector_layers = %v, want 2", doc["vector_layers"])
+	}
+
+	// The default representation is unaffected.
+	var canonical ogc.TileSetMetadata
+	if w := get(t, r, "/collections/osm/tiles/WorldCRS84Quad", &canonical); w.Code != http.StatusOK {
+		t.Fatalf("canonical status = %d, want 200", w.Code)
+	}
+
+	if canonical.TileMatrixSetID != tms.WorldCRS84Quad {
+		t.Errorf("canonical tileMatrixSetId = %q, want %q", canonical.TileMatrixSetID, tms.WorldCRS84Quad)
+	}
+}

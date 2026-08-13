@@ -130,8 +130,12 @@ func (s *Service) HandleTileSets(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTileSet serves one tileset's metadata: a collection in one scheme.
+//
+// The canonical representation is OGC tileset metadata; ?f=tilejson serves the
+// same tileset as TileJSON 3.0, which is what the map clients in widest use
+// read (ADR-0006).
 func (s *Service) HandleTileSet(w http.ResponseWriter, r *http.Request) {
-	format, err := negotiate(r, FormatJSON)
+	format, err := negotiate(r, FormatJSON, FormatTileJSON)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -148,6 +152,11 @@ func (s *Service) HandleTileSet(w http.ResponseWriter, r *http.Request) {
 	grid, err := s.collectionGrid(c, params["tile_matrix_set_id"])
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+
+	if format == FormatTileJSON {
+		writeJSON(w, format, s.tileJSON(r, c, grid))
 		return
 	}
 
