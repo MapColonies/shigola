@@ -79,3 +79,102 @@ type TileMatrixSetItem struct {
 type TileMatrixSets struct {
 	TileMatrixSets []TileMatrixSetItem `json:"tileMatrixSets"`
 }
+
+// Extent is a collection's spatial extent, in CRS84.
+type Extent struct {
+	Spatial *SpatialExtent `json:"spatial,omitempty"`
+}
+
+// SpatialExtent is the bounding box half of an extent.
+type SpatialExtent struct {
+	// BBox is a list of bounding boxes; the first is the overall one.
+	BBox [][]float64 `json:"bbox"`
+	CRS  string      `json:"crs,omitempty"`
+}
+
+// CollectionDesc is the /collections/{collectionId} document.
+type CollectionDesc struct {
+	ID          string  `json:"id"`
+	Title       string  `json:"title,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Extent      *Extent `json:"extent,omitempty"`
+	// DataType is "vector" for every collection this service publishes: tegola
+	// produces MVT and nothing else (ADR-0001).
+	DataType string   `json:"dataType,omitempty"`
+	CRS      []string `json:"crs,omitempty"`
+	Links    []Link   `json:"links"`
+}
+
+// Collections is the /collections document.
+type Collections struct {
+	Links       []Link           `json:"links"`
+	Collections []CollectionDesc `json:"collections"`
+}
+
+// TileSetItem is one entry in a collection's tilesets list.
+type TileSetItem struct {
+	Title            string `json:"title,omitempty"`
+	DataType         string `json:"dataType"`
+	CRS              string `json:"crs"`
+	TileMatrixSetID  string `json:"tileMatrixSetId"`
+	TileMatrixSetURI string `json:"tileMatrixSetURI,omitempty"`
+	Links            []Link `json:"links"`
+}
+
+// TileSets is the /collections/{collectionId}/tiles document.
+type TileSets struct {
+	Tilesets []TileSetItem `json:"tilesets"`
+	Links    []Link        `json:"links"`
+}
+
+// TileMatrixLimits bounds the tiles that actually hold data at one zoom, so a
+// client need not request tiles outside the collection's extent.
+type TileMatrixLimits struct {
+	TileMatrix string `json:"tileMatrix"`
+	MinTileRow int64  `json:"minTileRow"`
+	MaxTileRow int64  `json:"maxTileRow"`
+	MinTileCol int64  `json:"minTileCol"`
+	MaxTileCol int64  `json:"maxTileCol"`
+}
+
+// GeoDataLayer describes one vector layer inside a tileset's tiles.
+type GeoDataLayer struct {
+	ID            string `json:"id"`
+	Title         string `json:"title,omitempty"`
+	DataType      string `json:"dataType"`
+	GeometryType  string `json:"geometryDimension,omitempty"`
+	MinTileMatrix string `json:"minTileMatrix,omitempty"`
+	MaxTileMatrix string `json:"maxTileMatrix,omitempty"`
+}
+
+// TileSetMetadata is the /collections/{collectionId}/tiles/{tileMatrixSetId}
+// document: everything a client needs to request tiles of one collection in one
+// tiling scheme.
+type TileSetMetadata struct {
+	Title            string             `json:"title,omitempty"`
+	Description      string             `json:"description,omitempty"`
+	DataType         string             `json:"dataType"`
+	CRS              string             `json:"crs"`
+	TileMatrixSetID  string             `json:"tileMatrixSetId"`
+	TileMatrixSetURI string             `json:"tileMatrixSetURI,omitempty"`
+	TileMatrixLimits []TileMatrixLimits `json:"tileMatrixSetLimits,omitempty"`
+	BoundingBox      *BoundingBox       `json:"boundingBox,omitempty"`
+	Layers           []GeoDataLayer     `json:"layers,omitempty"`
+	Attribution      string             `json:"attribution,omitempty"`
+	Links            []Link             `json:"links"`
+}
+
+// BoundingBox is a tileset's extent in a named CRS.
+type BoundingBox struct {
+	LowerLeft  []float64 `json:"lowerLeft"`
+	UpperRight []float64 `json:"upperRight"`
+	CRS        string    `json:"crs,omitempty"`
+}
+
+// Data types. tegola serves vector tiles only (ADR-0001).
+const (
+	dataTypeVector = "vector"
+)
+
+// CRS84 is the CRS a collection's extent is given in.
+const crs84URI = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"

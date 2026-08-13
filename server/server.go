@@ -115,8 +115,16 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		URIPrefix: URIPrefix,
 	})
 	for _, route := range ogcService.Routes() {
+		var handler http.Handler = route.Handler
+		if route.Gzipped {
+			// The handler writes gzipped tile bytes; this negotiates whether the
+			// client gets them compressed or decompressed, as on the native
+			// tile routes.
+			handler = GZipHandler(handler)
+		}
+
 		group.UsingContext().
-			Handler(observability.InstrumentAPIHandler(route.Method, route.Path, o, HeadersHandler(route.Handler)))
+			Handler(observability.InstrumentAPIHandler(route.Method, route.Path, o, HeadersHandler(handler)))
 	}
 
 	// setup viewer routes, which can be excluded via build flags
