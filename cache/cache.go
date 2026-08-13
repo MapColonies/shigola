@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-spatial/geom/slippy"
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/dict"
-	internalLog "github.com/go-spatial/tegola/internal/log"
+	"github.com/go-spatial/tegola/tms"
 )
 
 // Interface defines a cache back end
@@ -214,14 +213,26 @@ func InjectWritePool(c Interface, pool *WritePool) {
 
 // ParseKey will parse a string in the format /:map/:layer/:z/:x/:y into a Key struct. The :layer value is optional
 // ParseKey also supports other OS delimiters (i.e. Windows - "\")
+//
+// The path carries no tileMatrixSetId — tegola's native routes do not name a
+// grid — so the tile is read as a WebMercatorQuad one. Use ParseKeyForGrid when
+// the grid is known.
 func ParseKey(str string) (*Key, error) {
-	return ParseKeyForTileSRID(str, tegola.WebMercator)
+	grid, err := tms.Get(tms.WebMercatorQuad)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParseKeyForGrid(str, grid)
 }
 
-// ParseKeyForTileSRID will parse a key and validate z/x/y against the tile grid for tileSRID.
-func ParseKeyForTileSRID(str string, tileSRID uint64) (*Key, error) {
+// ParseKeyForGrid will parse a key, validate z/x/y against grid's matrix at that
+// zoom, and record the grid on the returned Key.
+func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 	var err error
 	var key Key
+
+	key.TileMatrixSetId = grid.ID()
 
 	// convert to all slashes to forward slashes. without this reading from certain OSes (i.e. windows)
 	// will fail our keyParts check since it uses backslashes.
@@ -270,15 +281,14 @@ func ParseKeyForTileSRID(str string, tileSRID uint64) (*Key, error) {
 	}
 
 	key.Z = uint(placeholder)
-	gridWidth, gridHeight, err := tegola.TileGridSize(tileSRID, slippy.Zoom(key.Z))
+
+	// x and y are bounded independently: a grid need not be a square pyramid.
+	cols, rows, err := grid.MatrixSize(int(key.Z))
 	if err != nil {
 		return nil, err
 	}
-	maxXatZ := uint64(gridWidth - 1)
-	maxYatZ := uint64(gridHeight - 1)
-	if tileSRID != tegola.WebMercator {
-		internalLog.Debugf("cache: tile grid for key parse path=%v tile_srid=%v z=%v width=%v height=%v max_x=%v max_y=%v", str, tileSRID, key.Z, gridWidth, gridHeight, maxXatZ, maxYatZ)
-	}
+	maxXatZ := uint64(cols - 1)
+	maxYatZ := uint64(rows - 1)
 
 	placeholder, err = strconv.ParseUint(zxy[1], 10, 32)
 	if err != nil || placeholder > maxXatZ {
@@ -313,15 +323,32 @@ func ParseKeyForTileSRID(str string, tileSRID uint64) (*Key, error) {
 }
 
 type Key struct {
-	MapName   string
-	LayerName string
-	Z         uint
-	X         uint
-	Y         uint
+	// TileMatrixSetId names the grid the tile was cut in. Without it the 2:1
+	// WorldCRS84Quad grid and the square WebMercatorQuad grid collide at equal
+	// z/x/y and one grid's tiles are served for the other's (ADR-0007).
+	//
+	// It leads the key so that every cache backend — all of which build their
+	// path or redis key from String() — partitions by grid, and so that a purge
+	// can address one grid's tiles as a subtree.
+	//
+	// An unset value means WebMercatorQuad, the grid tegola served before this
+	// field existed.
+	TileMatrixSetId string
+	MapName         string
+	LayerName       string
+	Z               uint
+	X               uint
+	Y               uint
 }
 
 func (k Key) String() string {
+	tileMatrixSetId := k.TileMatrixSetId
+	if tileMatrixSetId == "" {
+		tileMatrixSetId = tms.WebMercatorQuad
+	}
+
 	return filepath.Join(
+		tileMatrixSetId,
 		k.MapName,
 		k.LayerName,
 		strconv.FormatUint(uint64(k.Z), 10),

@@ -1,6 +1,7 @@
 package register
 
 import (
+	"fmt"
 	"html"
 	"regexp"
 	"strings"
@@ -9,9 +10,10 @@ import (
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/config"
 	"github.com/go-spatial/tegola/provider"
+	"github.com/go-spatial/tegola/tms"
 )
 
-func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map) {
+func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map, err error) {
 	newMap = atlas.NewWebMercatorMap(string(cfg.Name))
 	newMap.Attribution = SanitizeAttribution(string(cfg.Attribution))
 	newMap.Params = cfg.Parameters
@@ -31,11 +33,28 @@ func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map) {
 	if cfg.TileBuffer != nil {
 		newMap.TileBuffer = uint64(*cfg.TileBuffer)
 	}
-	if cfg.TileSRID != nil {
-		newMap.TileSRID = uint64(*cfg.TileSRID)
-	}
-	return newMap
 
+	// A map that names no tiling schemes may be requested in any this build can
+	// serve, with WebMercatorQuad — tegola's historical grid — the default.
+	ids := make([]string, 0, len(cfg.TileMatrixSets))
+	for _, id := range cfg.TileMatrixSets {
+		ids = append(ids, string(id))
+	}
+	if len(ids) == 0 {
+		ids = tms.AvailableIDs()
+	}
+
+	grids := make([]*tms.TileMatrixSet, 0, len(ids))
+	for _, id := range ids {
+		grid, err := tms.Get(id)
+		if err != nil {
+			return newMap, fmt.Errorf("map %v: tile matrix set %v: %w", cfg.Name, id, err)
+		}
+		grids = append(grids, grid)
+	}
+	newMap.TileMatrixSets = grids
+
+	return newMap, nil
 }
 
 func layerInfosFindByName(infos []provider.LayerInfo, name string) provider.LayerInfo {
@@ -135,7 +154,10 @@ func Maps(a *atlas.Atlas, maps []provider.Map, providers map[string]provider.Til
 
 	// iterate our maps
 	for _, m := range maps {
-		newMap := webMercatorMapFromConfigMap(m)
+		newMap, err := webMercatorMapFromConfigMap(m)
+		if err != nil {
+			return err
+		}
 
 		// iterate our layers
 		for _, l := range m.Layers {

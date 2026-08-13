@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-spatial/tegola/tms"
+
 	"github.com/go-spatial/tegola/provider"
 )
 
@@ -99,13 +101,22 @@ func (e ErrInvalidProviderForMap) Error() string {
 	return fmt.Sprintf("config: map %s references unknown provider %s", e.MapName, e.ProviderName)
 }
 
-type ErrUnsupportedTileSRID struct {
-	MapName  string
-	TileSRID int
+// ErrUnsupportedTileMatrixSet reports a map naming a tiling scheme this build
+// cannot serve.
+//
+// The available sets are read from the registry when the message is formatted
+// rather than carried in a field, so this type stays comparable and errors.Is
+// matches it the way it matches the rest of this package's errors.
+type ErrUnsupportedTileMatrixSet struct {
+	MapName       string
+	TileMatrixSet string
 }
 
-func (e ErrUnsupportedTileSRID) Error() string {
-	return fmt.Sprintf("config: map %s has unsupported tile_srid %d; supported values are 3857 and 4326", e.MapName, e.TileSRID)
+func (e ErrUnsupportedTileMatrixSet) Error() string {
+	return fmt.Sprintf(
+		"config: map %s names tile matrix set %q, which this build cannot serve; available sets are %s",
+		e.MapName, e.TileMatrixSet, strings.Join(tms.AvailableIDs(), ", "),
+	)
 }
 
 type ErrInvalidProviderLayerName struct {

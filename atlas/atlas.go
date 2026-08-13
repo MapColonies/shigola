@@ -146,10 +146,11 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
 
 	// cache key
 	key := cache.Key{
-		MapName: m.Name,
-		Z:       z,
-		X:       x,
-		Y:       y,
+		TileMatrixSetId: m.TileGrid().ID(),
+		MapName:         m.Name,
+		Z:               z,
+		X:               x,
+		Y:               y,
 	}
 
 	return a.cacher.Set(ctx, &key, b)
@@ -173,10 +174,11 @@ func (a *Atlas) PurgeMapTile(ctx context.Context, m Map, tile *tegola.Tile) erro
 
 	// cache key
 	key := cache.Key{
-		MapName: m.Name,
-		Z:       tile.Z,
-		X:       tile.X,
-		Y:       tile.Y,
+		TileMatrixSetId: m.TileGrid().ID(),
+		MapName:         m.Name,
+		Z:               tile.Z,
+		X:               tile.X,
+		Y:               tile.Y,
 	}
 
 	return a.cacher.Purge(ctx, &key)

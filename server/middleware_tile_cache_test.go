@@ -7,13 +7,14 @@ import (
 
 	"github.com/go-spatial/tegola/cache/memory"
 	"github.com/go-spatial/tegola/server"
+	"github.com/go-spatial/tegola/tms"
 )
 
 func TestMiddlewareTileCacheHandler(t *testing.T) {
 	type tcase struct {
 		uri       string
 		uriPrefix string
-		tileSRID  uint64
+		gridID    string
 	}
 
 	fn := func(tc tcase) func(t *testing.T) {
@@ -27,11 +28,11 @@ func TestMiddlewareTileCacheHandler(t *testing.T) {
 			}
 
 			a := newTestMapWithLayers(testLayer1, testLayer2, testLayer3)
-			if tc.tileSRID == 4326 {
+			if tc.gridID == tms.WorldCRS84Quad {
 				layer := testLayer1
 				layer.MinZoom = 0
 				layer.MaxZoom = 20
-				a = newTestMapWithTileSRID(4326, layer)
+				a = newTestMapWithGrid(tms.WorldCRS84Quad, layer)
 			}
 			cacher, _ := memory.New(nil)
 			a.SetCache(cacher)
@@ -81,8 +82,8 @@ func TestMiddlewareTileCacheHandler(t *testing.T) {
 			uriPrefix: "/tegola",
 		},
 		"world crs84 high x": {
-			uri:      "/maps/test-map/test-layer/16/78212/21154.pbf",
-			tileSRID: 4326,
+			uri:    "/maps/test-map/test-layer/16/78212/21154.pbf",
+			gridID: tms.WorldCRS84Quad,
 		},
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
 	"github.com/go-spatial/tegola/atlas"
+	"github.com/go-spatial/tegola/tms"
 )
 
 type MapHandlerTCase struct {
@@ -154,7 +155,7 @@ func TestHandleMapLayerZXY(t *testing.T) {
 		},
 		"world crs84 z0 east tile valid": {
 			uri: "/maps/test-map/test-layer/0/1/0.pbf",
-			atlas: newTestMapWithTileSRID(4326, atlas.Layer{
+			atlas: newTestMapWithGrid(tms.WorldCRS84Quad, atlas.Layer{
 				Name:              "test-layer",
 				ProviderLayerName: "test-layer-1",
 				MinZoom:           0,
@@ -167,7 +168,7 @@ func TestHandleMapLayerZXY(t *testing.T) {
 		},
 		"world crs84 z0 invalid x": {
 			uri: "/maps/test-map/test-layer/0/2/0.pbf",
-			atlas: newTestMapWithTileSRID(4326, atlas.Layer{
+			atlas: newTestMapWithGrid(tms.WorldCRS84Quad, atlas.Layer{
 				Name:              "test-layer",
 				ProviderLayerName: "test-layer-1",
 				MinZoom:           0,
@@ -180,7 +181,7 @@ func TestHandleMapLayerZXY(t *testing.T) {
 		},
 		"world crs84 z0 invalid y": {
 			uri: "/maps/test-map/test-layer/0/0/1.pbf",
-			atlas: newTestMapWithTileSRID(4326, atlas.Layer{
+			atlas: newTestMapWithGrid(tms.WorldCRS84Quad, atlas.Layer{
 				Name:              "test-layer",
 				ProviderLayerName: "test-layer-1",
 				MinZoom:           0,

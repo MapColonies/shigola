@@ -15,6 +15,7 @@ import (
 	_ "github.com/go-spatial/tegola/provider/debug"
 	_ "github.com/go-spatial/tegola/provider/postgis"
 	_ "github.com/go-spatial/tegola/provider/test"
+	"github.com/go-spatial/tegola/tms"
 )
 
 const (
@@ -1438,5 +1439,81 @@ func TestConfigureTileBuffers(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+// TestValidateTileMatrixSets covers the per-map tiling-scheme list (ADR-0008):
+// ids are checked against the registry, and omitting them is legal.
+func TestValidateTileMatrixSets(t *testing.T) {
+	newConfig := func(ids ...string) config.Config {
+		sets := make([]env.String, 0, len(ids))
+		for _, id := range ids {
+			sets = append(sets, env.String(id))
+		}
+
+		return config.Config{
+			Webserver: config.Webserver{Port: ":8080"},
+			Providers: []env.Dict{
+				{
+					"name": "provider1",
+					"type": "test",
+					"layers": []map[string]any{
+						{"name": "water"},
+					},
+				},
+			},
+			Maps: []provider.Map{
+				{
+					Name:           "osm",
+					TileMatrixSets: sets,
+					Layers: []provider.MapLayer{
+						{ProviderLayer: "provider1.water"},
+					},
+				},
+			},
+		}
+	}
+
+	tests := map[string]struct {
+		ids         []string
+		expectedErr error
+	}{
+		"omitted means every available set": {
+			ids: nil,
+		},
+		"an active grid": {
+			ids: []string{tms.WorldCRS84Quad},
+		},
+		"several active grids": {
+			ids: []string{tms.WebMercatorQuad, tms.WorldCRS84Quad},
+		},
+		"an unknown id": {
+			ids:         []string{"NoSuchQuad"},
+			expectedErr: config.ErrUnsupportedTileMatrixSet{MapName: "osm", TileMatrixSet: "NoSuchQuad"},
+		},
+		// Registered but gated behind a Transformer, so the server could name it
+		// but not serve it (ADR-0009).
+		"a gated projected grid": {
+			ids:         []string{"NZTM2000Quad"},
+			expectedErr: config.ErrUnsupportedTileMatrixSet{MapName: "osm", TileMatrixSet: "NZTM2000Quad"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := newConfig(tc.ids...)
+
+			err := cfg.Validate()
+			if tc.expectedErr == nil {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+
+			if !errors.Is(err, tc.expectedErr) {
+				t.Fatalf("Validate() = %v, want %v", err, tc.expectedErr)
+			}
+		})
 	}
 }

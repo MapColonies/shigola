@@ -11,5 +11,8 @@ type Map struct {
 	Layers      []MapLayer       `toml:"layers"`
 	Parameters  []QueryParameter `toml:"params"`
 	TileBuffer  *env.Int         `toml:"tile_buffer"`
-	TileSRID    *env.Int         `toml:"tile_srid"`
+	// TileMatrixSets names the tiling schemes this map may be requested in, by
+	// tileMatrixSetId. Omitted means every grid this build can serve. The first
+	// entry is the map's default: the grid its /maps/... routes serve.
+	TileMatrixSets []env.String `toml:"tile_matrix_sets"`
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/go-spatial/tegola/maths/validate"
 	"github.com/go-spatial/tegola/provider"
 	"github.com/go-spatial/tegola/provider/debug"
+	"github.com/go-spatial/tegola/tms"
 )
 
 // NewWebMercatorMap creates a new map with the necessary default values
@@ -34,13 +35,28 @@ func NewWebMercatorMap(name string) Map {
 	return Map{
 		Name: name,
 		// default bounds
-		Bounds:     tegola.WGS84Bounds,
-		Layers:     []Layer{},
-		SRID:       tegola.WebMercator,
-		TileSRID:   tegola.WebMercator,
-		TileExtent: 4096,
-		TileBuffer: uint64(tegola.DefaultTileBuffer),
+		Bounds:         tegola.WGS84Bounds,
+		Layers:         []Layer{},
+		SRID:           tegola.WebMercator,
+		TileMatrixSets: []*tms.TileMatrixSet{DefaultTileGrid()},
+		TileExtent:     4096,
+		TileBuffer:     uint64(tegola.DefaultTileBuffer),
 	}
+}
+
+// DefaultTileGrid is the TileMatrixSet a map serves when its configuration names
+// none: WebMercatorQuad, the grid tegola has always served.
+//
+// WebMercatorQuad is bundled and active in every build, so a failure to resolve
+// it means the tms package's embedded definitions are broken — the same
+// condition its own init panics on.
+func DefaultTileGrid() *tms.TileMatrixSet {
+	grid, err := tms.Get(tms.WebMercatorQuad)
+	if err != nil {
+		panic("atlas: default tile grid " + tms.WebMercatorQuad + " is unavailable: " + err.Error())
+	}
+
+	return grid
 }
 
 // Map defines a Web Mercator map
@@ -60,8 +76,14 @@ type Map struct {
 	// Params holds configured query parameters
 	Params []provider.QueryParameter
 
-	SRID     uint64
-	TileSRID uint64
+	SRID uint64
+	// TileMatrixSets are the grids this map may be requested in. The first is
+	// the map's default: the grid its native /maps/... routes serve, and the
+	// one an OGC request that does not name a grid gets (ADR-0008).
+	//
+	// An empty list means the default grid alone; read it through TileGrid and
+	// TileGrids rather than directly.
+	TileMatrixSets []*tms.TileMatrixSet
 	// MVT output values
 	TileExtent uint64
 	TileBuffer uint64
@@ -72,11 +94,44 @@ type Map struct {
 	observer observability.Interface
 }
 
-func (m Map) TileGridSRID() uint64 {
-	if m.TileSRID == 0 {
-		return tegola.WebMercator
+// TileGrid returns the map's default TileMatrixSet — the grid its tiles are cut
+// in unless a request names another. It is never nil.
+func (m Map) TileGrid() *tms.TileMatrixSet {
+	for _, grid := range m.TileMatrixSets {
+		if grid != nil {
+			return grid
+		}
 	}
-	return m.TileSRID
+
+	return DefaultTileGrid()
+}
+
+// TileGrids returns every TileMatrixSet this map may be requested in, defaulting
+// to the default grid alone. The first entry is the map's default.
+func (m Map) TileGrids() []*tms.TileMatrixSet {
+	grids := make([]*tms.TileMatrixSet, 0, len(m.TileMatrixSets))
+	for _, grid := range m.TileMatrixSets {
+		if grid != nil {
+			grids = append(grids, grid)
+		}
+	}
+
+	if len(grids) == 0 {
+		return []*tms.TileMatrixSet{DefaultTileGrid()}
+	}
+
+	return grids
+}
+
+// SupportsTileGrid reports whether this map may be requested in the named grid.
+func (m Map) SupportsTileGrid(id string) bool {
+	for _, grid := range m.TileGrids() {
+		if grid.ID() == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 func prepareGeometryForMVT(geo geom.Geometry, tileExtent *geom.Extent, pixelExtent float64) geom.Geometry {
@@ -426,8 +481,7 @@ func (m Map) FilterLayersByName(names ...string) Map {
 
 func (m Map) encodeMVTProviderTile(ctx context.Context, tile slippy.Tile, params provider.Params) ([]byte, error) {
 	// get the list of our layers
-	tileSRID := m.TileGridSRID()
-	ptile := provider.NewTile(tile.Z, tile.X, tile.Y, uint(m.TileBuffer), uint(tileSRID))
+	ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y, uint(m.TileBuffer), m.TileGrid())
 
 	layers := make([]provider.Layer, len(m.Layers))
 	for i := range m.Layers {
@@ -452,6 +506,15 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 	// layer stack
 	mvtLayers := make([]*mvt.Layer, len(m.Layers))
 
+	// the grid this tile is cut in, and the CRS features must be reprojected
+	// into before they are clipped and encoded. Both are properties of the map,
+	// not of a layer, so they are resolved once here rather than per layer.
+	grid := m.TileGrid()
+	tileSRID, sridErr := grid.NativeSRID()
+	if sridErr != nil {
+		return nil, fmt.Errorf("tile grid %v has no SRID to encode in: %w", grid.ID(), sridErr)
+	}
+
 	// set our WaitGroup count
 	wg.Add(len(m.Layers))
 
@@ -467,9 +530,8 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 			// on completion let the wait group know
 			defer wg.Done()
 
-			tileSRID := m.TileGridSRID()
-			ptile := provider.NewTile(tile.Z, tile.X, tile.Y,
-				uint(m.TileBuffer), uint(tileSRID))
+			ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y,
+				uint(m.TileBuffer), grid)
 
 			// fetch layer from data provider
 			err := l.Provider.TileFeatures(ctx, l.ProviderLayerName, ptile, params, func(f *provider.Feature) error {

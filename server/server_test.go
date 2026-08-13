@@ -18,6 +18,7 @@ import (
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/provider/test"
 	"github.com/go-spatial/tegola/server"
+	"github.com/go-spatial/tegola/tms"
 )
 
 // test server config
@@ -96,9 +97,15 @@ func newTestMapWithBounds(minx, miny, maxx, maxy float64) *atlas.Atlas {
 	return a
 }
 
-func newTestMapWithTileSRID(tileSRID uint64, layers ...atlas.Layer) *atlas.Atlas {
+func newTestMapWithGrid(gridID string, layers ...atlas.Layer) *atlas.Atlas {
 	testMap := atlas.NewWebMercatorMap(testMapName)
-	testMap.TileSRID = tileSRID
+
+	grid, err := tms.Get(gridID)
+	if err != nil {
+		panic("newTestMapWithGrid: " + err.Error())
+	}
+	testMap.TileMatrixSets = []*tms.TileMatrixSet{grid}
+
 	testMap.Attribution = testMapAttribution
 	testMap.Center = testMapCenter
 	testMap.Layers = append(testMap.Layers, layers...)

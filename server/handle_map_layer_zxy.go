@@ -10,20 +10,15 @@ import (
 	"strings"
 
 	"github.com/dimfeld/httptreemux"
-	"github.com/go-spatial/geom"
 	"github.com/go-spatial/geom/encoding/mvt"
 	"github.com/go-spatial/geom/slippy"
-	"github.com/go-spatial/proj"
 
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/internal/log"
 	"github.com/go-spatial/tegola/observability"
 	"github.com/go-spatial/tegola/provider"
-)
-
-var (
-	webmercatorGrid = slippy.NewGrid(3857, 0)
+	"github.com/go-spatial/tegola/tms"
 )
 
 type HandleMapLayerZXY struct {
@@ -47,7 +42,7 @@ type HandleMapLayerZXY struct {
 }
 
 // parseURI reads the request URI and extracts the various values for the request
-func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
+func (req *HandleMapLayerZXY) parseURI(r *http.Request, grid *tms.TileMatrixSet) error {
 	var err error
 
 	params := httptreemux.ContextParams(r.Context())
@@ -66,21 +61,21 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
 	}
 	req.z = uint(placeholder)
 
-	gridWidth, gridHeight, err := tegola.TileGridSize(tileSRID, slippy.Zoom(req.z))
+	// The matrix at this zoom bounds x and y independently: a grid is not
+	// necessarily a square pyramid. WorldCRS84Quad, for one, is 2*2^z columns
+	// by 2^z rows.
+	cols, rows, err := grid.MatrixSize(int(req.z))
 	if err != nil {
-		log.Warnf("invalid tile_srid (%v)", tileSRID)
-		return err
+		log.Warnf("tile grid %v has no matrix at z/%v: %v", grid.ID(), req.z, err)
+		return fmt.Errorf("invalid Z value (%v)", z)
 	}
-	maxXatZ := uint64(gridWidth - 1)
-	maxYatZ := uint64(gridHeight - 1)
-	if tileSRID == tegola.WGS84 {
-		log.Debugf("WorldCRS84Quad tile grid for z/%v: width=%v height=%v max_x=%v max_y=%v", req.z, gridWidth, gridHeight, maxXatZ, maxYatZ)
-	}
+	maxXatZ := uint64(cols - 1)
+	maxYatZ := uint64(rows - 1)
 
 	x := params["x"]
 	placeholder, err = strconv.ParseUint(x, 10, 32)
 	if err != nil || placeholder > maxXatZ {
-		log.Warnf("invalid X value (%v) for tile_srid %v at z/%v; max_x=%v", x, tileSRID, req.z, maxXatZ)
+		log.Warnf("invalid X value (%v) for grid %v at z/%v; max_x=%v", x, grid.ID(), req.z, maxXatZ)
 		return fmt.Errorf("invalid X value (%v)", x)
 	}
 	req.x = uint(placeholder)
@@ -90,7 +85,7 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, tileSRID uint64) error {
 	yParts := strings.Split(y, ".")
 	placeholder, err = strconv.ParseUint(yParts[0], 10, 32)
 	if err != nil || placeholder > maxYatZ {
-		log.Warnf("invalid Y value (%v) for tile_srid %v at z/%v; max_y=%v", yParts[0], tileSRID, req.z, maxYatZ)
+		log.Warnf("invalid Y value (%v) for grid %v at z/%v; max_y=%v", yParts[0], grid.ID(), req.z, maxYatZ)
 		return fmt.Errorf("invalid Y value (%v)", yParts[0])
 	}
 
@@ -135,13 +130,10 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// parse our URI
-	tileSRID := m.TileGridSRID()
-	if err := req.parseURI(r, tileSRID); err != nil {
+	grid := m.TileGrid()
+	if err := req.parseURI(r, grid); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-	if tileSRID == tegola.WGS84 {
-		log.Debugf("handling WorldCRS84Quad tile request map=%v layer=%v z=%v x=%v y=%v tile_srid=%v", req.mapName, req.layerName, req.z, req.x, req.y, tileSRID)
 	}
 
 	// filter down the layers we need for this zoom
@@ -170,8 +162,11 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Check to see that the zxy is within the bounds of the map.
 		// TODO(@ear7h): use a more efficient version of Intersect that doesn't
 		// make a new extent
-		var ext4326 *geom.Extent
-		extent, err := tileExtent(tileSRID, tile)
+		//
+		// Map.Bounds is in WGS84, so the tile's extent is asked for in
+		// geographic coordinates — the grid converts from its own CRS, which is
+		// the identity for a geographic grid.
+		ext4326, err := grid.TileGeoExtent(tms.Tile{Z: int(req.z), X: int64(req.x), Y: int64(req.y)})
 		if err != nil {
 			msg := fmt.Sprintf("map (%v -- %v) does not contains tile at %v/%v/%v. Unable to generate extent.", req.mapName, m.Bounds, req.z, req.x, req.y)
 			log.Debug(msg, err)
@@ -179,24 +174,9 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if tileSRID == tegola.WGS84 {
-			ext4326 = extent
-			log.Debugf("WorldCRS84Quad tile extent map=%v z=%v x=%v y=%v extent=%v", req.mapName, req.z, req.x, req.y, ext4326)
-		} else {
-			points4326, err := proj.Inverse(proj.WebMercator, extent[:])
-			if err != nil {
-				msg := fmt.Sprintf("Unable to convert 3857 to 4326 for map (%v -- %v) and tile %v/%v/%v -- %v.", req.mapName, m.Bounds, req.z, req.x, req.y, extent)
-				log.Error(msg)
-				http.Error(w, msg, http.StatusNotFound)
-				return
-			}
-
-			ext4326 = &geom.Extent{}
-			copy(ext4326[:], points4326)
-		}
-		if _, intersect := m.Bounds.Intersect(ext4326); !intersect {
+		if _, intersect := m.Bounds.Intersect(&ext4326); !intersect {
 			msg := fmt.Sprintf("map (%v -- %v) does not contains tile at %v/%v/%v -- %v", req.mapName, m.Bounds, req.z, req.x, req.y, ext4326)
-			log.Debugf("%v tile_srid=%v", msg, tileSRID)
+			log.Debugf("%v grid=%v", msg, grid.ID())
 			http.Error(w, msg, http.StatusNotFound)
 			return
 		}
@@ -257,13 +237,6 @@ func (req HandleMapLayerZXY) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Int("size_kb", len(pbyte)/1024),
 		)
 	}
-}
-
-func tileExtent(tileSRID uint64, tile slippy.Tile) (*geom.Extent, error) {
-	if tileSRID == tegola.WGS84 {
-		return tegola.WorldCRS84QuadExtent(tile)
-	}
-	return slippy.Extent(webmercatorGrid, tile)
 }
 
 func extractParameters(m atlas.Map, r *http.Request) (provider.Params, error) {

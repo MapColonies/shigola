@@ -35,10 +35,19 @@ var ErrVariableWidthUnsupported = errors.New("tms: variable-width tile matrices 
 // Every other bundled grid is still registered, and Get reports precisely why it
 // is unavailable. Activating one is a matter of supplying its Transformer and
 // adding it here — no call site changes.
+// Identifiers of the grids this build activates. Every bundled grid is
+// registered under its definition file's id; these three are the ones that need
+// no transform backend and so can actually be served (ADR-0009).
+const (
+	WebMercatorQuad = "WebMercatorQuad"
+	WorldCRS84Quad  = "WorldCRS84Quad"
+	WGS1984Quad     = "WGS1984Quad"
+)
+
 var activeGrids = map[string]bool{
-	"WebMercatorQuad": true,
-	"WorldCRS84Quad":  true,
-	"WGS1984Quad":     true,
+	WebMercatorQuad: true,
+	WorldCRS84Quad:  true,
+	WGS1984Quad:     true,
 }
 
 // GridUnavailableError reports a registered grid that this build cannot serve.
@@ -215,6 +224,32 @@ func (r *Registry) Available(id string) bool {
 	return err == nil
 }
 
+// AvailableIDs returns the ids of every grid this build can serve, with
+// WebMercatorQuad first and the rest sorted.
+//
+// The order is part of the contract, not a detail: a caller that takes "every
+// available grid" as a default — a map's tiling schemes, say — treats the first
+// entry as the default one, and tegola's default grid has always been
+// WebMercatorQuad. Sorting alone would put WGS1984Quad there, since 'G' sorts
+// before 'e'.
+func (r *Registry) AvailableIDs() []string {
+	var out []string
+
+	for _, id := range r.Registered() {
+		if id == WebMercatorQuad || !r.Available(id) {
+			continue
+		}
+
+		out = append(out, id)
+	}
+
+	if r.Available(WebMercatorQuad) {
+		out = append([]string{WebMercatorQuad}, out...)
+	}
+
+	return out
+}
+
 // Default is the registry holding the bundled grid definitions. Server code
 // should resolve tileMatrixSetIds through it rather than constructing grids
 // directly.
@@ -234,6 +269,10 @@ func Register(id string, ctor Factory) error { return Default.Register(id, ctor)
 
 // Available reports whether a grid is registered and servable by this build.
 func Available(id string) bool { return Default.Available(id) }
+
+// AvailableIDs returns the ids of the Default registry's servable grids,
+// WebMercatorQuad first.
+func AvailableIDs() []string { return Default.AvailableIDs() }
 
 func init() {
 	if err := registerBundled(Default); err != nil {

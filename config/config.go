@@ -14,6 +14,7 @@ import (
 	"github.com/go-spatial/tegola/internal/env"
 	"github.com/go-spatial/tegola/internal/log"
 	"github.com/go-spatial/tegola/provider"
+	"github.com/go-spatial/tegola/tms"
 )
 
 const (
@@ -200,8 +201,13 @@ func (c *Config) Validate() error {
 	// maps with configured parameters for logging
 	mapsWithCustomParams := []string{}
 	for mapKey, m := range c.Maps {
-		if m.TileSRID != nil && !tegola.IsSupportedTileSRID(uint64(*m.TileSRID)) {
-			return ErrUnsupportedTileSRID{MapName: string(m.Name), TileSRID: int(*m.TileSRID)}
+		for _, id := range m.TileMatrixSets {
+			if !tms.Available(string(id)) {
+				return ErrUnsupportedTileMatrixSet{
+					MapName:       string(m.Name),
+					TileMatrixSet: string(id),
+				}
+			}
 		}
 
 		// validate any declared query parameters

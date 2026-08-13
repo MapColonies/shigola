@@ -15,6 +15,7 @@ import (
 	"github.com/go-spatial/tegola/cache/redis"
 	"github.com/go-spatial/tegola/dict"
 	"github.com/go-spatial/tegola/internal/ttools"
+	"github.com/go-spatial/tegola/tms"
 )
 
 // TESTENV is the environment variable that must be set to "yes" to run the redis tests.
@@ -358,38 +359,55 @@ func TestRedisKey(t *testing.T) {
 		}
 	}
 
-	key := cache.Key{MapName: "osm", LayerName: "water", Z: 10, X: 511, Y: 340}
+	key := cache.Key{
+		TileMatrixSetId: tms.WebMercatorQuad,
+		MapName:         "osm",
+		LayerName:       "water",
+		Z:               10, X: 511, Y: 340,
+	}
 
 	tests := map[string]tcase{
 		"no prefix": {
 			keyPrefix: "",
 			key:       key,
-			expected:  "osm/water/10/511/340",
+			expected:  "WebMercatorQuad/osm/water/10/511/340",
 		},
 		"colon separated prefix": {
 			keyPrefix: "tegola:",
 			key:       key,
-			expected:  "tegola:osm/water/10/511/340",
+			expected:  "tegola:WebMercatorQuad/osm/water/10/511/340",
 		},
 		// The documented sharp edge of concatenating rather than path-joining: a
-		// prefix without a separator runs into the map name. Pinned so it cannot
+		// prefix without a separator runs into the grid id. Pinned so it cannot
 		// change silently.
 		"prefix without a separator": {
 			keyPrefix: "tegola",
 			key:       key,
-			expected:  "tegolaosm/water/10/511/340",
+			expected:  "tegolaWebMercatorQuad/osm/water/10/511/340",
 		},
 		// filepath.Join would collapse the doubled slash here. Concatenation does
 		// not touch the prefix, which is what lets ':' namespacing survive.
 		"prefix is passed through verbatim": {
 			keyPrefix: "tegola//",
 			key:       key,
-			expected:  "tegola//osm/water/10/511/340",
+			expected:  "tegola//WebMercatorQuad/osm/water/10/511/340",
 		},
 		"prefix on a key with no map or layer": {
 			keyPrefix: "tegola:",
 			key:       cache.Key{Z: 0, X: 1, Y: 2},
-			expected:  "tegola:0/1/2",
+			expected:  "tegola:WebMercatorQuad/0/1/2",
+		},
+		// The grid partitions the redis keyspace under the same prefix, so a
+		// shared redis cannot serve one grid's tiles for another (ADR-0007).
+		"another grid, same prefix and tile": {
+			keyPrefix: "tegola:",
+			key: cache.Key{
+				TileMatrixSetId: tms.WorldCRS84Quad,
+				MapName:         "osm",
+				LayerName:       "water",
+				Z:               10, X: 511, Y: 340,
+			},
+			expected: "tegola:WorldCRS84Quad/osm/water/10/511/340",
 		},
 	}
 

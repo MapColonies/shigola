@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/go-spatial/geom/encoding/mvt"
-	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
 	"github.com/go-spatial/tegola/cache"
 	"github.com/go-spatial/tegola/internal/log"
@@ -44,20 +43,14 @@ func TileCacheHandler(a *atlas.Atlas, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		tileSRID := m.TileGridSRID()
-		if tileSRID != tegola.WebMercator {
-			log.Debugf("cache middleware: parsing key for map=%v tile_srid=%v key_path=%v", mapName, tileSRID, keyPath)
-		}
-
 		// parse our URI into a cache key structure (remove any configured URIPrefix + "maps/" )
-		key, err := cache.ParseKeyForTileSRID(keyPath, tileSRID)
+		// The native routes serve the map's default grid, so that is the grid
+		// the key is bound to — without it, two grids' tiles share a key.
+		key, err := cache.ParseKeyForGrid(keyPath, m.TileGrid())
 		if err != nil {
 			log.Errorf("cache middleware: ParseKey err: %v", err)
 			next.ServeHTTP(w, r)
 			return
-		}
-		if tileSRID != tegola.WebMercator {
-			log.Debugf("cache middleware: parsed key=%v tile_srid=%v", key, tileSRID)
 		}
 
 		// use the URL path as the key

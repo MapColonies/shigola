@@ -6,6 +6,7 @@ package tms
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -323,4 +324,37 @@ func containsString(haystack []string, needle string) bool {
 	}
 
 	return false
+}
+
+// TestAvailableIDsOrder pins the ordering contract: a caller that defaults to
+// "every available grid" — a map's tiling schemes, for one — takes the first
+// entry as the default, and tegola's default has always been WebMercatorQuad.
+// Plain sorting would put WGS1984Quad first, since 'G' sorts before 'e'.
+func TestAvailableIDsOrder(t *testing.T) {
+	ids := AvailableIDs()
+
+	if len(ids) == 0 {
+		t.Fatal("AvailableIDs is empty")
+	}
+
+	if ids[0] != WebMercatorQuad {
+		t.Errorf("AvailableIDs()[0] = %q, want %q", ids[0], WebMercatorQuad)
+	}
+
+	for _, id := range ids {
+		if !Available(id) {
+			t.Errorf("AvailableIDs contains %q, which is not available", id)
+		}
+	}
+
+	// the gated grids stay out of the list a config defaults to
+	for _, id := range []string{"NZTM2000Quad", "CDB1GlobalGrid"} {
+		if slices.Contains(ids, id) {
+			t.Errorf("AvailableIDs contains gated grid %q", id)
+		}
+	}
+
+	if rest := ids[1:]; !slices.IsSorted(rest) {
+		t.Errorf("AvailableIDs after the default is not sorted: %v", rest)
+	}
 }

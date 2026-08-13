@@ -20,6 +20,7 @@ import (
 	"github.com/go-spatial/tegola/provider"
 	"github.com/go-spatial/tegola/provider/test"
 	"github.com/go-spatial/tegola/provider/test/emptycollection"
+	"github.com/go-spatial/tegola/tms"
 )
 
 type polygonProvider struct {
@@ -237,7 +238,7 @@ func TestEncodeWorldCRS84QuadClipsPolygonsBeforeMVTPrepare(t *testing.T) {
 	}}
 
 	atlasMap := atlas.NewWebMercatorMap("crs84")
-	atlasMap.TileSRID = tegola.WGS84
+	atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, tms.WorldCRS84Quad)}
 	atlasMap.TileBuffer = 64
 	atlasMap.Layers = []atlas.Layer{{
 		Name:              "polygons",
@@ -282,7 +283,7 @@ func TestEncodeWorldCRS84QuadCleansClippedPolygons(t *testing.T) {
 	}}
 
 	atlasMap := atlas.NewWebMercatorMap("crs84")
-	atlasMap.TileSRID = tegola.WGS84
+	atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, tms.WorldCRS84Quad)}
 	atlasMap.TileBuffer = 64
 	atlasMap.Layers = []atlas.Layer{{
 		Name:              "polygons",
@@ -601,5 +602,78 @@ func TestEncode(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+// mustGrid resolves a TileMatrixSet, failing the test if this build cannot
+// serve it.
+func mustGrid(t *testing.T, id string) *tms.TileMatrixSet {
+	t.Helper()
+
+	grid, err := tms.Get(id)
+	if err != nil {
+		t.Fatalf("tms.Get(%q): %v", id, err)
+	}
+
+	return grid
+}
+
+// TestEncodeDiffersByTileMatrixSet is the property Phase 1 exists to deliver:
+// the same z/x/y names different ground in different grids, so the same map
+// must encode different tiles for it.
+//
+// At z=3 tile 5/2, WebMercatorQuad covers roughly lon 45..90 in the northern
+// hemisphere while WorldCRS84Quad — 2*2^z columns wide — covers lon -67.5..-45
+// north of the equator. A polygon placed in the WebMercator tile's ground is
+// therefore absent from the CRS84 one, which is a geometric assertion rather
+// than a golden byte count.
+func TestEncodeDiffersByTileMatrixSet(t *testing.T) {
+	// inside WebMercatorQuad 3/5/2, outside WorldCRS84Quad 3/5/2
+	polygon := geom.Polygon{{
+		{50, 45},
+		{60, 45},
+		{60, 55},
+		{50, 55},
+		{50, 45},
+	}}
+
+	encode := func(t *testing.T, gridID string) vectorTile.Tile {
+		t.Helper()
+
+		atlasMap := atlas.NewWebMercatorMap("differs")
+		atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, gridID)}
+		atlasMap.TileBuffer = 0
+		atlasMap.Layers = []atlas.Layer{{
+			Name:              "polygons",
+			ProviderLayerName: "polygons",
+			MinZoom:           0,
+			MaxZoom:           22,
+			Provider: polygonProvider{
+				geometry: polygon,
+				srid:     tegola.WGS84,
+			},
+		}}
+
+		out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 3, X: 5, Y: 2}, nil)
+		if err != nil {
+			t.Fatalf("Encode(%v) error = %v", gridID, err)
+		}
+
+		return decodeGzippedVectorTile(t, out)
+	}
+
+	webMercator := encode(t, tms.WebMercatorQuad)
+	if len(webMercator.Layers) != 1 || len(webMercator.Layers[0].Features) != 1 {
+		t.Fatalf("WebMercatorQuad 3/5/2 should contain the polygon, got %v layers", len(webMercator.Layers))
+	}
+
+	crs84 := encode(t, tms.WorldCRS84Quad)
+	features := 0
+	for _, layer := range crs84.Layers {
+		features += len(layer.Features)
+	}
+
+	if features != 0 {
+		t.Errorf("WorldCRS84Quad 3/5/2 covers different ground, so it should hold no features, got %d", features)
 	}
 }

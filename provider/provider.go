@@ -40,8 +40,8 @@ const (
 // grid they want say so with NewTileForGrid; this table is what NewTile falls
 // back on.
 var defaultGridForSRID = map[uint]string{
-	tegola.WebMercator: "WebMercatorQuad",
-	tegola.WGS84:       "WorldCRS84Quad",
+	tegola.WebMercator: tms.WebMercatorQuad,
+	tegola.WGS84:       tms.WorldCRS84Quad,
 }
 
 func (pt providerType) Prefix() string {
