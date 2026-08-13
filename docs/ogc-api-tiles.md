@@ -151,34 +151,57 @@ http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt
 http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets
 ```
 
-**These classes have not yet been verified against the OGC CITE suite.** They are claimed on the
-basis of the implementation and its tests; treat them as provisional until the suite has been run
-and any failures fixed. Drop any class that does not pass rather than leaving it declared.
+**Verified against the OGC CITE suite** (`ets-ogcapi-tiles10` 1.2, via TeamEngine), serving the
+Athens OSM GeoPackage from `provider/gpkg/testdata`:
+
+```
+15 passed · 0 failed · 1 skipped     WebMercatorQuad
+15 passed · 0 failed · 1 skipped     WorldCRS84Quad
+```
+
+The skip is `.../conf/dataset-tilesets`, which this service does not implement and does not
+declare — tilesets are per collection, not for the dataset as a whole.
 
 ### Running CITE
 
-The suite needs a TeamEngine instance and a running tegola reachable from it, serving real data —
-neither is exercised by `go test`.
+The suite needs a TeamEngine instance and a running tegola it can reach, serving real data. Both
+run as containers on one docker network:
 
 ```sh
-# 1. a tegola serving a configured map, reachable from the container below
-tegola serve --config=config.toml
+docker network create cite-net
 
-# 2. TeamEngine, with the OGC API - Tiles suite
-docker run -p 8080:8080 ogccite/ets-ogcapi-tiles10
+# 1. tegola, serving a map with data
+docker run -d --name cite-tegola --network cite-net \
+  -v "$PWD/citedata:/data" -w /data --entrypoint /data/tegola \
+  tegola-dev:latest serve --config /data/config.toml
 
-# 3. open http://localhost:8080/teamengine, start the
-#    "OGC API - Tiles 1.0" test run, and give it the landing page URL,
-#    e.g. http://host.docker.internal:8080/
+# 2. TeamEngine with the OGC API - Tiles suite
+docker run -d --name cite-te --network cite-net -p 8888:8080 ogccite/ets-ogcapi-tiles10
+
+# 3. run the suite. Credentials are ogctest/ogctest.
+curl -u ogctest:ogctest -G \
+  --data-urlencode "iut=http://cite-tegola:8080/" \
+  --data-urlencode "noofcollections=-1" \
+  --data-urlencode "tilematrixsetdefinitionuri=http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad" \
+  --data-urlencode "urltemplatefortiles=http://cite-tegola:8080/collections/athens/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}" \
+  --data-urlencode "tilematrix=14" \
+  --data-urlencode "mintilerow=6324" --data-urlencode "maxtilerow=6324" \
+  --data-urlencode "mintilecol=9271" --data-urlencode "maxtilecol=9271" \
+  http://localhost:8888/teamengine/rest/suites/ogcapi-tiles-1.0/run
 ```
 
-Run the Common (Part 1 and Part 2) suites the same way for the `ogcapi-common` classes.
+The last six arguments are **test inputs the suite does not discover for itself**. Omit them and
+three `MandatoryCore` tests fail with "A tile matrix set definition uri was not found in the test
+inputs" — which reads like a defect in the service and is not one. The row and column above are a
+tile that actually holds data; pick one inside the collection's `tileMatrixSetLimits`.
 
-What the repository's own tests already cover, and what CITE would additionally establish:
+The output is an EARL report in RDF/XML. It has no summary line: count `earl:outcome` values.
 
-- covered: every resource's shape and links; every published link resolves, including behind a
-  mount prefix; the tile template resolves once filled in; a transposed tile path is rejected;
-  tiles differ between schemes; the OpenAPI document describes every registered route.
-- not covered: the specification's own assertions about response schemas and headers; behaviour
-  against a real data source at scale; anything the suite checks that the implementation and its
-  tests are wrong about in the same way.
+What the repository's own tests cover, and what CITE adds on top:
+
+- covered by `go test`: every resource's shape and links; every published link resolves, including
+  behind a mount prefix; the tile template resolves once filled in; a transposed tile path is
+  rejected; tiles differ between schemes; the OpenAPI document describes every registered route.
+- added by CITE: the specification's own assertions about response schemas, headers and operation
+  ids, against a real data source. It found one thing the local tests could not — the tile
+  operation's id must contain `.getTile`, per Requirement /req/oas30/operation-id and Table 11.

@@ -155,3 +155,43 @@ func TestAPIIsValidJSON(t *testing.T) {
 		t.Fatalf("the embedded OpenAPI document is not valid JSON: %v", err)
 	}
 }
+
+// TestAPIOperationIds pins the operation ids OGC API - Tiles fixes by name.
+//
+// Requirement /req/oas30/operation-id and its Table 11 name the operations an
+// OpenAPI definition must declare, and the CITE suite checks them literally. A
+// descriptive-but-invented id — getCollectionTile, say — reads fine and fails
+// conformance, with a message that names no path.
+func TestAPIOperationIds(t *testing.T) {
+	var doc struct {
+		Paths map[string]struct {
+			Get struct {
+				OperationID string `json:"operationId"`
+			} `json:"get"`
+		} `json:"paths"`
+	}
+
+	if w := get(t, newRouterFor(t, newAtlas(t)), "/api", &doc); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	// Table 11 scopes an operation id as "scope.operation", and CITE checks the
+	// tile one by substring: an id must contain ".getTile", leading dot and all.
+	// A bare "getTile" fails, which is what a plain reading of the table would
+	// produce — so the exact ids are pinned here, verified against a CITE run.
+	want := map[string]string{
+		"/collections/{collectionId}/tiles":                                                    "collection.getTileSetsList",
+		"/collections/{collectionId}/tiles/{tileMatrixSetId}":                                  "collection.getTileSet",
+		"/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": "collection.getTile",
+	}
+
+	for path, operationID := range want {
+		if got := doc.Paths[path].Get.OperationID; got != operationID {
+			t.Errorf("operationId for %v = %q, want %q", path, got, operationID)
+		}
+	}
+
+	if got := doc.Paths["/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"].Get.OperationID; !strings.Contains(got, ".getTile") {
+		t.Errorf("the tile operationId %q does not contain \".getTile\", which CITE checks literally", got)
+	}
+}

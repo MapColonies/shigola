@@ -129,7 +129,7 @@
         "tags": ["Tiles"],
         "summary": "The vector tilesets of a collection",
         "description": "One tileset per tiling scheme this collection may be requested in.",
-        "operationId": "getCollectionTileSetsList",
+        "operationId": "collection.getTileSetsList",
         "parameters": [
           { "$ref": "#/components/parameters/collectionId" },
           { "$ref": "#/components/parameters/f" }
@@ -151,7 +151,7 @@
         "tags": ["Tiles"],
         "summary": "Describe one tileset",
         "description": "Tileset metadata, including the limits of the tiles that hold data. Use f=tilejson for the TileJSON 3.0 representation of the same tileset.",
-        "operationId": "getCollectionTileSet",
+        "operationId": "collection.getTileSet",
         "parameters": [
           { "$ref": "#/components/parameters/collectionId" },
           { "$ref": "#/components/parameters/tileMatrixSetId" },
@@ -174,7 +174,7 @@
         "tags": ["Tiles"],
         "summary": "Fetch one vector tile",
         "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from tegola's native /maps/ routes, which are z/x/y.",
-        "operationId": "getCollectionTile",
+        "operationId": "collection.getTile",
         "parameters": [
           { "$ref": "#/components/parameters/collectionId" },
           { "$ref": "#/components/parameters/tileMatrixSetId" },
