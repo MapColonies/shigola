@@ -12,6 +12,7 @@ import (
 	"github.com/go-spatial/tegola/internal/build"
 	"github.com/go-spatial/tegola/internal/log"
 	"github.com/go-spatial/tegola/observability"
+	"github.com/go-spatial/tegola/server/ogc"
 )
 
 const (
@@ -100,6 +101,23 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 	// map style
 	group.UsingContext().
 		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/style.json", o, HeadersHandler(HandleMapStyle{})))
+
+	// OGC API - Tiles surface. Mounted with the same middleware as the native
+	// routes so that headers, CORS and instrumentation behave identically.
+	// It takes over "/", which is why the viewer is registered after it, at
+	// /viewer (ADR-0003).
+	ogcService := ogc.New(ogc.Config{
+		Atlas: a,
+		// Wrapped rather than passed directly: URLRoot is a package variable
+		// that deployments such as lambda replace, and the replacement can
+		// happen after the router is built.
+		URLRoot:   func(r *http.Request) *url.URL { return URLRoot(r) },
+		URIPrefix: URIPrefix,
+	})
+	for _, route := range ogcService.Routes() {
+		group.UsingContext().
+			Handler(observability.InstrumentAPIHandler(route.Method, route.Path, o, HeadersHandler(route.Handler)))
+	}
 
 	// setup viewer routes, which can be excluded via build flags
 	setupViewer(o, group)

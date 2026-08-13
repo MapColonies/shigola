@@ -169,8 +169,12 @@ func TestHandleMapStyle(t *testing.T) {
 
 func TestHandleMapStyleCORS(t *testing.T) {
 	tests := map[string]CORSTestCase{
+		// Leading slash, as every other CORS case has: path.Join drops it, and
+		// the request then only matched because the viewer's catch-all sat at
+		// the service root. The OGC landing page took that root over, so an
+		// unrooted path now gets httptreemux's clean-path redirect instead.
 		"1": {
-			uri: path.Join("maps", testMapName, "style.json"),
+			uri: "/" + path.Join("maps", testMapName, "style.json"),
 		},
 	}
 
