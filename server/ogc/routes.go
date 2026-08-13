@@ -23,6 +23,7 @@ type Route struct {
 func (s *Service) Routes() []Route {
 	return []Route{
 		{Method: http.MethodGet, Path: "/", Handler: s.HandleLandingPage},
+		{Method: http.MethodGet, Path: "/api", Handler: s.HandleAPI},
 		{Method: http.MethodGet, Path: "/conformance", Handler: s.HandleConformance},
 		{Method: http.MethodGet, Path: "/tileMatrixSets", Handler: s.HandleTileMatrixSets},
 		{Method: http.MethodGet, Path: "/tileMatrixSets/:tile_matrix_set_id", Handler: s.HandleTileMatrixSet},

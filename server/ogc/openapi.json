@@ -1,0 +1,486 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "tegola — OGC API - Tiles",
+    "description": "Vector (Mapbox Vector Tile) tiles served by tegola, following OGC API - Tiles. Every collection is vector geodata; a collection is either a tegola map or one layer of one.",
+    "version": "1.0.0",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/go-spatial/tegola/blob/master/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "this server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Capabilities",
+      "description": "What this service is and what it conforms to"
+    },
+    {
+      "name": "Data",
+      "description": "The collections this service publishes"
+    },
+    {
+      "name": "Tiles",
+      "description": "Tilesets and the tiles in them"
+    },
+    {
+      "name": "TileMatrixSets",
+      "description": "The tiling schemes tiles are cut in"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["Capabilities"],
+        "summary": "Landing page",
+        "description": "Links to the API definition, the conformance declaration, the collections, and the tiling schemes.",
+        "operationId": "getLandingPage",
+        "parameters": [{ "$ref": "#/components/parameters/f" }],
+        "responses": {
+          "200": {
+            "description": "The landing page.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/landingPage" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api": {
+      "get": {
+        "tags": ["Capabilities"],
+        "summary": "This API definition",
+        "operationId": "getApiDescription",
+        "responses": {
+          "200": {
+            "description": "The OpenAPI definition of this service.",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.0": { "schema": { "type": "object" } }
+            }
+          }
+        }
+      }
+    },
+    "/conformance": {
+      "get": {
+        "tags": ["Capabilities"],
+        "summary": "Conformance declaration",
+        "description": "The conformance classes this service implements. A class is listed only if the service satisfies it.",
+        "operationId": "getConformanceDeclaration",
+        "parameters": [{ "$ref": "#/components/parameters/f" }],
+        "responses": {
+          "200": {
+            "description": "The conformance declaration.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/confClasses" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/collections": {
+      "get": {
+        "tags": ["Data"],
+        "summary": "The collections in this dataset",
+        "description": "One collection per tegola map, plus one per layer of each map, identified as {map}:{layer}.",
+        "operationId": "getCollections",
+        "parameters": [{ "$ref": "#/components/parameters/f" }],
+        "responses": {
+          "200": {
+            "description": "The collections.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/collections" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/collections/{collectionId}": {
+      "get": {
+        "tags": ["Data"],
+        "summary": "Describe one collection",
+        "operationId": "describeCollection",
+        "parameters": [
+          { "$ref": "#/components/parameters/collectionId" },
+          { "$ref": "#/components/parameters/f" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The collection.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/collection" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/collections/{collectionId}/tiles": {
+      "get": {
+        "tags": ["Tiles"],
+        "summary": "The vector tilesets of a collection",
+        "description": "One tileset per tiling scheme this collection may be requested in.",
+        "operationId": "getCollectionTileSetsList",
+        "parameters": [
+          { "$ref": "#/components/parameters/collectionId" },
+          { "$ref": "#/components/parameters/f" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tilesets.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/tileSets" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/collections/{collectionId}/tiles/{tileMatrixSetId}": {
+      "get": {
+        "tags": ["Tiles"],
+        "summary": "Describe one tileset",
+        "description": "Tileset metadata, including the limits of the tiles that hold data. Use f=tilejson for the TileJSON 3.0 representation of the same tileset.",
+        "operationId": "getCollectionTileSet",
+        "parameters": [
+          { "$ref": "#/components/parameters/collectionId" },
+          { "$ref": "#/components/parameters/tileMatrixSetId" },
+          { "$ref": "#/components/parameters/fTileSet" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tileset.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/tileSet" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+      "get": {
+        "tags": ["Tiles"],
+        "summary": "Fetch one vector tile",
+        "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from tegola's native /maps/ routes, which are z/x/y.",
+        "operationId": "getCollectionTile",
+        "parameters": [
+          { "$ref": "#/components/parameters/collectionId" },
+          { "$ref": "#/components/parameters/tileMatrixSetId" },
+          { "$ref": "#/components/parameters/tileMatrix" },
+          { "$ref": "#/components/parameters/tileRow" },
+          { "$ref": "#/components/parameters/tileCol" },
+          { "$ref": "#/components/parameters/fTile" }
+        ],
+        "responses": {
+          "200": {
+            "description": "A Mapbox Vector Tile. A tile holding no data at this zoom is an empty tile, not a 404.",
+            "content": {
+              "application/vnd.mapbox-vector-tile": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/tileMatrixSets": {
+      "get": {
+        "tags": ["TileMatrixSets"],
+        "summary": "The tiling schemes this service supports",
+        "description": "Only schemes this build can actually serve are listed.",
+        "operationId": "getTileMatrixSetsList",
+        "parameters": [{ "$ref": "#/components/parameters/f" }],
+        "responses": {
+          "200": {
+            "description": "The tiling schemes.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/tileMatrixSets" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/tileMatrixSets/{tileMatrixSetId}": {
+      "get": {
+        "tags": ["TileMatrixSets"],
+        "summary": "Fetch one tiling scheme's definition",
+        "description": "The OGC Two Dimensional Tile Matrix Set document, served as published.",
+        "operationId": "getTileMatrixSet",
+        "parameters": [
+          { "$ref": "#/components/parameters/tileMatrixSetId" },
+          { "$ref": "#/components/parameters/f" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tiling scheme.",
+            "content": {
+              "application/json": { "schema": { "type": "object" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "f": {
+        "name": "f",
+        "in": "query",
+        "description": "The representation to return. Overrides the Accept header.",
+        "required": false,
+        "schema": { "type": "string", "enum": ["json"], "default": "json" },
+        "style": "form",
+        "explode": false
+      },
+      "fTileSet": {
+        "name": "f",
+        "in": "query",
+        "description": "The representation to return: OGC tileset metadata, or TileJSON 3.0.",
+        "required": false,
+        "schema": { "type": "string", "enum": ["json", "tilejson"], "default": "json" },
+        "style": "form",
+        "explode": false
+      },
+      "fTile": {
+        "name": "f",
+        "in": "query",
+        "description": "The tile format. Only Mapbox Vector Tiles are served.",
+        "required": false,
+        "schema": { "type": "string", "enum": ["mvt"], "default": "mvt" },
+        "style": "form",
+        "explode": false
+      },
+      "collectionId": {
+        "name": "collectionId",
+        "in": "path",
+        "description": "A collection id: a map name, or {map}:{layer} for a single layer of one.",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "tileMatrixSetId": {
+        "name": "tileMatrixSetId",
+        "in": "path",
+        "description": "The identifier of a tiling scheme, as listed at /tileMatrixSets.",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "tileMatrix": {
+        "name": "tileMatrix",
+        "in": "path",
+        "description": "The tile matrix identifier — the zoom level.",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^-?[0-9]+$" }
+      },
+      "tileRow": {
+        "name": "tileRow",
+        "in": "path",
+        "description": "The row index of the tile within its tile matrix. Bounded by the matrix height, which need not equal its width.",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 0 }
+      },
+      "tileCol": {
+        "name": "tileCol",
+        "in": "path",
+        "description": "The column index of the tile within its tile matrix. Bounded by the matrix width.",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request is malformed — an unsupported format, or a tile outside its matrix.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/exception" } }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource does not exist here.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/exception" } }
+        }
+      }
+    },
+    "schemas": {
+      "exception": {
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "link": {
+        "type": "object",
+        "required": ["href", "rel"],
+        "properties": {
+          "href": { "type": "string", "example": "http://data.example.com/collections" },
+          "rel": { "type": "string", "example": "self" },
+          "type": { "type": "string", "example": "application/json" },
+          "title": { "type": "string" },
+          "templated": { "type": "boolean" }
+        }
+      },
+      "landingPage": {
+        "type": "object",
+        "required": ["links"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "confClasses": {
+        "type": "object",
+        "required": ["conformsTo"],
+        "properties": {
+          "conformsTo": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "extent": {
+        "type": "object",
+        "properties": {
+          "spatial": {
+            "type": "object",
+            "required": ["bbox"],
+            "properties": {
+              "bbox": {
+                "type": "array",
+                "items": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+              },
+              "crs": { "type": "string" }
+            }
+          }
+        }
+      },
+      "collection": {
+        "type": "object",
+        "required": ["id", "links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "extent": { "$ref": "#/components/schemas/extent" },
+          "dataType": { "type": "string", "enum": ["vector"] },
+          "crs": { "type": "array", "items": { "type": "string" } },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "collections": {
+        "type": "object",
+        "required": ["collections", "links"],
+        "properties": {
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } },
+          "collections": { "type": "array", "items": { "$ref": "#/components/schemas/collection" } }
+        }
+      },
+      "tileMatrixLimits": {
+        "type": "object",
+        "required": ["tileMatrix", "minTileRow", "maxTileRow", "minTileCol", "maxTileCol"],
+        "properties": {
+          "tileMatrix": { "type": "string" },
+          "minTileRow": { "type": "integer" },
+          "maxTileRow": { "type": "integer" },
+          "minTileCol": { "type": "integer" },
+          "maxTileCol": { "type": "integer" }
+        }
+      },
+      "geoDataLayer": {
+        "type": "object",
+        "required": ["id", "dataType"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "dataType": { "type": "string", "enum": ["vector"] },
+          "geometryDimension": { "type": "string", "enum": ["points", "curves", "surfaces"] },
+          "minTileMatrix": { "type": "string" },
+          "maxTileMatrix": { "type": "string" }
+        }
+      },
+      "tileSetItem": {
+        "type": "object",
+        "required": ["dataType", "crs", "tileMatrixSetId", "links"],
+        "properties": {
+          "title": { "type": "string" },
+          "dataType": { "type": "string", "enum": ["vector"] },
+          "crs": { "type": "string" },
+          "tileMatrixSetId": { "type": "string" },
+          "tileMatrixSetURI": { "type": "string" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "tileSets": {
+        "type": "object",
+        "required": ["tilesets"],
+        "properties": {
+          "tilesets": { "type": "array", "items": { "$ref": "#/components/schemas/tileSetItem" } },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "tileSet": {
+        "type": "object",
+        "required": ["dataType", "crs", "tileMatrixSetId", "links"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "dataType": { "type": "string", "enum": ["vector"] },
+          "crs": { "type": "string" },
+          "tileMatrixSetId": { "type": "string" },
+          "tileMatrixSetURI": { "type": "string" },
+          "tileMatrixSetLimits": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/tileMatrixLimits" }
+          },
+          "boundingBox": {
+            "type": "object",
+            "properties": {
+              "lowerLeft": { "type": "array", "items": { "type": "number" } },
+              "upperRight": { "type": "array", "items": { "type": "number" } },
+              "crs": { "type": "string" }
+            }
+          },
+          "layers": { "type": "array", "items": { "$ref": "#/components/schemas/geoDataLayer" } },
+          "attribution": { "type": "string" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "tileMatrixSetItem": {
+        "type": "object",
+        "required": ["id", "links"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "uri": { "type": "string" },
+          "crs": { "type": "string" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
+        }
+      },
+      "tileMatrixSets": {
+        "type": "object",
+        "required": ["tileMatrixSets"],
+        "properties": {
+          "tileMatrixSets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/tileMatrixSetItem" }
+          }
+        }
+      }
+    }
+  }
+}

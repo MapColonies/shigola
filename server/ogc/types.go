@@ -58,6 +58,7 @@ var conformsTo = []string{
 	"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/landingPage",
 	"http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections",
 	"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json",
+	"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/oas30",
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/core",
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tileset",
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list",

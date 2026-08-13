@@ -59,6 +59,22 @@ func (s *Service) href(r *http.Request, elem ...string) string {
 	return u.String()
 }
 
+// hrefRoot is the service root's URL, which always ends in a slash.
+//
+// The root is a directory, and the route serving it is registered at the mount
+// group's own root. Without the slash a client following the landing page's self
+// link is answered with a redirect to the same page — harmless for a client that
+// follows redirects, and a failure for one that does not. At the default mount
+// this is already "/"; behind a prefix it would otherwise be "/tegola".
+func (s *Service) hrefRoot(r *http.Request) string {
+	root := s.href(r)
+	if strings.HasSuffix(root, "/") {
+		return root
+	}
+
+	return root + "/"
+}
+
 // hrefTemplate builds a URL whose path ends in URI template variables.
 //
 // Templates cannot go through href: path.Join would leave "{tileMatrix}" alone

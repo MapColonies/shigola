@@ -24,7 +24,7 @@ func (s *Service) HandleLandingPage(w http.ResponseWriter, r *http.Request) {
 		Title:       "tegola",
 		Description: "OGC API - Tiles served by tegola",
 		Links: []Link{
-			{Rel: relSelf, Href: s.href(r), Type: MediaTypeJSON, Title: "this document"},
+			{Rel: relSelf, Href: s.hrefRoot(r), Type: MediaTypeJSON, Title: "this document"},
 			{Rel: relServiceDesc, Href: s.href(r, "api"), Type: MediaTypeOpenAPI, Title: "the API definition"},
 			{Rel: relConformance, Href: s.href(r, "conformance"), Type: MediaTypeJSON, Title: "conformance classes implemented by this server"},
 			{Rel: relData, Href: s.href(r, "collections"), Type: MediaTypeJSON, Title: "the collections in this dataset"},
