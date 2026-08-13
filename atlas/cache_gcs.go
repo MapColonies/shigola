@@ -1,4 +1,3 @@
-//go:build !noGCSCache
 // +build !noGCSCache
 
 package atlas

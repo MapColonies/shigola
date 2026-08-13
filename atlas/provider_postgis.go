@@ -1,4 +1,3 @@
-//go:build !noPostgisProvider
 // +build !noPostgisProvider
 
 package atlas

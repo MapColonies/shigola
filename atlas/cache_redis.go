@@ -1,4 +1,3 @@
-//go:build !noRedisCache
 // +build !noRedisCache
 
 package atlas
