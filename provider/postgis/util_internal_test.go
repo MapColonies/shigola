@@ -66,10 +66,15 @@ func TestReplaceTokens(t *testing.T) {
 			expected: "SELECT id, scalerank=16 FROM foo WHERE geom && ST_MakeEnvelope(-13163688.81778845,4035254.04260249,-13163058.21230510,4035884.64808584,3857)",
 		},
 		"replace pixel_width/height and scale_denominator": {
-			sql:      "SELECT id, !pixel_width! as width, !pixel_height! as height, !scale_denominator! as scale_denom FROM foo WHERE geom && !BBOX!",
-			layer:    Layer{srid: tegola.WebMercator},
-			tile:     provider.NewTile(11, 1070, 676, 64, tegola.WebMercator),
-			expected: "SELECT id, 76.43702829 as width, 76.43702829 as height, 272989.38673277 as scale_denom FROM foo WHERE geom && ST_MakeEnvelope(899816.69697309,6789748.34851564,919996.07244038,6809927.72398292,3857)",
+			sql:   "SELECT id, !pixel_width! as width, !pixel_height! as height, !scale_denominator! as scale_denom FROM foo WHERE geom && !BBOX!",
+			layer: Layer{srid: tegola.WebMercator},
+			tile:  provider.NewTile(11, 1070, 676, 64, tegola.WebMercator),
+			// The last digit of scale_denom and of the envelope's minx moved by
+			// 1e-8 (10 nanometres) when tile extents started coming from the
+			// TileMatrixSet registry: the WebMercatorQuad document's origin and
+			// cell sizes are exact, where the previous slippy grid round-tripped
+			// through a projection and came out very slightly asymmetric.
+			expected: "SELECT id, 76.43702829 as width, 76.43702829 as height, 272989.38673276 as scale_denom FROM foo WHERE geom && ST_MakeEnvelope(899816.69697310,6789748.34851564,919996.07244038,6809927.72398292,3857)",
 		},
 	}
 

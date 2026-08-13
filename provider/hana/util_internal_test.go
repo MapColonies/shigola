@@ -79,7 +79,10 @@ func TestReplaceTokens(t *testing.T) {
 			sql:       "SELECT id, !pixel_width! as width, !pixel_height! as height, !scale_denominator! as scale_denom FROM foo WHERE !BBOX!",
 			layer:     Layer{srid: tegola.WebMercator, geomField: "geom"},
 			tile:      provider.NewTile(11, 1070, 676, 64, tegola.WebMercator),
-			expected:  `SELECT id, 76.43702829 as width, 76.43702829 as height, 272989.38673277 as scale_denom FROM foo WHERE "geom".ST_IntersectsRectPlanar(NEW ST_POINT($1, $3), NEW ST_POINT($2, $3)) = 1`,
+			// scale_denom's last digit moved by 1e-8 when tile extents started
+			// coming from the TileMatrixSet registry — see the same note in
+			// provider/postgis/util_internal_test.go.
+			expected: `SELECT id, 76.43702829 as width, 76.43702829 as height, 272989.38673276 as scale_denom FROM foo WHERE "geom".ST_IntersectsRectPlanar(NEW ST_POINT($1, $3), NEW ST_POINT($2, $3)) = 1`,
 		},
 	}
 

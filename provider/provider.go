@@ -10,6 +10,7 @@ import (
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/dict"
 	"github.com/go-spatial/tegola/internal/log"
+	"github.com/go-spatial/tegola/tms"
 )
 
 // providerType defines the type of providers we have in the system.
@@ -30,9 +31,18 @@ const (
 	TypeAll = TypeStd & TypeMvt
 )
 
-var (
-	webmercatorGrid = slippy.NewGrid(3857, 0)
-)
+// defaultGridForSRID maps a bare tile SRID onto the TileMatrixSet tegola has
+// historically meant by it.
+//
+// It exists only for callers that still describe a tile by its SRID — a
+// description that is genuinely ambiguous, since WorldCRS84Quad and WGS1984Quad
+// are both EPSG:4326 grids with different matrix shapes. Callers that know which
+// grid they want say so with NewTileForGrid; this table is what NewTile falls
+// back on.
+var defaultGridForSRID = map[uint]string{
+	tegola.WebMercator: "WebMercatorQuad",
+	tegola.WGS84:       "WorldCRS84Quad",
+}
 
 func (pt providerType) Prefix() string {
 	if pt == TypeMvt {
@@ -78,58 +88,101 @@ func (pf providerFilter) Is(ps ...providerType) bool {
 type tile_t struct {
 	slippy.Tile
 	buffer uint
-	srid   uint
+	// grid is the TileMatrixSet this tile is indexed in. It is nil only when a
+	// caller named an SRID no grid is registered for, which Extent reports.
+	grid *tms.TileMatrixSet
+	// srid is the tile CRS's EPSG code, carried separately so that an
+	// unresolvable grid can still report the SRID the caller asked for.
+	srid uint64
 }
 
-// NewTile creates a new slippy tile with a Buffer
+// NewTile creates a new slippy tile with a Buffer, in the grid tegola
+// historically associates with srid (see defaultGridForSRID). Prefer
+// NewTileForGrid, which names the grid outright.
 func NewTile(z slippy.Zoom, x uint, y uint, buf, srid uint) Tile {
 	if srid == 0 {
 		srid = tegola.WebMercator
 	}
-	return &tile_t{
-		Tile: slippy.Tile{
-			Z: z,
-			X: x,
-			Y: y,
-		},
-		buffer: buf,
-		srid:   srid,
+
+	gridID, ok := defaultGridForSRID[srid]
+	if !ok {
+		// Preserve the historical shape of this failure: the tile exists, and
+		// reports the SRID it was asked for, but has no extent.
+		return &tile_t{
+			Tile:   slippy.Tile{Z: z, X: x, Y: y},
+			buffer: buf,
+			srid:   uint64(srid),
+		}
 	}
+
+	grid, err := tms.Get(gridID)
+	if err != nil {
+		log.Errorf("tile grid %v is not available: %v", gridID, err)
+		return &tile_t{
+			Tile:   slippy.Tile{Z: z, X: x, Y: y},
+			buffer: buf,
+			srid:   uint64(srid),
+		}
+	}
+
+	return NewTileForGrid(z, x, y, buf, grid)
+}
+
+// NewTileForGrid creates a new slippy tile with a Buffer, indexed in an explicit
+// TileMatrixSet. This is the constructor the tile pipeline uses: the grid, not
+// the SRID, is what determines the tile's extent and matrix dimensions.
+func NewTileForGrid(z slippy.Zoom, x uint, y uint, buf uint, grid *tms.TileMatrixSet) Tile {
+	t := &tile_t{
+		Tile:   slippy.Tile{Z: z, X: x, Y: y},
+		buffer: buf,
+		grid:   grid,
+	}
+
+	if grid != nil {
+		// A bundled grid always names a CRS we can resolve; a grid that does not
+		// still yields tiles, it just cannot say which SRID they are in.
+		if srid, err := grid.NativeSRID(); err == nil {
+			t.srid = srid
+		} else {
+			log.Errorf("tile grid %v has no EPSG code: %v", grid.ID(), err)
+		}
+	}
+
+	return t
+}
+
+// index converts the slippy tile index into the tms package's equivalent.
+func (tile *tile_t) index() tms.Tile {
+	return tms.Tile{Z: int(tile.Z), X: int64(tile.X), Y: int64(tile.Y)}
 }
 
 // Extent returns the extent of the tile
 func (tile *tile_t) Extent() (ext *geom.Extent, srid uint64) {
-	var err error
-	switch tile.srid {
-	case tegola.WGS84:
-		ext, err = tegola.WorldCRS84QuadExtent(tile.Tile)
-		log.Debugf("provider tile extent: using WorldCRS84Quad tile=%v srid=%v extent=%v err=%v", tile.Tile, tile.srid, ext, err)
-	case tegola.WebMercator:
-		ext, err = slippy.Extent(webmercatorGrid, tile.Tile)
-	default:
+	if tile.grid == nil {
 		log.Error("Unsupported tile SRID.", tile.srid)
-		return &geom.Extent{}, uint64(tile.srid)
+		return &geom.Extent{}, tile.srid
 	}
+
+	e, err := tile.grid.TileExtent(tile.index())
 	if err != nil {
 		log.Error("Could not generate valid extent for tile.", tile, err)
-		return &geom.Extent{}, uint64(tile.srid)
+		return &geom.Extent{}, tile.srid
 	}
-	return ext, uint64(tile.srid)
 
+	return &e, tile.srid
 }
 
 // BufferedExtent returns an extent of the tile, with the define buffer
 func (tile *tile_t) BufferedExtent() (ext *geom.Extent, srid uint64) {
-	ext, _ = tile.Extent()
-	ratio := slippy.MvtPixelRationForZoom(webmercatorGrid, tile.Z)
-	if tile.srid == tegola.WGS84 {
-		ratio = ext.XSpan() / slippy.MvtTileDim
-	}
-	bufferedExtent := ext.ExpandBy(ratio * float64(tile.buffer))
-	if tile.srid == tegola.WGS84 {
-		log.Debugf("provider buffered extent: WorldCRS84Quad tile=%v buffer=%v ratio=%v extent=%v buffered_extent=%v", tile.Tile, tile.buffer, ratio, ext, bufferedExtent)
-	}
-	return bufferedExtent, uint64(tile.srid)
+	ext, srid = tile.Extent()
+
+	// The buffer is a pixel count, so it converts to projected units through
+	// this tile's own span. Every matrix in a TileMatrixSet has uniform tiles,
+	// so this is the same ratio slippy derived from the (z,0,0) tile — without
+	// assuming the grid is WebMercator.
+	ratio := ext.XSpan() / slippy.MvtTileDim
+
+	return ext.ExpandBy(ratio * float64(tile.buffer)), srid
 }
 
 // Tile is an interface used by Tiler, it is an unnecessary abstraction and is
