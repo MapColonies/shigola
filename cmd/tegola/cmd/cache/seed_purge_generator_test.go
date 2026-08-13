@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	"github.com/go-spatial/geom/slippy"
-	"github.com/go-spatial/proj"
+	"github.com/go-spatial/tegola/atlas"
+	"github.com/go-spatial/tegola/tms"
 )
 
 type sTiles []slippy.Tile
@@ -71,7 +72,7 @@ func TestGenerateTilesForBounds(t *testing.T) {
 		zooms  []uint
 		bounds [4]float64
 		tiles  sTiles
-		grid   slippy.TileGridder
+		grid   *tms.TileMatrixSet
 		err    error
 	}
 
@@ -121,19 +122,26 @@ func TestGenerateTilesForBounds(t *testing.T) {
 				slippy.Tile{Z: 1, X: 1, Y: 1},
 			},
 		},
+		// Corners given in reverse order, and landing exactly on the equator and
+		// the prime meridian: the region is lon 0..180, lat 0..90.
+		//
+		// Only 1/1/0 lies inside it. The enumeration used to add 1/1/1 as well —
+		// the tile south of the equator, which the region touches but does not
+		// cover — while not adding 0/... for the identical touch at lon 0. Tiles
+		// now come from the TileMatrixSet, which treats both edges alike, so a
+		// boundary-touching tile is no longer seeded.
 		"min_zoom=1 max_zoom=1 bounds=180,90,0,0": {
 			zooms:  []uint{1},
 			bounds: [4]float64{180.0, 90.0, 0.0, 0.0},
 			tiles: sTiles{
 				slippy.Tile{Z: 1, X: 1},
-				slippy.Tile{Z: 1, X: 1, Y: 1},
 			},
 		},
 		"min_zoom=1 max_zoom=1 bounds=5.9,45.8,10.5,47.8 WSG84": {
 			// see: https://github.com/go-spatial/tegola/issues/880#issuecomment-2556563251
 			zooms:  []uint{10},
 			bounds: [4]float64{5.9, 45.8, 10.5, 47.8},
-			grid:   slippy.NewGrid(proj.EPSG4326, 0),
+			grid:   mustGridForTest(),
 			tiles: sTiles{
 				slippy.Tile{Z: 10, X: 528, Y: 356}, slippy.Tile{Z: 10, X: 528, Y: 357}, slippy.Tile{Z: 10, X: 528, Y: 358}, slippy.Tile{Z: 10, X: 528, Y: 359}, slippy.Tile{Z: 10, X: 528, Y: 360}, slippy.Tile{Z: 10, X: 528, Y: 361}, slippy.Tile{Z: 10, X: 528, Y: 362}, slippy.Tile{Z: 10, X: 528, Y: 363}, slippy.Tile{Z: 10, X: 528, Y: 364}, slippy.Tile{Z: 10, X: 528, Y: 365},
 				slippy.Tile{Z: 10, X: 529, Y: 356}, slippy.Tile{Z: 10, X: 529, Y: 357}, slippy.Tile{Z: 10, X: 529, Y: 358}, slippy.Tile{Z: 10, X: 529, Y: 359}, slippy.Tile{Z: 10, X: 529, Y: 360}, slippy.Tile{Z: 10, X: 529, Y: 361}, slippy.Tile{Z: 10, X: 529, Y: 362}, slippy.Tile{Z: 10, X: 529, Y: 363}, slippy.Tile{Z: 10, X: 529, Y: 364}, slippy.Tile{Z: 10, X: 529, Y: 365},
@@ -157,4 +165,100 @@ func TestGenerateTilesForBounds(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 
+}
+
+// mustGridForTest is the grid the old slippy-based enumeration produced for
+// lng/lat bounds: WebMercator indices.
+func mustGridForTest() *tms.TileMatrixSet {
+	grid, err := tms.Get(tms.WebMercatorQuad)
+	if err != nil {
+		panic(err)
+	}
+
+	return grid
+}
+
+// TestResolveSeedPurgeGrid covers the rule that one run means one tiling
+// scheme, and that a targeted map which does not support it fails the run
+// rather than being skipped.
+func TestResolveSeedPurgeGrid(t *testing.T) {
+	newMap := func(name string, gridIDs ...string) atlas.Map {
+		m := atlas.NewWebMercatorMap(name)
+
+		grids := make([]*tms.TileMatrixSet, 0, len(gridIDs))
+		for _, id := range gridIDs {
+			grid, err := tms.Get(id)
+			if err != nil {
+				t.Fatalf("tms.Get(%q): %v", id, err)
+			}
+			grids = append(grids, grid)
+		}
+		m.TileMatrixSets = grids
+
+		return m
+	}
+
+	tests := map[string]struct {
+		flag     string
+		mapFlag  string
+		maps     []atlas.Map
+		expected string
+		wantErr  bool
+	}{
+		"every map, no flag, defaults to WebMercatorQuad": {
+			maps:     []atlas.Map{newMap("a"), newMap("b")},
+			expected: tms.WebMercatorQuad,
+		},
+		"one map takes its own default": {
+			mapFlag:  "crs84",
+			maps:     []atlas.Map{newMap("crs84", tms.WorldCRS84Quad)},
+			expected: tms.WorldCRS84Quad,
+		},
+		"the flag wins": {
+			flag:     tms.WorldCRS84Quad,
+			mapFlag:  "both",
+			maps:     []atlas.Map{newMap("both", tms.WebMercatorQuad, tms.WorldCRS84Quad)},
+			expected: tms.WorldCRS84Quad,
+		},
+		// The reason this is an error: one run enumerates one grid, so seeding
+		// the CRS84-only map on a WebMercator pyramid would write tiles nothing
+		// ever asks for, and report success.
+		"a map that does not support the run's grid": {
+			maps:    []atlas.Map{newMap("wm"), newMap("crs84", tms.WorldCRS84Quad)},
+			wantErr: true,
+		},
+		"an unknown scheme": {
+			flag:    "NoSuchQuad",
+			maps:    []atlas.Map{newMap("a")},
+			wantErr: true,
+		},
+		"a scheme this build cannot serve": {
+			flag:    "NZTM2000Quad",
+			maps:    []atlas.Map{newMap("a")},
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cacheTileMatrixSet, cacheMap, seedPurgeMaps = tc.flag, tc.mapFlag, tc.maps
+			defer func() { cacheTileMatrixSet, cacheMap, seedPurgeMaps = "", "", nil }()
+
+			grid, err := resolveSeedPurgeGrid()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("resolveSeedPurgeGrid() = %v, want an error", grid.ID())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("resolveSeedPurgeGrid() error = %v", err)
+			}
+
+			if grid.ID() != tc.expected {
+				t.Errorf("resolveSeedPurgeGrid() = %v, want %v", grid.ID(), tc.expected)
+			}
+		})
+	}
 }
