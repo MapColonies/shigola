@@ -116,6 +116,9 @@ func (s *Service) HandleTileSets(w http.ResponseWriter, r *http.Request) {
 					Type:  MediaTypeJSON,
 					Title: grid.ID(),
 				},
+				// Requirement 10 A: each element of a tilesets list SHALL carry a
+				// link to the tile matrix set definition.
+				s.tilingSchemeLink(r, grid),
 				// The tile template, so a client can fetch tiles straight from
 				// the list without first fetching each tileset.
 				s.tileTemplateLink(r, c, grid),
@@ -182,6 +185,20 @@ func (s *Service) collectionGrid(c Collection, id string) (*tms.TileMatrixSet, e
 	return grid, nil
 }
 
+// tilingSchemeLink points at the definition of the scheme a tileset is cut in.
+//
+// Requirement 8 D requires it on a tileset, and Requirement 10 A on every
+// element of a tilesets list — the same link in both places, so it is built
+// once here.
+func (s *Service) tilingSchemeLink(r *http.Request, grid *tms.TileMatrixSet) Link {
+	return Link{
+		Rel:   relTilingScheme,
+		Href:  s.href(r, "tileMatrixSets", grid.ID()),
+		Type:  MediaTypeJSON,
+		Title: grid.ID(),
+	}
+}
+
 // tileTemplateLink is the templated tile URL of one tileset.
 //
 // Both the tilesets list and the tileset metadata carry it, and a client fills
@@ -215,12 +232,7 @@ func (s *Service) tileSetMetadata(r *http.Request, c Collection, grid *tms.TileM
 		Layers:           geoDataLayers(c.Map),
 		Links: []Link{
 			{Rel: relSelf, Href: s.href(r, base...), Type: MediaTypeJSON, Title: c.Title()},
-			{
-				Rel:   relTilingScheme,
-				Href:  s.href(r, "tileMatrixSets", grid.ID()),
-				Type:  MediaTypeJSON,
-				Title: grid.ID(),
-			},
+			s.tilingSchemeLink(r, grid),
 			s.tileTemplateLink(r, c, grid),
 		},
 	}

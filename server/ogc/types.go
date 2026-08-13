@@ -64,6 +64,10 @@ var conformsTo = []string{
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list",
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt",
 	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets",
+	// Tiles has an oas30 class of its own, distinct from Common's above:
+	// Requirements 22 and 23, which govern the OpenAPI definition's coverage of
+	// the tile resources and the operation ids it gives them.
+	"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30",
 }
 
 // TileMatrixSetItem is one entry in the /tileMatrixSets list. The full

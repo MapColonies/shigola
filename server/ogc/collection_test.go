@@ -663,3 +663,52 @@ func TestGeometryDimensionIsAnInteger(t *testing.T) {
 		})
 	}
 }
+
+// TestTileSetsListSatisfiesRequirement10 pins what OGC API - Tiles Requirement 10
+// (/req/tilesets-list/tileset-links) says each element of a tilesets list SHALL
+// contain: dataType, crs, a self link to the tileset, a link to the tile matrix
+// set definition with rel tiling-scheme, and tileMatrixSetURI.
+//
+// The tiling-scheme link is the one this service missed at first: it emitted the
+// link in the tileset metadata but not in the list, and CITE passed anyway — its
+// tilesets-list check is looser than the requirement it cites.
+func TestTileSetsListSatisfiesRequirement10(t *testing.T) {
+	var doc ogc.TileSets
+	w := get(t, newRouterFor(t, newAtlas(t, tms.WebMercatorQuad, tms.WorldCRS84Quad)), "/collections/osm/tiles", &doc)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	if len(doc.Tilesets) == 0 {
+		t.Fatal("no tilesets")
+	}
+
+	for _, ts := range doc.Tilesets {
+		t.Run(ts.TileMatrixSetID, func(t *testing.T) {
+			if ts.DataType == "" {
+				t.Error("no dataType")
+			}
+			if ts.CRS == "" {
+				t.Error("no crs")
+			}
+			if ts.TileMatrixSetURI == "" {
+				t.Error("no tileMatrixSetURI")
+			}
+
+			rels := map[string]string{}
+			for _, l := range ts.Links {
+				rels[l.Rel] = l.Href
+			}
+
+			if want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID; rels["self"] != want {
+				t.Errorf("self link = %q, want %q", rels["self"], want)
+			}
+
+			const tilingScheme = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme"
+			if want := "http://tegola.io/tileMatrixSets/" + ts.TileMatrixSetID; rels[tilingScheme] != want {
+				t.Errorf("tiling-scheme link = %q, want %q", rels[tilingScheme], want)
+			}
+		})
+	}
+}

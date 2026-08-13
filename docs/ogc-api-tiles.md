@@ -162,6 +162,7 @@ http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tileset
 http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/tilesets-list
 http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/mvt
 http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/geodata-tilesets
+http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30
 ```
 
 **Verified against the OGC CITE suite** (`ets-ogcapi-tiles10` 1.2, via TeamEngine), serving the
@@ -174,6 +175,11 @@ Athens OSM GeoPackage from `provider/gpkg/testdata`:
 
 The skip is `.../conf/dataset-tilesets`, which this service does not implement and does not
 declare — tilesets are per collection, not for the dataset as a whole.
+
+The responses are also validated against the OGC schemas the standard points at, which CITE does
+not check exhaustively: the tileset metadata against
+[`tms/2.0/json/tileSet.json`](https://schemas.opengis.net/tms/2.0/json/tileSet.json), and the
+tilesets list against the schema embedded in Requirement 10 C. Both validate with no errors.
 
 ### Running CITE
 

@@ -156,46 +156,6 @@ func TestAPIIsValidJSON(t *testing.T) {
 	}
 }
 
-// TestAPIOperationIds pins the operation ids OGC API - Tiles fixes by name.
-//
-// Requirement /req/oas30/operation-id and its Table 11 name the operations an
-// OpenAPI definition must declare, and the CITE suite checks them literally. A
-// descriptive-but-invented id — getCollectionTile, say — reads fine and fails
-// conformance, with a message that names no path.
-func TestAPIOperationIds(t *testing.T) {
-	var doc struct {
-		Paths map[string]struct {
-			Get struct {
-				OperationID string `json:"operationId"`
-			} `json:"get"`
-		} `json:"paths"`
-	}
-
-	if w := get(t, newRouterFor(t, newAtlas(t)), "/api", &doc); w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-
-	// Table 11 scopes an operation id as "scope.operation", and CITE checks the
-	// tile one by substring: an id must contain ".getTile", leading dot and all.
-	// A bare "getTile" fails, which is what a plain reading of the table would
-	// produce — so the exact ids are pinned here, verified against a CITE run.
-	want := map[string]string{
-		"/collections/{collectionId}/tiles":                                                    "collection.getTileSetsList",
-		"/collections/{collectionId}/tiles/{tileMatrixSetId}":                                  "collection.getTileSet",
-		"/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": "collection.getTile",
-	}
-
-	for path, operationID := range want {
-		if got := doc.Paths[path].Get.OperationID; got != operationID {
-			t.Errorf("operationId for %v = %q, want %q", path, got, operationID)
-		}
-	}
-
-	if got := doc.Paths["/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"].Get.OperationID; !strings.Contains(got, ".getTile") {
-		t.Errorf("the tile operationId %q does not contain \".getTile\", which CITE checks literally", got)
-	}
-}
-
 // TestAPITileFormatParameter pins the fTile parameter's declared values.
 //
 // The enum is what a generated client will send, so it has to list every format
@@ -229,5 +189,71 @@ func TestAPITileFormatParameter(t *testing.T) {
 
 	if fTile.Schema.Default != "mvt" {
 		t.Errorf("fTile default = %q, want %q", fTile.Schema.Default, "mvt")
+	}
+}
+
+// TestAPIOperationIdsMatchTable11 pins the operation ids against OGC API -
+// Tiles Requirement 23 (/req/oas30/operation-id) and its Table 11.
+//
+// The ids are taken from OGC's own published definition
+// (schemas.opengis.net/ogcapi/tiles/part1/1.0/openapi/ogcapi-tiles-1.bundled.json),
+// which spells the tile operations with a leading dot — ".collection.vector.getTile"
+// — because Table 11 defines them as suffixes an id must end with. CITE only
+// checks a ".getTile" substring, which a plain "getTile" fails and a wrong-but-
+// dotted id would pass, so the requirement itself is pinned here.
+func TestAPIOperationIdsMatchTable11(t *testing.T) {
+	var doc struct {
+		Paths map[string]struct {
+			Get struct {
+				OperationID string `json:"operationId"`
+			} `json:"get"`
+		} `json:"paths"`
+	}
+
+	if w := get(t, newRouterFor(t, newAtlas(t)), "/api", &doc); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	for path, want := range map[string]string{
+		"/":                                 "getLandingPage",
+		"/conformance":                      "getConformance",
+		"/api":                              "getAPI",
+		"/collections":                      "getCollectionsList",
+		"/collections/{collectionId}":       "getCollection",
+		"/tileMatrixSets":                   "getTileMatrixSetsList",
+		"/tileMatrixSets/{tileMatrixSetId}": "getTileMatrixSet",
+
+		"/collections/{collectionId}/tiles":                                                    ".collection.vector.getTileSetsList",
+		"/collections/{collectionId}/tiles/{tileMatrixSetId}":                                  ".collection.vector.getTileSet",
+		"/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": ".collection.vector.getTile",
+	} {
+		if got := doc.Paths[path].Get.OperationID; got != want {
+			t.Errorf("operationId for %v = %q, want %q", path, got, want)
+		}
+	}
+
+	// The CITE suite checks the tile operation by substring — operationId must
+	// contain ".getTile", leading dot and all — so a bare "getTile" fails it.
+	// Pinned separately from the exact ids above, because that is the assertion
+	// the suite actually makes.
+	const tilePath = "/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}"
+	if got := doc.Paths[tilePath].Get.OperationID; !strings.Contains(got, ".getTile") {
+		t.Errorf("the tile operationId %q does not contain %q, which CITE checks literally", got, ".getTile")
+	}
+}
+
+// TestConformanceDeclaresTilesOAS30 covers Requirement 7: the declaration SHALL
+// list the Table 7 classes this instance supports. Serving an OpenAPI 3.0
+// definition that satisfies Requirements 22 and 23 means this one is supported,
+// so withholding it understates what the service does.
+func TestConformanceDeclaresTilesOAS30(t *testing.T) {
+	var doc ogc.Conformance
+	if w := get(t, newRouterFor(t, newAtlas(t)), "/conformance", &doc); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	want := "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30"
+	if !slices.Contains(doc.ConformsTo, want) {
+		t.Errorf("conformsTo is missing %q: %v", want, doc.ConformsTo)
 	}
 }
