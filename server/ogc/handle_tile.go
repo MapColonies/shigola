@@ -67,7 +67,12 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 
 	// The same key the native routes use, so a tile seeded or served through
 	// /maps/... is served here too rather than generated a second time.
+	//
+	// Only for a request the key can actually describe: see cacheable.
 	cacher := s.cfg.Atlas.GetCache()
+	if !cacheable(r) {
+		cacher = nil
+	}
 	if cacher != nil {
 		if cached, hit, err := cacher.Get(r.Context(), &key); err != nil {
 			logf("ogc: reading from cache: %v", err)
@@ -98,6 +103,35 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeTile(w, body)
+}
+
+// cacheable reports whether a request's tile may be read from or written to the
+// cache.
+//
+// The key is {scheme}/{map}/{layer}/{z}/{x}/{y}: it says nothing about the query
+// string. That is sound only while nothing in the query string can change the
+// bytes — so a request carrying anything this surface does not own is served
+// uncached rather than answered from, or allowed to populate, an entry that
+// cannot describe it.
+//
+// "f" is excluded because it is this surface's own format selector, and every
+// value it accepts names the same media type and yields the same bytes.
+//
+// The native routes take the same position more bluntly: their middleware skips
+// the cache for any query string at all, because a tegola map can declare query
+// parameters that change what a tile contains (see atlas.SeedMapTile, which
+// refuses to seed such a map for the same reason). This surface passes no
+// parameters to Encode today, so no such request can reach a different
+// rendering — but if that ever changes, tiles must not already be pooled under a
+// key that ignores it.
+func cacheable(r *http.Request) bool {
+	for name := range r.URL.Query() {
+		if name != "f" {
+			return false
+		}
+	}
+
+	return true
 }
 
 // parseTilePath reads an OGC tile path and checks it against the scheme's matrix

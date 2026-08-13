@@ -127,7 +127,13 @@ JSON-only resource is still a 400.
 ## Caching
 
 OGC tile requests use the same cache keys as the native routes, so a tile seeded through
-`tegola cache seed` is served by both, and neither generates it twice.
+`tegola cache seed` is served by both, and neither generates it twice. The key is
+`{tileMatrixSetId}/{map}/{layer}/{z}/{x}/{y}` — it does not include the query string, so every
+spelling of `?f=` shares one entry rather than storing the same bytes twice.
+
+A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
+it, and a tegola map can declare query parameters that change what a tile contains. The native
+routes take the same position more bluntly, skipping the cache for any query string at all.
 
 `cache seed` and `cache purge` take `--tile-matrix-set`. One run covers one scheme: it enumerates a
 single tile pyramid, so a run cannot cover two schemes at once.

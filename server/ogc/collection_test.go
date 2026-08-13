@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-spatial/tegola"
 	"github.com/go-spatial/tegola/atlas"
+	"github.com/go-spatial/tegola/cache/memory"
 	"github.com/go-spatial/tegola/provider"
 	"github.com/go-spatial/tegola/provider/test"
 	"github.com/go-spatial/tegola/server/ogc"
@@ -711,4 +712,82 @@ func TestTileSetsListSatisfiesRequirement10(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTileCaching covers what the cache key can and cannot express.
+//
+// The key is {scheme}/{map}/{layer}/{z}/{x}/{y} — no query string. That is
+// correct only while no query parameter can change the bytes, which is why a
+// request carrying anything other than ?f= is served uncached, as the native
+// route does for any query string at all (middleware_tile_cache.go).
+func TestTileCaching(t *testing.T) {
+	const tile = "/collections/osm/tiles/WebMercatorQuad/3/3/3"
+
+	newCachedRouter := func(t *testing.T) *httptreemux.TreeMux {
+		t.Helper()
+
+		a := newAtlas(t, tms.WebMercatorQuad)
+		cacher, err := memory.New(nil)
+		if err != nil {
+			t.Fatalf("memory.New: %v", err)
+		}
+		a.SetCache(cacher)
+
+		return newRouterFor(t, a)
+	}
+
+	// Every spelling of the format names the same bytes, so they share one entry
+	// rather than storing the tile once per spelling.
+	t.Run("the format selector shares one entry", func(t *testing.T) {
+		r := newCachedRouter(t)
+
+		if got := get(t, r, tile+"?f=mvt", nil).Header().Get("Tegola-Cache"); got != "MISS" {
+			t.Errorf("first request Tegola-Cache = %q, want MISS", got)
+		}
+
+		for _, f := range []string{"?f=mvt", "?f=pbf", "?f=PBF", ""} {
+			if got := get(t, r, tile+f, nil).Header().Get("Tegola-Cache"); got != "HIT" {
+				t.Errorf("%q Tegola-Cache = %q, want HIT", f, got)
+			}
+		}
+	})
+
+	// A parameter this surface does not own may select a different rendering —
+	// tegola maps can declare query parameters that change what a tile contains.
+	// The key cannot express that, so such a request must not be answered from,
+	// or written to, the cache.
+	t.Run("a request carrying other parameters is not cached", func(t *testing.T) {
+		r := newCachedRouter(t)
+
+		if got := get(t, r, tile+"?year=1990", nil).Header().Get("Tegola-Cache"); got != "" {
+			t.Errorf("Tegola-Cache = %q, want no cache header at all", got)
+		}
+
+		// and it must not have populated the cache for everyone else
+		if got := get(t, r, tile+"?f=mvt", nil).Header().Get("Tegola-Cache"); got != "MISS" {
+			t.Errorf("after a parameterised request, Tegola-Cache = %q, want MISS", got)
+		}
+	})
+
+	// The invariant the shared entry rests on, checked directly.
+	t.Run("no accepted query changes the bytes", func(t *testing.T) {
+		r := newCachedRouter(t)
+
+		var first []byte
+		for _, q := range []string{"", "?f=mvt", "?f=pbf", "?f=PBF"} {
+			w := get(t, r, tile+q, nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%q: status = %d", q, w.Code)
+			}
+
+			if first == nil {
+				first = w.Body.Bytes()
+				continue
+			}
+
+			if !bytes.Equal(first, w.Body.Bytes()) {
+				t.Errorf("%q returned different bytes; the cache key does not distinguish them", q)
+			}
+		}
+	})
 }
