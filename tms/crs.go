@@ -51,6 +51,10 @@ type crsInfo struct {
 	// rather than (lon, lat). It is only consulted when a TileMatrixSet
 	// document does not declare orderedAxes.
 	axisInverted bool
+	// srid is the EPSG code a consumer that speaks only in SRIDs should use for
+	// this CRS, when that differs from the CRS's own authority code. It is set
+	// only for OGC:CRS84, which has no EPSG code of its own.
+	srid uint64
 }
 
 // crsTable is the CRS metadata this port knows, keyed by "AUTHORITY:CODE".
@@ -67,6 +71,10 @@ var crsTable = map[string]crsInfo{
 		semiMajorMetre: wgs84SemiMajorMetre,
 		geographic:     true,
 		axisInverted:   false, // CRS84 is explicitly lon, lat
+		// CRS84 is EPSG:4326's datum with the axes in lon/lat order, which is
+		// the order geometries are already in, so 4326 is the SRID that makes a
+		// CRS84 tile reproject correctly.
+		srid: 4326,
 	},
 	"EPSG:4326": {
 		uri:            "http://www.opengis.net/def/crs/EPSG/0/4326",
@@ -338,6 +346,42 @@ func (c CRS) EPSG() (uint64, error) {
 	code, err := strconv.ParseUint(meta.code, 10, 64)
 	if err != nil {
 		return 0, UnsupportedCRSError{CRS: meta.uri, Reason: "EPSG code is not numeric"}
+	}
+
+	return code, nil
+}
+
+// SRID returns the EPSG code a consumer that describes coordinate systems only
+// by SRID should use for this CRS.
+//
+// It is EPSG() for a CRS that has an EPSG code. The case that makes this method
+// distinct from EPSG is OGC:CRS84, whose EPSG code is legitimately 0 — it is not
+// an EPSG CRS — but which is EPSG:4326 in longitude/latitude axis order, so 4326
+// is the SRID that reprojects its coordinates correctly. Returning 0 here would
+// leave every caller to rediscover that.
+//
+// A CRS with neither an EPSG code nor a mapping is an error rather than a zero,
+// so it cannot be mistaken for a usable SRID.
+func (c CRS) SRID() (uint64, error) {
+	meta, err := c.info()
+	if err != nil {
+		return 0, err
+	}
+
+	if meta.srid != 0 {
+		return meta.srid, nil
+	}
+
+	code, err := c.EPSG()
+	if err != nil {
+		return 0, err
+	}
+
+	if code == 0 {
+		return 0, UnsupportedCRSError{
+			CRS:    meta.uri,
+			Reason: "CRS has no EPSG code and no EPSG equivalent",
+		}
 	}
 
 	return code, nil

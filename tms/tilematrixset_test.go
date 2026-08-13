@@ -71,6 +71,57 @@ func TestTMSProperties(t *testing.T) {
 	}
 }
 
+// TestNativeSRID covers the SRID every active grid reports to tegola's tile
+// pipeline. WorldCRS84Quad is the case worth pinning: its CRS is OGC:CRS84,
+// whose EPSG code is genuinely 0, but tiles in it must reproject as EPSG:4326 —
+// a 0 here silently produces tiles with no coordinate system.
+func TestNativeSRID(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want uint64
+	}{
+		{id: "WebMercatorQuad", want: 3857},
+		{id: "WorldCRS84Quad", want: 4326},
+		{id: "WGS1984Quad", want: 4326},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			srid, err := mustGrid(t, tc.id).NativeSRID()
+			if err != nil {
+				t.Fatalf("NativeSRID: %v", err)
+			}
+
+			if srid != tc.want {
+				t.Errorf("NativeSRID = %d, want %d", srid, tc.want)
+			}
+		})
+	}
+}
+
+// TestCRSEPSGDistinctFromSRID keeps the two notions apart: EPSG reports what the
+// CRS registry says, SRID what a consumer should reproject with. Collapsing them
+// is what made CRS84 tiles report SRID 0.
+func TestCRSEPSGDistinctFromSRID(t *testing.T) {
+	crs := CRS{String: "http://www.opengis.net/def/crs/OGC/1.3/CRS84"}
+
+	epsg, err := crs.EPSG()
+	if err != nil {
+		t.Fatalf("EPSG: %v", err)
+	}
+
+	if epsg != 0 {
+		t.Errorf("EPSG = %d, want 0 — CRS84 is not an EPSG CRS", epsg)
+	}
+
+	srid, err := crs.SRID()
+	if err != nil {
+		t.Fatalf("SRID: %v", err)
+	}
+
+	if srid != 4326 {
+		t.Errorf("SRID = %d, want 4326", srid)
+	}
+}
+
 // TestXYBounds is morecantile's test_xy_bounds, from mercantile's suite.
 func TestXYBounds(t *testing.T) {
 	grid := mustGrid(t, "WebMercatorQuad")

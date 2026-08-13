@@ -161,13 +161,14 @@ func (t *TileMatrixSet) OrderedAxes() []string {
 	return append([]string(nil), t.def.OrderedAxes...)
 }
 
-// NativeSRID returns the EPSG code of the grid's CRS — the SRID tegola's
-// pipeline works in when producing tiles for this grid.
+// NativeSRID returns the SRID tegola's pipeline works in when producing tiles
+// for this grid.
 //
-// It reports 0 for a CRS with no EPSG code. OGC:CRS84 is the notable case: it is
-// EPSG:4326's axes in longitude/latitude order, so callers needing an SRID for
-// it should treat 0 as 4326.
-func (t *TileMatrixSet) NativeSRID() (uint64, error) { return t.def.CRS.EPSG() }
+// This is the grid CRS's EPSG code where it has one, and 4326 for a CRS84 grid
+// such as WorldCRS84Quad — see CRS.SRID. A CRS with no EPSG equivalent is an
+// error, never a zero SRID, so a grid can never quietly produce tiles that
+// reproject as if they had no coordinate system.
+func (t *TileMatrixSet) NativeSRID() (uint64, error) { return t.def.CRS.SRID() }
 
 // MetersPerUnit returns the coefficient converting the grid CRS's units to
 // metres.
