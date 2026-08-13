@@ -31,6 +31,23 @@ const (
 	FormatMVT Format = "mvt"
 )
 
+// formatAliases are spellings of a format that this service accepts but never
+// emits.
+//
+// "pbf" is what tegola's native routes call a Mapbox Vector Tile — the tile
+// extension, and the `format` member of both the TileJSON this service serves
+// and the capabilities document the native surface serves. Without this, a
+// client that read either of those and asked for ?f=pbf would be refused for
+// naming the format the way we named it to them.
+//
+// An alias is resolved before the resource's own formats are consulted, so it
+// succeeds only where the format it names is actually served: ?f=pbf on a
+// JSON-only resource is still a 400. It never becomes a Format value, so it
+// cannot reach a link, a media type, or the list in an error.
+var formatAliases = map[string]Format{
+	"pbf": FormatMVT,
+}
+
 // mediaType returns the media type a format is served as.
 func (f Format) mediaType() string {
 	switch f {
@@ -75,12 +92,21 @@ func negotiate(r *http.Request, supported ...Format) (Format, error) {
 	}
 
 	if requested := r.URL.Query().Get("f"); requested != "" {
+		wanted := Format(requested)
+		if alias, ok := formatAliases[strings.ToLower(requested)]; ok {
+			wanted = alias
+		}
+
+		// The match returns the format from supported, never the request's
+		// spelling of it, so a caller always receives the canonical value.
 		for _, f := range supported {
-			if strings.EqualFold(requested, string(f)) {
+			if strings.EqualFold(string(wanted), string(f)) {
 				return f, nil
 			}
 		}
 
+		// Reported as asked for, not as resolved: a client that sent ?f=pbf is
+		// told about "pbf".
 		return "", ErrUnsupportedFormat{Requested: requested, Supported: supported}
 	}
 

@@ -111,6 +111,19 @@ as a different tile — in WorldCRS84Quad at z1 there are four columns but only 
 fallback, so a typo does not quietly return something else. An `Accept` header naming only types
 this service cannot produce gets the default representation, which is what a browser receives.
 
+| resource | accepted `f` |
+|---|---|
+| a tile | `mvt`, or `pbf` for the same thing |
+| tileset metadata | `json` (default), `tilejson` |
+| everything else | `json` |
+
+`mvt` is canonical: it is what every link and template this service emits says, and it is the name
+in the OGC conformance class. `pbf` is accepted because that is what the same tile is called by
+tegola's native routes, which serve it at a `.pbf` extension, and by the `format` member of the
+TileJSON above — being refused for using our own word for it would be surprising. Matching ignores
+case. The alias resolves to MVT before a resource's own formats are consulted, so `?f=pbf` on a
+JSON-only resource is still a 400.
+
 ## Caching
 
 OGC tile requests use the same cache keys as the native routes, so a tile seeded through

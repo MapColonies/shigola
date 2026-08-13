@@ -300,6 +300,64 @@ func TestTile(t *testing.T) {
 		}
 	})
 
+	// "pbf" is what tegola's native routes and our own TileJSON call a Mapbox
+	// Vector Tile, so a client that read either would otherwise be rejected for
+	// naming the same thing we do.
+	t.Run("f=pbf is accepted as a spelling of mvt", func(t *testing.T) {
+		for _, f := range []string{"mvt", "pbf", "PBF"} {
+			t.Run(f, func(t *testing.T) {
+				w := get(t, r, "/collections/osm/tiles/WebMercatorQuad/3/3/3?f="+f, nil)
+
+				if w.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+				}
+
+				if got := w.Header().Get("Content-Type"); got != ogc.MediaTypeMVT {
+					t.Errorf("Content-Type = %q, want %q", got, ogc.MediaTypeMVT)
+				}
+
+				if _, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes())); err != nil {
+					t.Errorf("body is not gzip: %v", err)
+				}
+			})
+		}
+	})
+
+	// The alias widens what is accepted; it does not weaken the rule that an
+	// unrecognised format is refused rather than quietly answered with another.
+	t.Run("an unknown format is still refused", func(t *testing.T) {
+		if w := get(t, r, "/collections/osm/tiles/WebMercatorQuad/3/3/3?f=png", nil); w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+	})
+
+	// The alias names MVT, and is resolved before the resource's own formats are
+	// consulted — so it succeeds only where MVT is actually served.
+	t.Run("the alias does not leak onto a json resource", func(t *testing.T) {
+		if w := get(t, r, "/collections/osm/tiles/WorldCRS84Quad?f=pbf", nil); w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+	})
+
+	// Accept is only consulted when ?f= is absent, and every format the tile
+	// route serves is a tile. A client asking for JSON still gets the tile
+	// rather than a document mislabelled as one.
+	t.Run("an Accept header cannot turn a tile into json", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/collections/osm/tiles/WebMercatorQuad/3/3/3", nil)
+		req.Header.Set("Accept", "application/json")
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+
+		if got := w.Header().Get("Content-Type"); got != ogc.MediaTypeMVT {
+			t.Errorf("Content-Type = %q, want %q", got, ogc.MediaTypeMVT)
+		}
+	})
+
 	// The whole reason the path order matters: row and column are bounded
 	// differently in a non-square scheme, so a transposed path is rejected
 	// rather than silently serving another tile.

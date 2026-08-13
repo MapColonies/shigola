@@ -195,3 +195,39 @@ func TestAPIOperationIds(t *testing.T) {
 		t.Errorf("the tile operationId %q does not contain \".getTile\", which CITE checks literally", got)
 	}
 }
+
+// TestAPITileFormatParameter pins the fTile parameter's declared values.
+//
+// The enum is what a generated client will send, so it has to list every format
+// the tile route accepts. Order and default are load-bearing too: "mvt" is
+// canonical, and the OAS30 conformance check reads both.
+func TestAPITileFormatParameter(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Parameters map[string]struct {
+				Name   string `json:"name"`
+				Schema struct {
+					Enum    []string `json:"enum"`
+					Default string   `json:"default"`
+				} `json:"schema"`
+			} `json:"parameters"`
+		} `json:"components"`
+	}
+
+	if w := get(t, newRouterFor(t, newAtlas(t)), "/api", &doc); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	fTile, ok := doc.Components.Parameters["fTile"]
+	if !ok {
+		t.Fatal("the API definition declares no fTile parameter")
+	}
+
+	if want := []string{"mvt", "pbf"}; !slices.Equal(fTile.Schema.Enum, want) {
+		t.Errorf("fTile enum = %v, want %v (canonical first)", fTile.Schema.Enum, want)
+	}
+
+	if fTile.Schema.Default != "mvt" {
+		t.Errorf("fTile default = %q, want %q", fTile.Schema.Default, "mvt")
+	}
+}

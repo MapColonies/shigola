@@ -261,9 +261,9 @@
       "fTile": {
         "name": "f",
         "in": "query",
-        "description": "The tile format. Only Mapbox Vector Tiles are served.",
+        "description": "The tile format. Only Mapbox Vector Tiles are served; \"pbf\" is accepted as a spelling of \"mvt\", which is the value this API uses in its own links.",
         "required": false,
-        "schema": { "type": "string", "enum": ["mvt"], "default": "mvt" },
+        "schema": { "type": "string", "enum": ["mvt", "pbf"], "default": "mvt" },
         "style": "form",
         "explode": false
       },
