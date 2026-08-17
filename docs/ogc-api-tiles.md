@@ -56,11 +56,16 @@ their map does.
 
 This build serves the schemes that need no coordinate transformation backend:
 
-| tileMatrixSetId | CRS | Matrix at zoom z |
-|---|---|---|
-| `WebMercatorQuad` | EPSG:3857 | 2^z × 2^z |
-| `WorldCRS84Quad` | OGC:CRS84 | 2·2^z × 2^z |
-| `WGS1984Quad` | EPSG:4326 | 2^z × 2^z |
+| tileMatrixSetId | CRS | Axis order | Matrix at zoom z |
+|---|---|---|---|
+| `WebMercatorQuad` | EPSG:3857 | easting, northing | 2^z × 2^z |
+| `WorldCRS84Quad` | OGC:CRS84 | longitude, latitude | 2·2^z × 2^z |
+| `WGS1984Quad` | EPSG:4326 | latitude, longitude | 2·2^z × 2^z |
+
+The two geographic grids have the **same matrix shape** and index the same ground; they differ only
+in the axis order their CRS declares, which is how each states its `pointOfOrigin` — `[-180, 90]` for
+CRS84 against `[90, -180]` for EPSG:4326. `tms.matrixOrigin` swaps the inverted pair, and
+`TestWGS1984QuadInvertedAxes` pins the two to identical extents on every tile through zoom 3.
 
 The other schemes in the OGC register ship with the build but are not servable: they need a
 projection backend that is not wired up. `/tileMatrixSets` lists only what can be served.
