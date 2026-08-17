@@ -1,0 +1,26 @@
+{
+  "name": "shigola",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.yml"
+  ],
+  "service": "dev",
+  "workspaceFolder": "/workspace/shigola",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [
+    8080,
+    5432,
+    6379
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go"
+      ],
+      "settings": {
+        "go.toolsManagement.checkForUpdates": "local",
+        "go.useLanguageServer": true
+      }
+    }
+  }
+}

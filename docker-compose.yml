@@ -1,0 +1,50 @@
+# this file is used to bootstrap services to run tegola tests against
+services:
+    redis:
+        image: redis:6.2.6
+        container_name: redis
+        ports:
+            - 6379:6379
+
+    postgis:
+        image: postgis/postgis:12-3.0-alpine
+        container_name: postgis
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+            POSTGRES_DB: postgres
+        ports:
+            - 5432:5432
+
+    migration:
+        image: postgis/postgis:12-3.0-alpine
+        container_name: migration
+        depends_on:
+            postgis:
+                condition: service_healthy
+        environment:
+            PGUSER: postgres
+            PGPASSWORD: postgres
+        volumes:
+            - ./testdata:/testdata
+        command: ['/bin/bash', '-c', 'testdata/postgis/migration.sh']
+
+    # NOTE: useful for debugging
+    # does not run by default, only when you run with:
+    # docker-compose --profile pgadmin up (-d)
+    # afterwards navigate to localhost:5555 in the browser
+    # pgadmin:
+    #   image: dpage/pgadmin4
+    #   container_name: pgadmin
+    #   environment:
+    #     PGADMIN_DEFAULT_EMAIL: "admin@tegola.io"
+    #     PGADMIN_DEFAULT_PASSWORD: "admin"
+    #   ports:
+    #   - "5555:80"
+    #   profiles:
+    #   - pgadmin

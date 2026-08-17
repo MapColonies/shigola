@@ -1,0 +1,13 @@
+//go:build !noGpkgProvider
+// +build !noGpkgProvider
+
+package atlas
+
+// The point of this file is to load and register the GeoPackage provider.
+// the GeoPackage provider can be excluded during the build with the `noGpkgProvider` build flag
+// for example from the cmd/shigola directory:
+//
+// go build -tags 'noGpkgProvider'
+import (
+	_ "github.com/MapColonies/shigola/provider/gpkg"
+)

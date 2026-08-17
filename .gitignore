@@ -1,0 +1,29 @@
+documents
+*.toml*.out
+.cover
+tmp
+.DS_Store
+ui/node_modules
+ui/dist
+ui/build
+
+# local env files
+.env.local
+.env.*.local
+.env
+*.env
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+cmd/tegola_lambda/tegola_lambda

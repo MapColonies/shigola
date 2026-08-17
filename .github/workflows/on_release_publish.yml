@@ -1,0 +1,323 @@
+name: On release publish
+on: 
+  pull_request:
+  push:
+    branches:
+      - master
+  release:
+    types: [published]
+
+jobs:
+  gen_version:
+    name: Generate software version
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    # on release, we want to use release.tag_name for the version
+    - name: Set shigola version (use release.tag_name)
+      if: github.event_name == 'release'
+      run: echo ${{ github.event.release.tag_name }} > ${{ github.workspace }}/version.txt
+
+    # when it's not a release build use the commit hash for the version tag
+    - name: Set shigola version (use commit hash)
+      if: github.event_name != 'release'
+      run: echo ${{ github.sha }} | cut -c1-7 > ${{ github.workspace }}/version.txt
+
+    - name: Upload build artifact version
+      uses: actions/upload-artifact@v4
+      with:
+        name: version
+        path: ${{ github.workspace }}/version.txt
+
+    # when it's not a release, but we want to perform an action on a new push/pr to default branch
+    # we need the default branch ref, which in case of shigola changes with the version
+    - name: Get shigola default branch ref
+      run: |
+        DEFAULT_BRANCH=$(git remote show origin | awk '/HEAD branch/ {print $NF}')
+        echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
+        echo "refs/heads/$DEFAULT_BRANCH" > ${{ github.workspace }}/default-branch-ref.txt
+
+    - name: Upload build artifacts default branch ref
+      uses: actions/upload-artifact@v4
+      with:
+        name: default-branch-ref
+        path: ${{ github.workspace }}/default-branch-ref.txt
+
+  build_ui:
+    name: Build for embedded ui
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Build embedded UI
+        run: |
+          pushd ${GITHUB_WORKSPACE}/server
+          go generate ./...
+          popd
+
+      - name: Upload build artifact version
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui
+          path: ${{ github.workspace }}/ui/dist
+
+  build_linux_amd64:
+    name: Build for Linux (amd64)
+    needs: [gen_version,build_ui]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+
+    - name: Build for Linux
+      env:
+        # build architecture
+        GOOS: linux
+      run: |
+          cd cmd/shigola
+          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "shigola"
+        release_archive_name: "shigola_linux_amd64"
+
+  build_linux_arm:
+    name: Build for Linux (arm64)
+    needs: [gen_version,build_ui]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+
+    - name: Build for Linux
+      env:
+        # build architecture
+        GOOS: linux
+        GOARCH: arm64
+      run: |
+          cd cmd/shigola
+          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "shigola"
+        release_archive_name: "shigola_linux_arm64"
+
+  build_shigola_lambda_amd64:
+    name: Build shigola_lambda on Amazon Linux (amd64)
+    needs: [gen_version,build_ui]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+        go: false
+
+    - name: Build shigola_lambda
+      uses: ./.github/actions/amazon-linux-build-action
+      env:
+        GOARCH: amd64 # set the target build architecture
+      with:
+        args: '...'
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "bootstrap"
+        cmd_subdir: "shigola_lambda"
+        release_archive_name: "shigola_lambda_amd64"
+
+  build_shigola_lambda_arm64:
+    name: Build shigola_lambda on Amazon Linux (arm64)
+    needs: [gen_version,build_ui]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+        go: false
+
+    - name: Build shigola_lambda
+      uses: ./.github/actions/amazon-linux-build-action
+      env:
+        GOARCH: arm64 # set the target build architecture
+      with:
+        args: '...'
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "bootstrap"
+        cmd_subdir: "shigola_lambda"
+        release_archive_name: "shigola_lambda_arm64"
+
+  build_macos:
+    name: Build for MacOS
+    needs: [gen_version,build_ui]
+    runs-on: macos-latest
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+
+    - name: Build for Darwin
+      env:
+        GOOS: darwin
+      run: |
+          cd cmd/shigola
+          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "shigola"
+        release_archive_name: "shigola_darwin_amd64"
+
+  build_docker:
+    name: Build Docker image and publish to Docker Hub
+    needs: [gen_version,build_ui]
+    runs-on: ubuntu-22.04
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_ORG: gospatial
+      DOCKERHUB_REPO: shigola
+      BUILD_ARGS: |
+        BUILDPKG=${BUILD_PKG}
+        VER=${VERSION}
+        BRANCH=${GIT_BRANCH}
+        REVISION=${GIT_REVISION}
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+
+    # Buildx can only output single-platform result image to docker
+    # so for testing purposes we are building only for linux/amd64
+    # Later when we publish the image we build for linux/amd64 and linux/arm64
+    # Note that linux/amd64 is cached, so when we build images for publishing
+    # we are not rebuilding linux/amd64
+    - name: Build docker image for testing
+      uses: docker/build-push-action@v5
+      if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+      with:
+        context: .
+        load: true
+        platforms: linux/amd64
+        build-args: ${{ env.BUILD_ARGS }}
+        tags: ${{ env.DOCKERHUB_ORG }}/${{ env.DOCKERHUB_REPO }}:${{ env.VERSION }}
+
+    - name: Test image build
+      if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+      run: |
+        docker run --rm ${DOCKERHUB_ORG}/${DOCKERHUB_REPO}:${VERSION} version
+
+    - name: Publish Docker edge container
+      if: github.ref == env.DEFAULT_BRANCH_REF && (env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '')
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ env.DOCKERHUB_ORG }}/${{ env.DOCKERHUB_REPO }}:edge
+        platforms: linux/amd64,linux/arm64
+        build-args: ${{ env.BUILD_ARGS }}
+
+    - name: Publish Docker container
+      if: github.event_name == 'release'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ env.DOCKERHUB_ORG }}/${{ env.DOCKERHUB_REPO }}:${{ env.VERSION }},${{ env.DOCKERHUB_ORG }}/${{ env.DOCKERHUB_REPO }}:latest
+        platforms: linux/amd64,linux/arm64
+        build-args: ${{ env.BUILD_ARGS }}
+
+  build_windows:
+    name: Build for Windows
+    needs: [gen_version,build_ui]
+    runs-on: windows-latest
+
+    steps:
+    - name: Check out actions
+      uses: actions/checkout@v4
+
+    - name: Setup env
+      uses: ./.github/actions/shigola-setup-env
+      with:
+        ui: true
+
+    - name: Build for Windows
+      run: |
+          cd cmd\shigola
+          go build -ldflags "-w -X $Env:BUILD_PKG.Version=$Env:VERSION -X $Env:BUILD_PKG.GitRevision=$Env:GIT_REVISION -X $Env:BUILD_PKG.GitBranch=$Env:GIT_BRANCH"
+
+    - name: Upload artifact
+      uses: ./.github/actions/upload-artifact
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        artifact_name: "shigola"
+        release_archive_name: "shigola_windows_amd64"
