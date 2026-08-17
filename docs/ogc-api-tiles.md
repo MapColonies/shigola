@@ -40,8 +40,9 @@ For a file or S3 cache, deleting the old directory tree is faster than purging t
 
 ## Configuration
 
-`tile_srid` is replaced by `tile_matrix_sets`, which names the tiling schemes a map may be
-requested in:
+`tile_matrix_sets` names the tiling schemes a map may be requested in. It is optional, and no
+released configuration key is replaced by it — a config that omits it serves WebMercatorQuad, as
+before:
 
 ```toml
 [[maps]]
