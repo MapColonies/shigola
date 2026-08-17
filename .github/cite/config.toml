@@ -1,0 +1,61 @@
+# tegola configuration for the OGC CITE conformance run.
+#
+# The suite fetches tiles and inspects what comes back, so it needs real data:
+# this uses the Athens OSM extract already in the repository for the GeoPackage
+# provider's own tests. Paths are relative to the repository root, which is where
+# .github/cite/run.sh expects to be run from.
+#
+# The map declares both active tiling schemes so the tilesets list, the per-scheme
+# tileset metadata, and the tile paths are all exercised rather than assumed.
+
+# The port is passed on the command line rather than set here, so that the value
+# run.sh polls and the value tegola binds cannot drift apart.
+[webserver]
+hostname = "localhost"
+
+[[providers]]
+name = "athens"
+type = "gpkg"
+filepath = "provider/gpkg/testdata/athens-osm-20170921.gpkg"
+
+  [[providers.layers]]
+  name = "land_polygons"
+  tablename = "land_polygons"
+  id_fieldname = "fid"
+
+  [[providers.layers]]
+  name = "roads_lines"
+  tablename = "roads_lines"
+  fields = ["highway"]
+  id_fieldname = "fid"
+
+  [[providers.layers]]
+  name = "places_points"
+  tablename = "places_points"
+  fields = ["place", "is_in"]
+  id_fieldname = "fid"
+
+[[maps]]
+name = "athens"
+attribution = "OpenStreetMap contributors"
+center = [23.7068, 37.8975, 12.0]
+bounds = [23.6, 37.85, 23.8, 37.95]
+tile_matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"]
+
+  [[maps.layers]]
+  name = "land"
+  provider_layer = "athens.land_polygons"
+  min_zoom = 4
+  max_zoom = 15
+
+  [[maps.layers]]
+  name = "roads"
+  provider_layer = "athens.roads_lines"
+  min_zoom = 4
+  max_zoom = 15
+
+  [[maps.layers]]
+  name = "places"
+  provider_layer = "athens.places_points"
+  min_zoom = 4
+  max_zoom = 15

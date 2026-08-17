@@ -189,6 +189,19 @@ tilesets list against the schema embedded in Requirement 10 C. Both validate wit
 
 ### Running CITE
 
+CI runs this suite on both schemes — see `.github/workflows/ogc_cite.yml`, which drives
+`.github/cite/run.sh`. It triggers on changes to the OGC surface, on demand, and weekly, since the
+suite is versioned separately from this repository and a passing implementation can start failing
+without a commit. To reproduce a CI run locally:
+
+```sh
+go build -o /tmp/tegola ./cmd/tegola      # CGO_ENABLED=1: the data is a GeoPackage
+/tmp/tegola serve --config .github/cite/config.toml --port ":8081" &
+.github/cite/run.sh WebMercatorQuad 14 6324 9271
+```
+
+The manual equivalent, for reference:
+
 The suite needs a TeamEngine instance and a running tegola it can reach, serving real data. Both
 run as containers on one docker network:
 
