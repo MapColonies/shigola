@@ -68,6 +68,10 @@ jobs:
       env:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        if [ -z "$COVERALLS_TOKEN" ]; then
+          echo "Skipping Coveralls upload: no GitHub token is available"
+          exit 0
+        fi
         go install -mod=vendor github.com/mattn/goveralls
         $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
 

@@ -66,16 +66,20 @@ jobs:
       # readiness poll is what turns that into a legible failure.
       - name: Start shigola
         run: |
-          "${{ runner.temp }}/shigola" serve --config .github/cite/config.toml --port ":8081" &
+          "${{ runner.temp }}/shigola" serve --config .github/cite/config.toml --port ":${SHIGOLA_PORT:-8081}" &
           echo $! > shigola.pid
 
       # Both active tiling schemes: the tile row and column differ because the
       # same ground is a different tile in each, which is the property the whole
       # TileMatrixSet abstraction exists for.
       - name: Run the suite — WebMercatorQuad
+        env:
+          TEGOLA_PORT: ${{ env.SHIGOLA_PORT }}
         run: .github/cite/run.sh WebMercatorQuad 14 6324 9271 cite-WebMercatorQuad.xml
 
       - name: Run the suite — WorldCRS84Quad
+        env:
+          TEGOLA_PORT: ${{ env.SHIGOLA_PORT }}
         run: .github/cite/run.sh WorldCRS84Quad 14 4742 18542 cite-WorldCRS84Quad.xml
 
       # Uploaded even on failure: the EARL report names the assertion that broke

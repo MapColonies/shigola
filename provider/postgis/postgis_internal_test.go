@@ -12,6 +12,8 @@ import (
 	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
+	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
+	"github.com/golang/protobuf/proto"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -78,7 +80,6 @@ func TestMVTProviders(t *testing.T) {
 	type tcase struct {
 		TCConfig
 		layerNames []string
-		mvtTile    []byte
 		err        string
 		tile       provider.Tile
 	}
@@ -87,7 +88,6 @@ func TestMVTProviders(t *testing.T) {
 			config := tc.Config(DefaultEnvConfig)
 			config[ConfigKeyName] = "provider_name"
 			prvd, err := NewMVTTileProvider(config, nil)
-			// for now we will just check the length of the bytes.
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Logf("error %#v", err)
@@ -112,9 +112,7 @@ func TestMVTProviders(t *testing.T) {
 				t.Errorf("NewProvider unexpected error: %v", err)
 				return
 			}
-			if len(tc.mvtTile) != len(mvtTile) {
-				t.Errorf("tile byte length, exected %v got %v", len(tc.mvtTile), len(mvtTile))
-			}
+			assertMVTForLayers(t, mvtTile, tc.layerNames)
 		}
 	}
 	tests := map[string]tcase{
@@ -132,12 +130,32 @@ func TestMVTProviders(t *testing.T) {
 				},
 			},
 			layerNames: []string{"land"},
-			mvtTile:    make([]byte, 174689),
 			tile:       provider.NewTile(0, 0, 0, 16, 4326),
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+func assertMVTForLayers(t *testing.T, data []byte, expectedLayerNames []string) {
+	t.Helper()
+
+	var tile vectorTile.Tile
+	if err := proto.Unmarshal(data, &tile); err != nil {
+		t.Fatalf("proto.Unmarshal() error = %v", err)
+	}
+	if len(tile.Layers) != len(expectedLayerNames) {
+		t.Fatalf("layer count = %d, want %d", len(tile.Layers), len(expectedLayerNames))
+	}
+
+	for i, layer := range tile.Layers {
+		if layer.Name == nil || *layer.Name != expectedLayerNames[i] {
+			t.Errorf("layer[%d] name = %v, want %q", i, layer.Name, expectedLayerNames[i])
+		}
+		if len(layer.Features) == 0 {
+			t.Errorf("layer[%d] has no features", i)
+		}
 	}
 }
 
