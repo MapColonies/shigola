@@ -545,8 +545,8 @@ func TestTileSetTileJSON(t *testing.T) {
 		t.Errorf("tilejson = %v, want 3.0.0", got)
 	}
 
-	// The point of 3.0: a tileset can say it is not WebMercator. Without this a
-	// client renders CRS84 tiles as though they were WebMercator ones.
+	// These Shigola extensions identify the scheme because TileJSON itself
+	// assumes WebMercator and has no CRS or tile-matrix-set member.
 	if got := doc["crs"]; got == nil || got == "" {
 		t.Error("tilejson has no crs, so a client cannot tell which scheme it is")
 	}
@@ -570,6 +570,18 @@ func TestTileSetTileJSON(t *testing.T) {
 	layers, ok := doc["vector_layers"].([]any)
 	if !ok || len(layers) != 2 {
 		t.Errorf("vector_layers = %v, want 2", doc["vector_layers"])
+	} else {
+		for i, layer := range layers {
+			layerDoc, ok := layer.(map[string]any)
+			if !ok {
+				t.Errorf("vector_layers[%d] = %T, want an object", i, layer)
+				continue
+			}
+			fields, ok := layerDoc["fields"].(map[string]any)
+			if !ok || fields == nil {
+				t.Errorf("vector_layers[%d].fields = %v, want an object", i, fields)
+			}
+		}
 	}
 
 	// The default representation is unaffected.

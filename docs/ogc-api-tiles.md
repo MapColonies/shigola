@@ -55,6 +55,11 @@ before:
 Schemes are configured per map, not per layer. A map's layer-collections offer exactly the schemes
 their map does.
 
+The native `/capabilities/{map}.json` endpoint describes the map's first, default scheme. Its
+TileJSON 2.1 response includes Shigola's `crs` and `tileMatrixSetId` extension members; TileJSON
+itself assumes WebMercator and does not define either member. Clients that need standard metadata,
+or metadata for another supported scheme, should request the OGC tileset metadata endpoint.
+
 This build serves the schemes that need no coordinate transformation backend:
 
 | tileMatrixSetId | CRS | Axis order | Matrix at zoom z |
