@@ -357,6 +357,36 @@ func (t *TileMatrixSet) MatrixSize(zoom int) (cols, rows int64, err error) {
 	return m.MatrixWidth, m.MatrixHeight, nil
 }
 
+// ValidateTile reports whether z/x/y names a tile this scheme contains, and if
+// not, which of the two bounds it broke.
+//
+// This is the fork's own check rather than part of the morecantile port:
+// IsValid answers the same question as a bool, which is all morecantile needs,
+// while every call site here has to tell a client *what* was wrong with the
+// request.
+//
+// x and y are bounded independently, and that is the whole point. A scheme need
+// not be a square pyramid — WorldCRS84Quad is 2*2^z columns by 2^z rows — so a
+// single 2^z bound would reject half of its valid columns at every zoom, and a
+// single 2*2^z bound would admit twice its rows. Four call sites once carried
+// their own copy of this arithmetic; the copies are what this exists to remove.
+func (t *TileMatrixSet) ValidateTile(z int, x, y int64) error {
+	cols, rows, err := t.MatrixSize(z)
+	if err != nil {
+		return err
+	}
+
+	if x < 0 || x >= cols {
+		return ErrTileOutsideMatrix{GridID: t.ID(), Z: z, X: x, Y: y, Cols: cols, Rows: rows, Axis: AxisX}
+	}
+
+	if y < 0 || y >= rows {
+		return ErrTileOutsideMatrix{GridID: t.ID(), Z: z, X: x, Y: y, Cols: cols, Rows: rows, Axis: AxisY}
+	}
+
+	return nil
+}
+
 // Extrema is the inclusive range of valid tile indices at a zoom level.
 type Extrema struct {
 	MinX, MaxX int64

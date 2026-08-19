@@ -52,8 +52,7 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	// The collection's map may offer several schemes; this request named one,
 	// so the encode and the cache key must both use it rather than the map's
 	// default.
-	m := c.Map
-	m.TileMatrixSets = []*tms.TileMatrixSet{grid}
+	m := c.Map.InGrid(grid)
 
 	m = m.FilterLayersByZoom(slippy.Zoom(tile.Z))
 	if len(m.Layers) == 0 {
@@ -63,7 +62,11 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := cache.NewKey(grid, c.Map.Name, c.LayerName, uint(tile.Z), uint(tile.X), uint(tile.Y))
+	key, err := cache.NewKey(grid, c.Map.Name, c.LayerName, uint(tile.Z), uint(tile.X), uint(tile.Y))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
 	// The same key the native routes use, so a tile seeded or served through
 	// /maps/... is served here too rather than generated a second time.
@@ -145,19 +148,32 @@ func parseTilePath(grid *tms.TileMatrixSet, tileMatrix, tileRow, tileCol string)
 		return tms.Tile{}, fmt.Errorf("invalid tileMatrix (%v)", tileMatrix)
 	}
 
-	cols, rows, err := grid.MatrixSize(z)
-	if err != nil {
-		return tms.Tile{}, fmt.Errorf("tile matrix set %v has no tile matrix %v", grid.ID(), tileMatrix)
-	}
-
+	// Parsed before either is range-checked, so that a non-numeric row and an
+	// out-of-range one are told apart: ValidateTile bounds integers, it does not
+	// read them.
 	row, err := strconv.ParseInt(tileRow, 10, 64)
-	if err != nil || row < 0 || row >= rows {
-		return tms.Tile{}, fmt.Errorf("invalid tileRow (%v); tile matrix %v has %d rows", tileRow, tileMatrix, rows)
+	if err != nil {
+		return tms.Tile{}, fmt.Errorf("invalid tileRow (%v)", tileRow)
 	}
 
 	col, err := strconv.ParseInt(tileCol, 10, 64)
-	if err != nil || col < 0 || col >= cols {
-		return tms.Tile{}, fmt.Errorf("invalid tileCol (%v); tile matrix %v has %d columns", tileCol, tileMatrix, cols)
+	if err != nil {
+		return tms.Tile{}, fmt.Errorf("invalid tileCol (%v)", tileCol)
+	}
+
+	if err := grid.ValidateTile(z, col, row); err != nil {
+		var outside tms.ErrTileOutsideMatrix
+		if !errors.As(err, &outside) {
+			return tms.Tile{}, fmt.Errorf("tile matrix set %v has no tile matrix %v", grid.ID(), tileMatrix)
+		}
+
+		// Reported in the standard's vocabulary: this surface calls them rows
+		// and columns, and the client asked in those terms.
+		if outside.Axis == tms.AxisY {
+			return tms.Tile{}, fmt.Errorf("invalid tileRow (%v); tile matrix %v has %d rows", tileRow, tileMatrix, outside.Rows)
+		}
+
+		return tms.Tile{}, fmt.Errorf("invalid tileCol (%v); tile matrix %v has %d columns", tileCol, tileMatrix, outside.Cols)
 	}
 
 	return tms.Tile{Z: z, X: col, Y: row}, nil

@@ -142,3 +142,30 @@ func (e ErrGridUnavailable) Error() string {
 }
 
 func (e ErrGridUnavailable) Unwrap() error { return e.Reason }
+
+// Axis names one of the two independently bounded tile axes.
+const (
+	AxisX = "x"
+	AxisY = "y"
+)
+
+// ErrTileOutsideMatrix reports a tile index outside its scheme's matrix at a
+// zoom level.
+//
+// Axis says which of the two bounds was broken, and Cols/Rows carry the matrix
+// it was checked against, so a caller can phrase the failure in its own
+// vocabulary — "X"/"Y" on the native routes, "tileCol"/"tileRow" on the OGC
+// ones — without repeating the arithmetic.
+type ErrTileOutsideMatrix struct {
+	GridID     string
+	Z          int
+	X, Y       int64
+	Cols, Rows int64
+	Axis       string
+}
+
+func (e ErrTileOutsideMatrix) Error() string {
+	return fmt.Sprintf(
+		"tms: tile %v/%v/%v is outside tile matrix set %v, whose matrix at zoom %v is %d columns by %d rows",
+		e.Z, e.X, e.Y, e.GridID, e.Z, e.Cols, e.Rows)
+}

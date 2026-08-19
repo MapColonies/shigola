@@ -145,7 +145,10 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
 	}
 
 	// cache key
-	key := cache.NewKey(m.TileGrid(), m.Name, "", z, x, y)
+	key, err := cache.NewKey(m.TileGrid(), m.Name, "", z, x, y)
+	if err != nil {
+		return err
+	}
 
 	return a.cacher.Set(ctx, &key, b)
 }
@@ -167,7 +170,10 @@ func (a *Atlas) PurgeMapTile(ctx context.Context, m Map, tile *shigola.Tile) err
 	}
 
 	// cache key
-	key := cache.NewKey(m.TileGrid(), m.Name, "", tile.Z, tile.X, tile.Y)
+	key, err := cache.NewKey(m.TileGrid(), m.Name, "", tile.Z, tile.X, tile.Y)
+	if err != nil {
+		return err
+	}
 
 	return a.cacher.Purge(ctx, &key)
 }

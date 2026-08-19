@@ -11,24 +11,8 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/log"
-	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom/slippy"
 )
-
-// bindRunGrid pins a map to the TileMatrixSet this seed or purge run operates
-// in.
-//
-// atlas.Map is a value, so this scopes the grid to one call: TileGrid then
-// reports the run's grid, and the existence check, the encode, and the cache key
-// all agree on it rather than each consulting the map's own default.
-// resolveSeedPurgeGrid has already established that the map supports it.
-func bindRunGrid(m atlas.Map) atlas.Map {
-	if seedPurgeGrid != nil {
-		m.TileMatrixSets = []*tms.TileMatrixSet{seedPurgeGrid}
-	}
-
-	return m
-}
 
 type seedPurgeWorkerTileError struct {
 	Purge bool
@@ -106,7 +90,7 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 			}
 		}
 
-		m = bindRunGrid(m)
+		m = m.InGrid(seedPurgeGrid)
 
 		z, x, y := mt.Tile.ZXY()
 
@@ -124,7 +108,10 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 			//	cache key. it must name the same grid SeedMapTile will write
 			//	under, or the existence check reads a key nothing writes and
 			//	every tile looks absent.
-			key := cache.NewKey(m.TileGrid(), mt.MapName, "", uint(z), x, y)
+			key, err := cache.NewKey(m.TileGrid(), mt.MapName, "", uint(z), x, y)
+			if err != nil {
+				return err
+			}
 
 			//	read the tile from the cache
 			_, hit, err := c.Get(ctx, &key)
@@ -179,7 +166,7 @@ func purgeWorker(ctx context.Context, mt MapTile) error {
 		}
 	}
 
-	m = bindRunGrid(m)
+	m = m.InGrid(seedPurgeGrid)
 
 	//	purge the tile
 	ttile := shigola.TileFromSlippyTile(mt.Tile)

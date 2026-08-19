@@ -123,6 +123,12 @@ this service cannot produce gets the default representation, which is what a bro
 | tileset metadata | `json` (default), `tilejson` |
 | everything else | `json` |
 
+`/api` falls under that last row. It has only one representation, but `?f=` is still checked against
+it, so `/api?f=html` is a 400 like anywhere else. Its body is served as
+`application/vnd.oai.openapi+json;version=3.0` rather than plain `application/json` — `json` names
+the representation, and for this resource that representation is an OpenAPI 3.0 definition, which
+OGC requires carry the specific media type.
+
 `mvt` is canonical: it is what every link and template this service emits says, and it is the name
 in the OGC conformance class. `pbf` is accepted because that is what the same tile is called by
 shigola's native routes, which serve it at a `.pbf` extension, and by the `format` member of the

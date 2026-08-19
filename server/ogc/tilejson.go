@@ -34,7 +34,7 @@ type TileJSON struct {
 
 // tileJSON builds the TileJSON representation of a tileset.
 func (s *Service) tileJSON(r *http.Request, c Collection, grid *tms.TileMatrixSet) TileJSON {
-	base := []string{"collections", c.ID, "tiles", grid.ID()}
+	base := tileSetPath(c, grid)
 
 	minZoom, maxZoom := zoomRange(c.Map)
 

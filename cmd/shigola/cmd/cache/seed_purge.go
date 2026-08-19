@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -195,16 +196,13 @@ func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 		return fmt.Errorf("no tile matrix set has been resolved for this run")
 	}
 
-	cols, rows, err := grid.MatrixSize(int(tile.Z))
-	if err != nil {
-		return fmt.Errorf("tile matrix set %v has no tile matrix %v: %w", grid.ID(), tile.Z, err)
-	}
+	if err := grid.ValidateTile(int(tile.Z), int64(tile.X), int64(tile.Y)); err != nil {
+		var outside tms.ErrTileOutsideMatrix
+		if errors.As(err, &outside) {
+			return err
+		}
 
-	if int64(tile.X) >= cols || int64(tile.Y) >= rows {
-		return fmt.Errorf(
-			"tile %v/%v/%v is outside tile matrix set %v, whose matrix at zoom %v is %d columns by %d rows",
-			tile.Z, tile.X, tile.Y, grid.ID(), tile.Z, cols, rows,
-		)
+		return fmt.Errorf("tile matrix set %v has no tile matrix %v: %w", grid.ID(), tile.Z, err)
 	}
 
 	return nil

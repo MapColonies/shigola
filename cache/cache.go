@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -296,16 +297,8 @@ func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 
 	key.Z = uint(placeholder)
 
-	// x and y are bounded independently: a grid need not be a square pyramid.
-	cols, rows, err := grid.MatrixSize(int(key.Z))
-	if err != nil {
-		return nil, err
-	}
-	maxXatZ := uint64(cols - 1)
-	maxYatZ := uint64(rows - 1)
-
 	placeholder, err = strconv.ParseUint(zxy[1], 10, 32)
-	if err != nil || placeholder > maxXatZ {
+	if err != nil {
 		err = ErrInvalidFileKey{
 			path: str,
 			key:  "X",
@@ -321,7 +314,7 @@ func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 	// trim the extension if it exists
 	yParts := strings.Split(zxy[2], ".")
 	placeholder, err = strconv.ParseUint(yParts[0], 10, 64)
-	if err != nil || placeholder > maxYatZ {
+	if err != nil {
 		err = ErrInvalidFileKey{
 			path: str,
 			key:  "Y",
@@ -332,6 +325,24 @@ func ParseKeyForGrid(str string, grid *tms.TileMatrixSet) (*Key, error) {
 		return nil, err
 	}
 	key.Y = uint(placeholder)
+
+	// x and y are bounded independently: a grid need not be a square pyramid.
+	if err := grid.ValidateTile(int(key.Z), int64(key.X), int64(key.Y)); err != nil {
+		var outside tms.ErrTileOutsideMatrix
+		if !errors.As(err, &outside) {
+			return nil, err
+		}
+
+		badKey, badVal := "X", zxy[1]
+		if outside.Axis == tms.AxisY {
+			badKey, badVal = "Y", zxy[2]
+		}
+
+		err = ErrInvalidFileKey{path: str, key: badKey, val: badVal}
+
+		log.Printf("cache: invalid file key: %s", err.Error())
+		return nil, err
+	}
 
 	return &key, nil
 }
@@ -362,11 +373,19 @@ type Key struct {
 // agree exactly: a field one of them sets and another forgets makes a tile that
 // is written under one key and looked for under another, which reads as a cache
 // that never hits rather than as a bug.
-func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) Key {
+func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) (Key, error) {
 	// grid is required, and deliberately not defaulted: an empty id reads as
 	// WebMercatorQuad, so accepting nil here would file another scheme's tiles
 	// under WebMercatorQuad's keys — silently, and only for the caller that got
 	// it wrong. ParseKeyForGrid rejects nil for the same reason.
+	//
+	// Reported rather than left to panic in grid.ID(): every caller already has
+	// an error path, and a nil grid is a caller's mistake to hear about, not a
+	// reason to take the process down.
+	if grid == nil {
+		return Key{}, ErrNilGrid
+	}
+
 	return Key{
 		TileMatrixSetID: grid.ID(),
 		MapName:         mapName,
@@ -374,7 +393,7 @@ func NewKey(grid *tms.TileMatrixSet, mapName, layerName string, z, x, y uint) Ke
 		Z:               z,
 		X:               x,
 		Y:               y,
-	}
+	}, nil
 }
 
 func (k Key) String() string {

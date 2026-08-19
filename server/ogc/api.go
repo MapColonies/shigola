@@ -45,6 +45,14 @@ func parseAPI() {
 // of a service mounted behind a path prefix, sends every request to the wrong
 // place — so that entry is filled in from the request.
 func (s *Service) HandleAPI(w http.ResponseWriter, r *http.Request) {
+	// This resource has one representation, but it is negotiated like every
+	// other (ADR-0005): without this, /api?f=nonsense is the single route on the
+	// surface that answers 200 to a format it cannot serve.
+	if _, err := negotiate(r, FormatJSON); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
 	parseAPI()
 	if apiErr != nil {
 		writeError(w, http.StatusInternalServerError, apiErr)
@@ -70,6 +78,9 @@ func (s *Service) HandleAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Not format.mediaType(): "json" names the representation, and for this
+	// resource that representation is an OpenAPI 3.0 document, whose media type
+	// OGC requires be the specific profile rather than plain application/json.
 	w.Header().Set("Content-Type", MediaTypeOpenAPI)
 	w.WriteHeader(http.StatusOK)
 
