@@ -365,9 +365,9 @@ func TestQuadkey(t *testing.T) {
 		t.Errorf("QuadkeyToTile(\"\") = %v, want %v", empty, want)
 	}
 
-	var qkErr QuadKeyError
+	var qkErr ErrQuadKey
 	if _, err := grid.QuadkeyToTile("lolwut"); !errors.As(err, &qkErr) {
-		t.Errorf("QuadkeyToTile(\"lolwut\") error = %v, want QuadKeyError", err)
+		t.Errorf("QuadkeyToTile(\"lolwut\") error = %v, want ErrQuadKey", err)
 	}
 }
 
@@ -375,9 +375,9 @@ func TestQuadkey(t *testing.T) {
 func TestQuadkeyUnsupported(t *testing.T) {
 	grid := mustGrid(t, "WorldCRS84Quad")
 
-	var unsupported NoQuadkeySupportError
+	var unsupported ErrNoQuadkeySupport
 	if _, err := grid.Quadkey(Tile{X: 0, Y: 0, Z: 1}); !errors.As(err, &unsupported) {
-		t.Errorf("Quadkey error = %v, want NoQuadkeySupportError", err)
+		t.Errorf("Quadkey error = %v, want ErrNoQuadkeySupport", err)
 	}
 }
 
@@ -505,9 +505,9 @@ func TestParent(t *testing.T) {
 		t.Errorf("Parent(486,332,10, zoom=8) = %v, want first tile Tile(x=121, y=83, z=8)", twoUp)
 	}
 
-	var zoomErr InvalidZoomError
+	var zoomErr ErrInvalidZoom
 	if _, err := grid.Parent(Tile{X: 486, Y: 332, Z: 10}, 11); !errors.As(err, &zoomErr) {
-		t.Errorf("Parent to a deeper zoom error = %v, want InvalidZoomError", err)
+		t.Errorf("Parent to a deeper zoom error = %v, want ErrInvalidZoom", err)
 	}
 
 	root, err := grid.Parent(Tile{X: 0, Y: 0, Z: 0}, -1)
@@ -571,9 +571,9 @@ func TestChildren(t *testing.T) {
 		}
 	}
 
-	var zoomErr InvalidZoomError
+	var zoomErr ErrInvalidZoom
 	if _, err := grid.Children(Tile{X: x, Y: y, Z: z}, 8); !errors.As(err, &zoomErr) {
-		t.Errorf("Children to a shallower zoom error = %v, want InvalidZoomError", err)
+		t.Errorf("Children to a shallower zoom error = %v, want ErrInvalidZoom", err)
 	}
 }
 
@@ -976,9 +976,9 @@ func TestMatrixSynthesisRejectsShallowZoom(t *testing.T) {
 		t.Fatalf("MinZoom = %d, want 2", grid.MinZoom())
 	}
 
-	var zoomErr InvalidZoomError
+	var zoomErr ErrInvalidZoom
 	if _, err := grid.Matrix(0); !errors.As(err, &zoomErr) {
-		t.Errorf("Matrix(0) error = %v, want InvalidZoomError", err)
+		t.Errorf("Matrix(0) error = %v, want ErrInvalidZoom", err)
 	}
 }
 

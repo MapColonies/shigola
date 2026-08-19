@@ -32,63 +32,63 @@ var ErrTMSVersion1 = errors.New("tms: tileMatrixSet document must be version 2.0
 // borrowing ErrNoTransformBackend's reason.
 var ErrGridNotActivated = errors.New("tms: tileMatrixSet is not in this build's activation set")
 
-// InvalidIdentifierError reports a tileMatrixSetId that is not registered.
-type InvalidIdentifierError struct {
+// ErrInvalidIdentifier reports a tileMatrixSetId that is not registered.
+type ErrInvalidIdentifier struct {
 	Identifier string
 }
 
-func (e InvalidIdentifierError) Error() string {
+func (e ErrInvalidIdentifier) Error() string {
 	return fmt.Sprintf("tms: invalid TileMatrixSet identifier %q", e.Identifier)
 }
 
-// InvalidZoomError reports a zoom level that cannot be resolved to a
+// ErrInvalidZoom reports a zoom level that cannot be resolved to a
 // TileMatrix.
-type InvalidZoomError struct {
+type ErrInvalidZoom struct {
 	Message string
 }
 
-func (e InvalidZoomError) Error() string {
+func (e ErrInvalidZoom) Error() string {
 	return "tms: invalid zoom: " + e.Message
 }
 
-// TileArgParsingError reports a malformed tile argument.
-type TileArgParsingError struct {
+// ErrTileArgParsing reports a malformed tile argument.
+type ErrTileArgParsing struct {
 	Message string
 }
 
-func (e TileArgParsingError) Error() string {
+func (e ErrTileArgParsing) Error() string {
 	return "tms: invalid tile argument: " + e.Message
 }
 
-// NoQuadkeySupportError reports that a TileMatrixSet is not a 2x2 quadtree and
+// ErrNoQuadkeySupport reports that a TileMatrixSet is not a 2x2 quadtree and
 // so has no quadkeys.
-type NoQuadkeySupportError struct {
+type ErrNoQuadkeySupport struct {
 	Identifier string
 }
 
-func (e NoQuadkeySupportError) Error() string {
+func (e ErrNoQuadkeySupport) Error() string {
 	return fmt.Sprintf("tms: TileMatrixSet %q does not support 2 x 2 quadkeys", e.Identifier)
 }
 
-// QuadKeyError reports a malformed quadkey.
-type QuadKeyError struct {
+// ErrQuadKey reports a malformed quadkey.
+type ErrQuadKey struct {
 	Message string
 }
 
-func (e QuadKeyError) Error() string {
+func (e ErrQuadKey) Error() string {
 	return "tms: invalid quadkey: " + e.Message
 }
 
-// UnsupportedCRSError reports a CRS this package has no metadata for. Because
+// ErrUnsupportedCRS reports a CRS this package has no metadata for. Because
 // the port carries no PROJ backend, CRS knowledge comes from the table in
 // crs.go; a CRS outside it cannot have its metersPerUnit or axis order
 // resolved.
-type UnsupportedCRSError struct {
+type ErrUnsupportedCRS struct {
 	CRS    string
 	Reason string
 }
 
-func (e UnsupportedCRSError) Error() string {
+func (e ErrUnsupportedCRS) Error() string {
 	if e.Reason == "" {
 		return fmt.Sprintf("tms: unsupported CRS %q", e.CRS)
 	}
@@ -98,7 +98,7 @@ func (e UnsupportedCRSError) Error() string {
 
 // Unwrap lets errors.Is find ErrNoTransformBackend through a CRS error raised by
 // a grid that has no arithmetic transform.
-func (e UnsupportedCRSError) Unwrap() error {
+func (e ErrUnsupportedCRS) Unwrap() error {
 	if e.Reason == ErrNoTransformBackend.Error() {
 		return ErrNoTransformBackend
 	}
@@ -106,18 +106,39 @@ func (e UnsupportedCRSError) Unwrap() error {
 	return nil
 }
 
-// PointOutsideBoundsError reports a point outside a grid's bounds.
+// ErrPointOutsideBounds reports a point outside a grid's bounds.
 //
 // morecantile raises this as a Python *warning* and carries on returning
 // coordinates, so the ported algorithms do not fail on it. It is exported for
 // callers that want to check explicitly — see TileMatrixSet.PointInBounds.
-type PointOutsideBoundsError struct {
+type ErrPointOutsideBounds struct {
 	Point  Coords
 	Bounds BoundingBox
 }
 
-func (e PointOutsideBoundsError) Error() string {
+func (e ErrPointOutsideBounds) Error() string {
 	return fmt.Sprintf("tms: point (%v, %v) is outside bounds [%v %v %v %v]",
 		e.Point.X, e.Point.Y,
 		e.Bounds.Left, e.Bounds.Bottom, e.Bounds.Right, e.Bounds.Top)
 }
+
+// ErrVariableWidthUnsupported reports a grid whose tile matrices coalesce
+// columns. The document model and tile arithmetic handle these grids, but
+// tegola's tile pipeline assumes a tile's column index maps to one column of
+// the matrix, so they are not activated.
+var ErrVariableWidthUnsupported = errors.New("tms: variable-width tile matrices are not supported by the tile pipeline")
+
+// ErrGridUnavailable reports a registered grid that this build cannot serve.
+//
+// It wraps the underlying reason, so errors.Is(err, ErrNoTransformBackend) and
+// errors.Is(err, ErrVariableWidthUnsupported) both work.
+type ErrGridUnavailable struct {
+	ID     string
+	Reason error
+}
+
+func (e ErrGridUnavailable) Error() string {
+	return fmt.Sprintf("tms: TileMatrixSet %q is not available in this build: %v", e.ID, e.Reason)
+}
+
+func (e ErrGridUnavailable) Unwrap() error { return e.Reason }

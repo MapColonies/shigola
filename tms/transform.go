@@ -122,7 +122,7 @@ func (t unavailableTransformer) FromGeographic(_, _ float64) (float64, float64, 
 }
 
 func (t unavailableTransformer) err() error {
-	return UnsupportedCRSError{CRS: t.crs, Reason: ErrNoTransformBackend.Error()}
+	return ErrUnsupportedCRS{CRS: t.crs, Reason: ErrNoTransformBackend.Error()}
 }
 
 // transformer returns the Transformer for the CRS, which is
