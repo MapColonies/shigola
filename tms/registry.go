@@ -22,12 +22,6 @@ import (
 //go:embed data/*.json
 var gridData embed.FS
 
-// ErrVariableWidthUnsupported reports a grid whose tile matrices coalesce
-// columns. The document model and tile arithmetic handle these grids, but
-// tegola's tile pipeline assumes a tile's column index maps to one column of
-// the matrix, so they are not activated.
-var ErrVariableWidthUnsupported = errors.New("tms: variable-width tile matrices are not supported by the tile pipeline")
-
 // activeGrids names the grids this build activates, per ADR-0009: the three
 // whose tile-to-coordinate conversions are closed-form arithmetic over WGS 84,
 // so the fork needs no PROJ backend and stays cgo-free.
@@ -49,21 +43,6 @@ var activeGrids = map[string]bool{
 	WorldCRS84Quad:  true,
 	WGS1984Quad:     true,
 }
-
-// GridUnavailableError reports a registered grid that this build cannot serve.
-//
-// It wraps the underlying reason, so errors.Is(err, ErrNoTransformBackend) and
-// errors.Is(err, ErrVariableWidthUnsupported) both work.
-type GridUnavailableError struct {
-	ID     string
-	Reason error
-}
-
-func (e GridUnavailableError) Error() string {
-	return fmt.Sprintf("tms: TileMatrixSet %q is not available in this build: %v", e.ID, e.Reason)
-}
-
-func (e GridUnavailableError) Unwrap() error { return e.Reason }
 
 // Factory builds a TileMatrixSet on demand.
 type Factory func() (*TileMatrixSet, error)
@@ -103,7 +82,7 @@ func NewRegistry() *Registry {
 // build cannot serve is cheap and keeps it discoverable through Registered.
 func (r *Registry) Register(id string, ctor Factory) error {
 	if id == "" {
-		return InvalidIdentifierError{Identifier: id}
+		return ErrInvalidIdentifier{Identifier: id}
 	}
 
 	if ctor == nil {
@@ -131,7 +110,7 @@ func (r *Registry) Register(id string, ctor Factory) error {
 // corrected definition of a bundled grid.
 func (r *Registry) Replace(id string, ctor Factory) error {
 	if id == "" {
-		return InvalidIdentifierError{Identifier: id}
+		return ErrInvalidIdentifier{Identifier: id}
 	}
 
 	if ctor == nil {
@@ -153,8 +132,8 @@ func (r *Registry) Replace(id string, ctor Factory) error {
 
 // Get returns the grid registered under an id.
 //
-// An unregistered id yields InvalidIdentifierError. A registered grid this build
-// cannot serve yields GridUnavailableError, which distinguishes "known but not
+// An unregistered id yields ErrInvalidIdentifier. A registered grid this build
+// cannot serve yields ErrGridUnavailable, which distinguishes "known but not
 // available here" from "no such grid".
 func (r *Registry) Get(id string) (*TileMatrixSet, error) {
 	r.mu.RLock()
@@ -175,7 +154,7 @@ func (r *Registry) Get(id string) (*TileMatrixSet, error) {
 
 	ctor, ok := r.factories[id]
 	if !ok {
-		return nil, InvalidIdentifierError{Identifier: id}
+		return nil, ErrInvalidIdentifier{Identifier: id}
 	}
 
 	grid, err := ctor()
@@ -327,7 +306,7 @@ func bundledFactory(id, entry string) Factory {
 		}
 
 		if reason := gatingReason(grid); reason != nil {
-			return nil, GridUnavailableError{ID: id, Reason: reason}
+			return nil, ErrGridUnavailable{ID: id, Reason: reason}
 		}
 
 		return grid, nil
@@ -364,7 +343,7 @@ func gatingReason(grid *TileMatrixSet) error {
 func LoadDefinition(id string) (Definition, []byte, error) {
 	raw, err := gridData.ReadFile("data/" + id + ".json")
 	if err != nil {
-		return Definition{}, nil, InvalidIdentifierError{Identifier: id}
+		return Definition{}, nil, ErrInvalidIdentifier{Identifier: id}
 	}
 
 	def, err := ParseDefinition(raw)

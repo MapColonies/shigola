@@ -62,6 +62,11 @@ type TileJSON struct {
 	// REQUIRED. A semver.org style version number. Describes the version of
 	// the TileJSON spec that is implemented by this JSON object.
 	TileJSON string `json:"tilejson"`
+	// CRS is a Shigola extension identifying the tileset's coordinate
+	// reference system. TileJSON clients must ignore unknown keys.
+	CRS string `json:"crs,omitempty"`
+	// TileMatrixSetID is a Shigola extension identifying the OGC tiling scheme.
+	TileMatrixSetID string `json:"tileMatrixSetId,omitempty"`
 	// REQUIRED. An array of tile endpoints. {z}, {x} and {y}, if present,
 	// are replaced with the corresponding integers. If multiple endpoints are specified, clients
 	// may use any combination of endpoints. All endpoints MUST return the same
@@ -118,6 +123,9 @@ type VectorLayer struct {
 	// REQUIRED. The name of the layer
 	// "name" and "id" are identical
 	ID string `json:"id"`
+	// REQUIRED. Attribute names mapped to human-readable descriptions. Emit an
+	// empty object when field metadata is unavailable.
+	Fields *map[string]string `json:"fields,omitempty"`
 	// REQUIRED. The name of the layer
 	// "name" and "id" are identical
 	Name string `json:"name"`

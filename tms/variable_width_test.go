@@ -51,9 +51,9 @@ func TestVariableWidthMatrixNotSynthesised(t *testing.T) {
 		t.Run(tc.id, func(t *testing.T) {
 			grid := mustLoadGrid(t, tc.id)
 
-			var zoomErr InvalidZoomError
+			var zoomErr ErrInvalidZoom
 			if _, err := grid.Matrix(tc.zoom); !errors.As(err, &zoomErr) {
-				t.Errorf("Matrix(%d) error = %v, want InvalidZoomError", tc.zoom, err)
+				t.Errorf("Matrix(%d) error = %v, want ErrInvalidZoom", tc.zoom, err)
 			}
 		})
 	}

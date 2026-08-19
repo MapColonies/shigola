@@ -235,6 +235,28 @@ func TestNegotiation(t *testing.T) {
 			accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 			status: http.StatusOK, content: ogc.MediaTypeJSON,
 		},
+
+		// /api has a single representation, but the rule is the surface's, not
+		// each resource's: it negotiates like everything else. Its media type is
+		// the OpenAPI profile rather than plain JSON, which is what "json"
+		// means for this resource.
+		"/api default": {
+			uri: "/api", status: http.StatusOK, content: ogc.MediaTypeOpenAPI,
+		},
+		"/api f=json": {
+			uri: "/api?f=json", status: http.StatusOK, content: ogc.MediaTypeOpenAPI,
+		},
+		"/api rejects an unsupported f like every other route": {
+			uri: "/api?f=html", status: http.StatusBadRequest,
+		},
+		"/api rejects the mvt alias it cannot serve": {
+			uri: "/api?f=pbf", status: http.StatusBadRequest,
+		},
+		"/api Accept html falls back to the default": {
+			uri:    "/api",
+			accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			status: http.StatusOK, content: ogc.MediaTypeOpenAPI,
+		},
 	}
 
 	for name, tc := range tests {

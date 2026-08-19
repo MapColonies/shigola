@@ -55,6 +55,11 @@ before:
 Schemes are configured per map, not per layer. A map's layer-collections offer exactly the schemes
 their map does.
 
+The native `/capabilities/{map}.json` endpoint describes the map's first, default scheme. Its
+TileJSON 2.1 response includes Shigola's `crs` and `tileMatrixSetId` extension members; TileJSON
+itself assumes WebMercator and does not define either member. Clients that need standard metadata,
+or metadata for another supported scheme, should request the OGC tileset metadata endpoint.
+
 This build serves the schemes that need no coordinate transformation backend:
 
 | tileMatrixSetId | CRS | Axis order | Matrix at zoom z |
@@ -122,6 +127,12 @@ this service cannot produce gets the default representation, which is what a bro
 | a tile | `mvt`, or `pbf` for the same thing |
 | tileset metadata | `json` (default), `tilejson` |
 | everything else | `json` |
+
+`/api` falls under that last row. It has only one representation, but `?f=` is still checked against
+it, so `/api?f=html` is a 400 like anywhere else. Its body is served as
+`application/vnd.oai.openapi+json;version=3.0` rather than plain `application/json` — `json` names
+the representation, and for this resource that representation is an OpenAPI 3.0 definition, which
+OGC requires carry the specific media type.
 
 `mvt` is canonical: it is what every link and template this service emits says, and it is the name
 in the OGC conformance class. `pbf` is accepted because that is what the same tile is called by

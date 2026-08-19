@@ -1,6 +1,9 @@
 package cache
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type ErrInvalidFileKeyParts struct {
 	path          string
@@ -47,3 +50,10 @@ type ErrPurgingCache struct {
 func (e ErrPurgingCache) Error() string {
 	return fmt.Sprintf("cache: error purging (%v) cache: %v", e.CacheType, e.Err)
 }
+
+// ErrNilGrid reports a cache key built without a tiling scheme.
+//
+// It is not defaulted: Key.String reads an empty TileMatrixSetID as
+// WebMercatorQuad, so accepting nil would file another scheme's tiles under
+// WebMercatorQuad's keys — silently, and only for the caller that got it wrong.
+var ErrNilGrid = errors.New("cache: a tile matrix set is required to build a cache key")

@@ -78,9 +78,9 @@ func TestGatedGridsReportWhy(t *testing.T) {
 				t.Fatalf("Get(%q) succeeded, want it gated", id)
 			}
 
-			var unavailable GridUnavailableError
+			var unavailable ErrGridUnavailable
 			if !errors.As(err, &unavailable) {
-				t.Fatalf("Get(%q) error = %v, want GridUnavailableError", id, err)
+				t.Fatalf("Get(%q) error = %v, want ErrGridUnavailable", id, err)
 			}
 
 			if !errors.Is(err, wantReason) {
@@ -137,13 +137,13 @@ func TestGridNotActivatedReason(t *testing.T) {
 // TestInvalidIdentifier is morecantile's test_invalid_tms. An unknown id must be
 // distinguishable from a known-but-gated one.
 func TestInvalidIdentifier(t *testing.T) {
-	var invalid InvalidIdentifierError
+	var invalid ErrInvalidIdentifier
 
 	if _, err := Get("ANotValidName"); !errors.As(err, &invalid) {
-		t.Errorf("Get(\"ANotValidName\") error = %v, want InvalidIdentifierError", err)
+		t.Errorf("Get(\"ANotValidName\") error = %v, want ErrInvalidIdentifier", err)
 	}
 
-	var unavailable GridUnavailableError
+	var unavailable ErrGridUnavailable
 	if _, err := Get("ANotValidName"); errors.As(err, &unavailable) {
 		t.Error("an unknown id must not be reported as an unavailable grid")
 	}

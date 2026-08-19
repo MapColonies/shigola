@@ -106,6 +106,28 @@ func (m Map) TileGrid() *tms.TileMatrixSet {
 	return DefaultTileGrid()
 }
 
+// InGrid returns a copy of the map pinned to one tiling scheme.
+//
+// A Map is a value, so this scopes the choice to a single call chain: TileGrid
+// then reports the pinned scheme, and the encode, the existence check and the
+// cache key all agree on it rather than each consulting the map's own default.
+//
+// It exists because a request or a seed run names a scheme the map merely
+// supports, and everything downstream reads that choice off the Map. Two call
+// sites — the OGC tile handler and the seed/purge worker — had each written the
+// field assignment out longhand, which is one silent divergence away from a tile
+// encoded in one scheme and filed under another's key.
+//
+// A nil grid leaves the map alone: callers that never resolved one keep the
+// map's own default rather than falling through to a hardcoded WebMercatorQuad.
+func (m Map) InGrid(grid *tms.TileMatrixSet) Map {
+	if grid != nil {
+		m.TileMatrixSets = []*tms.TileMatrixSet{grid}
+	}
+
+	return m
+}
+
 // TileGrids returns every TileMatrixSet this map may be requested in, defaulting
 // to the default grid alone. The first entry is the map's default.
 func (m Map) TileGrids() []*tms.TileMatrixSet {

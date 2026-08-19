@@ -22,7 +22,8 @@ type HandleMapCapabilities struct {
 }
 
 // ServeHTTP returns details about a map according to the
-// tileJSON spec (https://github.com/mapbox/tilejson-spec/tree/master/2.1.0)
+// TileJSON spec (https://github.com/mapbox/tilejson-spec/tree/master/2.1.0),
+// extended with the map's default CRS and tile matrix set identifier.
 //
 // URI scheme: /capabilities/:map_name.json
 // map_name - map name in the config file
@@ -50,17 +51,20 @@ func (req HandleMapCapabilities) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	grid := m.TileGrid()
 	tileJSON := tilejson.TileJSON{
-		Attribution: &m.Attribution,
-		Bounds:      m.Bounds.Extent(),
-		Center:      m.Center,
-		Format:      TileURLFileFormat,
-		Name:        &m.Name,
-		Scheme:      tilejson.SchemeXYZ,
-		TileJSON:    tilejson.Version,
-		Version:     "1.0.0",
-		Grids:       make([]string, 0),
-		Data:        make([]string, 0),
+		Attribution:     &m.Attribution,
+		Bounds:          m.Bounds.Extent(),
+		Center:          m.Center,
+		CRS:             grid.CRSURI(),
+		Format:          TileURLFileFormat,
+		Name:            &m.Name,
+		Scheme:          tilejson.SchemeXYZ,
+		TileMatrixSetID: grid.ID(),
+		TileJSON:        tilejson.Version,
+		Version:         "1.0.0",
+		Grids:           make([]string, 0),
+		Data:            make([]string, 0),
 	}
 
 	// parse our query string

@@ -144,7 +144,7 @@ jobs:
       uses: ./.github/actions/shigola-setup-env
       with:
         ui: true
-        go: false
+        go: true
 
     - name: Build shigola_lambda
       uses: ./.github/actions/amazon-linux-build-action
@@ -174,7 +174,7 @@ jobs:
       uses: ./.github/actions/shigola-setup-env
       with:
         ui: true
-        go: false
+        go: true
 
     - name: Build shigola_lambda
       uses: ./.github/actions/amazon-linux-build-action

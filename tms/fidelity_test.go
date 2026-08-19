@@ -97,9 +97,9 @@ func TestMatrixMissingFromRange(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	var zoomErr InvalidZoomError
+	var zoomErr ErrInvalidZoom
 	if _, err := grid.Matrix(5); !errors.As(err, &zoomErr) {
-		t.Errorf("Matrix(5) error = %v, want InvalidZoomError", err)
+		t.Errorf("Matrix(5) error = %v, want ErrInvalidZoom", err)
 	}
 
 	// Note that this holed grid cannot synthesise deeper levels either, and for a
