@@ -1,6 +1,6 @@
 # To build, run in root of shigola source tree:
 #
-#	$ git clone git@github.com:MapColonies/shigola.git or git clone https://github.com/MapColonies/shigola.git
+#	$ git clone git@github.com:mapcolonies/shigola.git or git clone https://github.com/mapcolonies/shigola.git
 #	$ cd shigola
 #	$ docker build -t shigola .
 #
@@ -29,7 +29,7 @@
 # Intermediary container for building
 FROM golang:1.26.2-alpine3.23 AS build
 
-ARG BUILDPKG="github.com/go-spatial/tegola/internal/build"
+ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"
 ARG VER="Version Not Set"
 ARG BRANCH="not set"
 ARG REVISION="not set"
@@ -45,18 +45,18 @@ RUN apk update \
 	&& apk add build-base
 
 # Set up source for compilation
-RUN mkdir -p /go/src/github.com/go-spatial/tegola
-COPY . /go/src/github.com/go-spatial/tegola
+RUN mkdir -p /go/src/github.com/mapcolonies/shigola
+COPY . /go/src/github.com/mapcolonies/shigola
 
 RUN env
 
 # Build binary
-RUN cd /go/src/github.com/go-spatial/tegola/cmd/shigola \
+RUN cd /go/src/github.com/mapcolonies/shigola/cmd/shigola \
 	&& go build -v  \
 	-ldflags "-w -X '${BUILD_PKG}.Version=${VERSION}' -X '${BUILD_PKG}.GitRevision=${GIT_REVISION}' -X '${BUILD_PKG}.GitBranch=${GIT_BRANCH}'" \
 	-gcflags "-N -l" \
 	-o /opt/shigola \
-	&& chmod a+x /opt/tegola
+	&& chmod a+x /opt/shigola
 
 # Create minimal deployment image, just alpine & the binary
 FROM alpine:3.18
