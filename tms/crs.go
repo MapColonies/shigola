@@ -190,7 +190,7 @@ func (c *CRS) UnmarshalJSON(b []byte) error {
 
 	switch {
 	case obj.ReferenceSystem != nil:
-		return UnsupportedCRSError{
+		return ErrUnsupportedCRS{
 			CRS:    "referenceSystem",
 			Reason: "MD_ReferenceSystem defined CRS is not supported",
 		}
@@ -199,7 +199,7 @@ func (c *CRS) UnmarshalJSON(b []byte) error {
 	case obj.WKT != nil:
 		c.WKT = obj.WKT
 	default:
-		return UnsupportedCRSError{Reason: "crs is empty"}
+		return ErrUnsupportedCRS{Reason: "crs is empty"}
 	}
 
 	return nil
@@ -233,14 +233,14 @@ func (c CRS) Identifier() (string, error) {
 	}
 
 	if raw == "" {
-		return "", UnsupportedCRSError{
+		return "", ErrUnsupportedCRS{
 			Reason: "CRS is given as WKT; resolving it needs a PROJ backend",
 		}
 	}
 
 	id, ok := parseCRSIdentifier(raw)
 	if !ok {
-		return "", UnsupportedCRSError{CRS: raw, Reason: "unrecognized CRS syntax"}
+		return "", ErrUnsupportedCRS{CRS: raw, Reason: "unrecognized CRS syntax"}
 	}
 
 	return id, nil
@@ -255,7 +255,7 @@ func (c CRS) info() (crsInfo, error) {
 
 	meta, ok := crsTable[id]
 	if !ok {
-		return crsInfo{}, UnsupportedCRSError{
+		return crsInfo{}, ErrUnsupportedCRS{
 			CRS:    id,
 			Reason: "not in this build's CRS table",
 		}
@@ -345,7 +345,7 @@ func (c CRS) EPSG() (uint64, error) {
 
 	code, err := strconv.ParseUint(meta.code, 10, 64)
 	if err != nil {
-		return 0, UnsupportedCRSError{CRS: meta.uri, Reason: "EPSG code is not numeric"}
+		return 0, ErrUnsupportedCRS{CRS: meta.uri, Reason: "EPSG code is not numeric"}
 	}
 
 	return code, nil
@@ -378,7 +378,7 @@ func (c CRS) SRID() (uint64, error) {
 	}
 
 	if code == 0 {
-		return 0, UnsupportedCRSError{
+		return 0, ErrUnsupportedCRS{
 			CRS:    meta.uri,
 			Reason: "CRS has no EPSG code and no EPSG equivalent",
 		}
@@ -401,7 +401,7 @@ func (c crsInfo) metersPerUnit() (float64, error) {
 	case unitDegree:
 		return 2 * math.Pi * c.semiMajorMetre / 360.0, nil
 	default:
-		return 0, UnsupportedCRSError{
+		return 0, ErrUnsupportedCRS{
 			CRS:    c.uri,
 			Reason: fmt.Sprintf("unit %q has no metersPerUnit conversion", c.unit),
 		}

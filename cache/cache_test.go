@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -159,5 +160,32 @@ func TestParseKeyForGridParsesRequestPaths(t *testing.T) {
 func TestParseKeyForGridRejectsNilGrid(t *testing.T) {
 	if _, err := cache.ParseKeyForGrid("/osm/3/5/2", nil); err == nil {
 		t.Error("ParseKeyForGrid(nil grid) = nil error, want an error")
+	}
+}
+
+// TestNewKeyRejectsNilGrid: the same contract as ParseKeyForGrid, on the
+// building side. Key.String reads an empty TileMatrixSetID as WebMercatorQuad,
+// so a defaulted nil would file another scheme's tiles under WebMercatorQuad's
+// keys — a cache that never hits rather than a visible failure.
+func TestNewKeyRejectsNilGrid(t *testing.T) {
+	if _, err := cache.NewKey(nil, "osm", "", 3, 5, 2); !errors.Is(err, cache.ErrNilGrid) {
+		t.Errorf("NewKey(nil grid) error = %v, want ErrNilGrid", err)
+	}
+}
+
+// TestNewKeyRecordsGrid: the id on the key is the grid's own, not a default.
+func TestNewKeyRecordsGrid(t *testing.T) {
+	grid, err := tms.Get(tms.WorldCRS84Quad)
+	if err != nil {
+		t.Fatalf("tms.Get(%v) = %v", tms.WorldCRS84Quad, err)
+	}
+
+	key, err := cache.NewKey(grid, "osm", "buildings", 3, 5, 2)
+	if err != nil {
+		t.Fatalf("NewKey() = %v, want no error", err)
+	}
+
+	if key.TileMatrixSetID != tms.WorldCRS84Quad {
+		t.Errorf("TileMatrixSetID = %q, want %q", key.TileMatrixSetID, tms.WorldCRS84Quad)
 	}
 }

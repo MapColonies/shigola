@@ -57,6 +57,7 @@
         "tags": ["Capabilities"],
         "summary": "This API definition",
         "operationId": "getAPI",
+        "parameters": [{ "$ref": "#/components/parameters/f" }],
         "responses": {
           "200": {
             "description": "The OpenAPI definition of this service.",

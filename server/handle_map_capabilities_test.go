@@ -12,6 +12,7 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/mapbox/tilejson"
 	"github.com/MapColonies/shigola/server"
+	"github.com/MapColonies/shigola/tms"
 )
 
 func TestHandleMapCapabilities(t *testing.T) {
@@ -75,16 +76,18 @@ func TestHandleMapCapabilities(t *testing.T) {
 			uri:       "http://localhost:8080/capabilities/test-map.json",
 			reqMethod: http.MethodGet,
 			expected: tilejson.TileJSON{
-				Attribution: &testMapAttribution,
-				Bounds:      [4]float64{-180.0, -85.0511, 180.0, 85.0511},
-				Center:      testMapCenter,
-				Format:      server.TileURLFileFormat,
-				MinZoom:     testLayer1.MinZoom,
-				MaxZoom:     testLayer3.MaxZoom, //	the max zoom for the test group is in layer 3
-				Name:        &testMapName,
-				Description: nil,
-				Scheme:      tilejson.SchemeXYZ,
-				TileJSON:    tilejson.Version,
+				Attribution:     &testMapAttribution,
+				Bounds:          [4]float64{-180.0, -85.0511, 180.0, 85.0511},
+				Center:          testMapCenter,
+				CRS:             atlas.DefaultTileGrid().CRSURI(),
+				Format:          server.TileURLFileFormat,
+				MinZoom:         testLayer1.MinZoom,
+				MaxZoom:         testLayer3.MaxZoom, //	the max zoom for the test group is in layer 3
+				Name:            &testMapName,
+				Description:     nil,
+				Scheme:          tilejson.SchemeXYZ,
+				TileMatrixSetID: atlas.DefaultTileGrid().ID(),
+				TileJSON:        tilejson.Version,
 				Tiles: []string{
 					server.TileURLTemplate{
 						Scheme:  "http",
@@ -144,16 +147,18 @@ func TestHandleMapCapabilities(t *testing.T) {
 			uri:       "http://localhost:8080/capabilities/test-map.json?debug=true",
 			reqMethod: http.MethodGet,
 			expected: tilejson.TileJSON{
-				Attribution: &testMapAttribution,
-				Bounds:      [4]float64{-180.0, -85.0511, 180.0, 85.0511},
-				Center:      testMapCenter,
-				Format:      server.TileURLFileFormat,
-				MinZoom:     0,
-				MaxZoom:     atlas.MaxZoom,
-				Name:        &testMapName,
-				Description: nil,
-				Scheme:      tilejson.SchemeXYZ,
-				TileJSON:    tilejson.Version,
+				Attribution:     &testMapAttribution,
+				Bounds:          [4]float64{-180.0, -85.0511, 180.0, 85.0511},
+				Center:          testMapCenter,
+				CRS:             atlas.DefaultTileGrid().CRSURI(),
+				Format:          server.TileURLFileFormat,
+				MinZoom:         0,
+				MaxZoom:         atlas.MaxZoom,
+				Name:            &testMapName,
+				Description:     nil,
+				Scheme:          tilejson.SchemeXYZ,
+				TileMatrixSetID: atlas.DefaultTileGrid().ID(),
+				TileJSON:        tilejson.Version,
 				Tiles: []string{
 					server.TileURLTemplate{
 						Scheme:  "http",
@@ -277,16 +282,18 @@ func TestHandleMapCapabilities(t *testing.T) {
 			uri:       "http://localhost:8080/capabilities/test-map.json?debug=true",
 			reqMethod: http.MethodGet,
 			expected: tilejson.TileJSON{
-				Attribution: &testMapAttribution,
-				Bounds:      [4]float64{-180.0, -85.0511, 180.0, 85.0511},
-				Center:      testMapCenter,
-				Format:      server.TileURLFileFormat,
-				MinZoom:     0,
-				MaxZoom:     atlas.MaxZoom,
-				Name:        &testMapName,
-				Description: nil,
-				Scheme:      tilejson.SchemeXYZ,
-				TileJSON:    tilejson.Version,
+				Attribution:     &testMapAttribution,
+				Bounds:          [4]float64{-180.0, -85.0511, 180.0, 85.0511},
+				Center:          testMapCenter,
+				CRS:             atlas.DefaultTileGrid().CRSURI(),
+				Format:          server.TileURLFileFormat,
+				MinZoom:         0,
+				MaxZoom:         atlas.MaxZoom,
+				Name:            &testMapName,
+				Description:     nil,
+				Scheme:          tilejson.SchemeXYZ,
+				TileMatrixSetID: atlas.DefaultTileGrid().ID(),
+				TileJSON:        tilejson.Version,
 				Tiles: []string{
 					server.TileURLTemplate{
 						Scheme:  "http",
@@ -412,5 +419,54 @@ func TestHandleMapCapabilitiesCORS(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, CORSTest(tc))
+	}
+}
+
+func TestHandleMapCapabilitiesDescribesDefaultTileMatrixSet(t *testing.T) {
+	const mapName = "world-crs84-map"
+	originalHostName := server.HostName
+	server.HostName = &url.URL{Host: serverHostName}
+	defer func() { server.HostName = originalHostName }()
+
+	m := atlas.NewWebMercatorMap(mapName)
+	grid, err := tms.Get(tms.WorldCRS84Quad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.TileMatrixSets = []*tms.TileMatrixSet{grid}
+	m.Layers = []atlas.Layer{testLayer1}
+	atlas.AddMap(m)
+
+	r, err := http.NewRequest(http.MethodGet, "http://localhost:8080/capabilities/"+mapName+".json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	server.NewRouter(nil).ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %v, want %v: %v", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		TileJSON        string   `json:"tilejson"`
+		CRS             string   `json:"crs"`
+		TileMatrixSetID string   `json:"tileMatrixSetId"`
+		Tiles           []string `json:"tiles"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+
+	if got.TileJSON != tilejson.Version {
+		t.Errorf("tilejson = %q, want %q", got.TileJSON, tilejson.Version)
+	}
+	if got.CRS != grid.CRSURI() {
+		t.Errorf("crs = %q, want %q", got.CRS, grid.CRSURI())
+	}
+	if got.TileMatrixSetID != grid.ID() {
+		t.Errorf("tileMatrixSetId = %q, want %q", got.TileMatrixSetID, grid.ID())
+	}
+	if len(got.Tiles) != 1 || got.Tiles[0] != "http://tegola.io/maps/"+mapName+"/{z}/{x}/{y}.pbf" {
+		t.Errorf("tiles = %v, want the native z/x/y template", got.Tiles)
 	}
 }

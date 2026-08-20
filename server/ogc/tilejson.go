@@ -10,31 +10,14 @@ import (
 	"github.com/MapColonies/shigola/tms"
 )
 
-// tileJSONVersion is the TileJSON specification version this service emits.
-//
-// 3.0.0 is the first that lets a tileset name a CRS other than WebMercator,
-// which is exactly what a WorldCRS84Quad tileset needs (ADR-0006).
 const tileJSONVersion = "3.0.0"
 
-// TileJSON is the TileJSON 3.0 view of a tileset.
-//
-// It exists alongside the canonical TileSetMetadata because the map clients in
-// widest use read TileJSON and not OGC tileset metadata; serving both from one
-// resource means a client can use whichever it understands (ADR-0006).
-type TileJSON struct {
-	tilejson.TileJSON
-	// CRS names the tileset's coordinate reference system. TileJSON before 3.0
-	// had no such field and assumed WebMercator, which would misdescribe every
-	// tileset in another scheme.
-	CRS string `json:"crs,omitempty"`
-	// TileMatrixSetID ties the document back to the OGC tiling scheme it
-	// describes, which plain TileJSON cannot express.
-	TileMatrixSetID string `json:"tileMatrixSetId,omitempty"`
-}
+// TileJSON is the TileJSON 3.0 convenience representation of a tileset.
+type TileJSON = tilejson.TileJSON
 
 // tileJSON builds the TileJSON representation of a tileset.
 func (s *Service) tileJSON(r *http.Request, c Collection, grid *tms.TileMatrixSet) TileJSON {
-	base := []string{"collections", c.ID, "tiles", grid.ID()}
+	base := tileSetPath(c, grid)
 
 	minZoom, maxZoom := zoomRange(c.Map)
 
@@ -43,7 +26,7 @@ func (s *Service) tileJSON(r *http.Request, c Collection, grid *tms.TileMatrixSe
 		TileMatrixSetID: grid.ID(),
 	}
 
-	doc.TileJSON.TileJSON = tileJSONVersion
+	doc.TileJSON = tileJSONVersion
 	doc.Name = strPtr(c.Title())
 	doc.Format = "pbf"
 	doc.Scheme = tilejson.SchemeXYZ
@@ -73,6 +56,7 @@ func (s *Service) tileJSON(r *http.Request, c Collection, grid *tms.TileMatrixSe
 			Version:      2,
 			Extent:       int(c.Map.TileExtent),
 			ID:           name,
+			Fields:       &map[string]string{},
 			Name:         name,
 			GeometryType: geomType(c.Map.Layers[i].GeomType),
 			MinZoom:      c.Map.Layers[i].MinZoom,

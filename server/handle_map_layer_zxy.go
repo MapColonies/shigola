@@ -61,21 +61,14 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, grid *tms.TileMatrixSet)
 	}
 	req.z = uint(placeholder)
 
-	// The matrix at this zoom bounds x and y independently: a grid is not
-	// necessarily a square pyramid. WorldCRS84Quad, for one, is 2*2^z columns
-	// by 2^z rows.
-	cols, rows, err := grid.MatrixSize(int(req.z))
-	if err != nil {
-		log.Warnf("tile grid %v has no matrix at z/%v: %v", grid.ID(), req.z, err)
-		return fmt.Errorf("invalid Z value (%v)", z)
-	}
-	maxXatZ := uint64(cols - 1)
-	maxYatZ := uint64(rows - 1)
-
+	// Read before either is range-checked: an unparseable index and an
+	// out-of-range one are different complaints, and only the second needs the
+	// grid. A negative index arrives here as a parse failure, which is what
+	// keeps issue-229's "invalid X value (-1)" reading the way it does.
 	x := params["x"]
 	placeholder, err = strconv.ParseUint(x, 10, 32)
-	if err != nil || placeholder > maxXatZ {
-		log.Warnf("invalid X value (%v) for grid %v at z/%v; max_x=%v", x, grid.ID(), req.z, maxXatZ)
+	if err != nil {
+		log.Warnf("invalid X value (%v) for grid %v at z/%v", x, grid.ID(), req.z)
 		return fmt.Errorf("invalid X value (%v)", x)
 	}
 	req.x = uint(placeholder)
@@ -84,12 +77,31 @@ func (req *HandleMapLayerZXY) parseURI(r *http.Request, grid *tms.TileMatrixSet)
 	y := params["y"]
 	yParts := strings.Split(y, ".")
 	placeholder, err = strconv.ParseUint(yParts[0], 10, 32)
-	if err != nil || placeholder > maxYatZ {
-		log.Warnf("invalid Y value (%v) for grid %v at z/%v; max_y=%v", yParts[0], grid.ID(), req.z, maxYatZ)
+	if err != nil {
+		log.Warnf("invalid Y value (%v) for grid %v at z/%v", yParts[0], grid.ID(), req.z)
 		return fmt.Errorf("invalid Y value (%v)", yParts[0])
 	}
 
 	req.y = uint(placeholder)
+
+	// The matrix at this zoom bounds x and y independently: a grid is not
+	// necessarily a square pyramid. WorldCRS84Quad, for one, is 2*2^z columns
+	// by 2^z rows.
+	if err := grid.ValidateTile(int(req.z), int64(req.x), int64(req.y)); err != nil {
+		var outside tms.ErrTileOutsideMatrix
+		if !errors.As(err, &outside) {
+			log.Warnf("tile grid %v has no matrix at z/%v: %v", grid.ID(), req.z, err)
+			return fmt.Errorf("invalid Z value (%v)", z)
+		}
+
+		if outside.Axis == tms.AxisX {
+			log.Warnf("invalid X value (%v) for grid %v at z/%v; max_x=%v", x, grid.ID(), req.z, outside.Cols-1)
+			return fmt.Errorf("invalid X value (%v)", x)
+		}
+
+		log.Warnf("invalid Y value (%v) for grid %v at z/%v; max_y=%v", yParts[0], grid.ID(), req.z, outside.Rows-1)
+		return fmt.Errorf("invalid Y value (%v)", yParts[0])
+	}
 
 	// check if we have a file extension
 	if len(yParts) > 2 {

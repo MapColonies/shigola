@@ -112,7 +112,7 @@ func (s *Service) HandleTileSets(w http.ResponseWriter, r *http.Request) {
 			Links: []Link{
 				{
 					Rel:   relSelf,
-					Href:  s.href(r, "collections", c.ID, "tiles", grid.ID()),
+					Href:  s.href(r, tileSetPath(c, grid)...),
 					Type:  MediaTypeJSON,
 					Title: grid.ID(),
 				},
@@ -199,12 +199,23 @@ func (s *Service) tilingSchemeLink(r *http.Request, grid *tms.TileMatrixSet) Lin
 	}
 }
 
+// tileSetPath is the path of one tileset: the collection, then the tiling scheme
+// its tiles are cut in.
+//
+// Three documents link to the same tileset — the tilesets list, the tileset
+// metadata and its TileJSON — and a client that follows any two of them has to
+// arrive at the same resource, so the path is spelled once rather than three
+// times.
+func tileSetPath(c Collection, grid *tms.TileMatrixSet) []string {
+	return []string{"collections", c.ID, "tiles", grid.ID()}
+}
+
 // tileTemplateLink is the templated tile URL of one tileset.
 //
 // Both the tilesets list and the tileset metadata carry it, and a client fills
 // it in itself, so the two must describe the same URL.
 func (s *Service) tileTemplateLink(r *http.Request, c Collection, grid *tms.TileMatrixSet) Link {
-	base := []string{"collections", c.ID, "tiles", grid.ID()}
+	base := tileSetPath(c, grid)
 
 	return Link{
 		// OGC orders a tile path {tileMatrix}/{tileRow}/{tileCol} — z/y/x,
@@ -219,7 +230,7 @@ func (s *Service) tileTemplateLink(r *http.Request, c Collection, grid *tms.Tile
 
 // tileSetMetadata builds a tileset's metadata document.
 func (s *Service) tileSetMetadata(r *http.Request, c Collection, grid *tms.TileMatrixSet) TileSetMetadata {
-	base := []string{"collections", c.ID, "tiles", grid.ID()}
+	base := tileSetPath(c, grid)
 
 	md := TileSetMetadata{
 		Title:            c.Title(),

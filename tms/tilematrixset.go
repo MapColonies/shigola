@@ -236,7 +236,7 @@ func (t *TileMatrixSet) Matrix(zoom int) (TileMatrix, error) {
 	}
 
 	if t.variable {
-		return TileMatrix{}, InvalidZoomError{Message: fmt.Sprintf(
+		return TileMatrix{}, ErrInvalidZoom{Message: fmt.Sprintf(
 			"tileMatrix not found for level %d: cannot construct one for a TileMatrixSet with variable width",
 			zoom)}
 	}
@@ -247,13 +247,13 @@ func (t *TileMatrixSet) Matrix(zoom int) (TileMatrix, error) {
 	// — returning the deepest matrix instead would silently answer with the wrong
 	// resolution. morecantile loops forever on both inputs.
 	if zoom < t.MinZoom() {
-		return TileMatrix{}, InvalidZoomError{Message: fmt.Sprintf(
+		return TileMatrix{}, ErrInvalidZoom{Message: fmt.Sprintf(
 			"tileMatrix not found for level %d: below the TileMatrixSet's minimum zoom (%d)",
 			zoom, t.MinZoom())}
 	}
 
 	if zoom <= t.MaxZoom() {
-		return TileMatrix{}, InvalidZoomError{Message: fmt.Sprintf(
+		return TileMatrix{}, ErrInvalidZoom{Message: fmt.Sprintf(
 			"tileMatrix not found for level %d: it is missing from the TileMatrixSet's range (%d..%d)",
 			zoom, t.MinZoom(), t.MaxZoom())}
 	}
@@ -293,7 +293,7 @@ func (t *TileMatrixSet) Matrix(zoom int) (TileMatrix, error) {
 func (t *TileMatrixSet) scaleRatio() (float64, error) {
 	matrices := t.def.TileMatrices
 	if len(matrices) < 2 {
-		return 0, InvalidZoomError{Message: fmt.Sprintf(
+		return 0, ErrInvalidZoom{Message: fmt.Sprintf(
 			"TileMatrixSet %q defines a single tileMatrix, so no scale ratio can be derived",
 			t.def.ID)}
 	}
@@ -312,13 +312,13 @@ func (t *TileMatrixSet) scaleRatio() (float64, error) {
 	}
 
 	if len(seen) > 1 {
-		return 0, InvalidZoomError{Message: fmt.Sprintf(
+		return 0, ErrInvalidZoom{Message: fmt.Sprintf(
 			"cannot construct a tileMatrix for TileMatrixSet %q: its scale ratio varies between levels",
 			t.def.ID)}
 	}
 
 	if ratio == 0 {
-		return 0, InvalidZoomError{Message: fmt.Sprintf(
+		return 0, ErrInvalidZoom{Message: fmt.Sprintf(
 			"TileMatrixSet %q has a zero scale ratio", t.def.ID)}
 	}
 
@@ -355,6 +355,36 @@ func (t *TileMatrixSet) MatrixSize(zoom int) (cols, rows int64, err error) {
 	}
 
 	return m.MatrixWidth, m.MatrixHeight, nil
+}
+
+// ValidateTile reports whether z/x/y names a tile this scheme contains, and if
+// not, which of the two bounds it broke.
+//
+// This is the fork's own check rather than part of the morecantile port:
+// IsValid answers the same question as a bool, which is all morecantile needs,
+// while every call site here has to tell a client *what* was wrong with the
+// request.
+//
+// x and y are bounded independently, and that is the whole point. A scheme need
+// not be a square pyramid — WorldCRS84Quad is 2*2^z columns by 2^z rows — so a
+// single 2^z bound would reject half of its valid columns at every zoom, and a
+// single 2*2^z bound would admit twice its rows. Four call sites once carried
+// their own copy of this arithmetic; the copies are what this exists to remove.
+func (t *TileMatrixSet) ValidateTile(z int, x, y int64) error {
+	cols, rows, err := t.MatrixSize(z)
+	if err != nil {
+		return err
+	}
+
+	if x < 0 || x >= cols {
+		return ErrTileOutsideMatrix{GridID: t.ID(), Z: z, X: x, Y: y, Cols: cols, Rows: rows, Axis: AxisX}
+	}
+
+	if y < 0 || y >= rows {
+		return ErrTileOutsideMatrix{GridID: t.ID(), Z: z, X: x, Y: y, Cols: cols, Rows: rows, Axis: AxisY}
+	}
+
+	return nil
 }
 
 // Extrema is the inclusive range of valid tile indices at a zoom level.
@@ -927,7 +957,7 @@ func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
 	}
 
 	if zoom >= 0 && tile.Z <= zoom {
-		return nil, InvalidZoomError{Message: "zoom must be less than that of the input tile"}
+		return nil, ErrInvalidZoom{Message: "zoom must be less than that of the input tile"}
 	}
 
 	target := tile.Z - 1
@@ -945,7 +975,7 @@ func (t *TileMatrixSet) Parent(tile Tile, zoom int) ([]Tile, error) {
 // Ported from morecantile.models.TileMatrixSet.children.
 func (t *TileMatrixSet) Children(tile Tile, zoom int) ([]Tile, error) {
 	if zoom >= 0 && tile.Z > zoom {
-		return nil, InvalidZoomError{Message: "zoom must be greater than that of the input tile"}
+		return nil, ErrInvalidZoom{Message: "zoom must be greater than that of the input tile"}
 	}
 
 	target := tile.Z + 1
@@ -1039,7 +1069,7 @@ func sortedTiles(set map[Tile]struct{}) []Tile {
 // Ported from morecantile.models.TileMatrixSet.quadkey.
 func (t *TileMatrixSet) Quadkey(tile Tile) (string, error) {
 	if !t.quadtree {
-		return "", NoQuadkeySupportError{Identifier: t.def.ID}
+		return "", ErrNoQuadkeySupport{Identifier: t.def.ID}
 	}
 
 	qk := make([]byte, 0, max(tile.Z, 0))
@@ -1049,7 +1079,7 @@ func (t *TileMatrixSet) Quadkey(tile Tile) (string, error) {
 		// below zero has no bit to read. Go panics on a negative shift count
 		// where Python raises, so this reports the same condition as an error.
 		if z < 1 {
-			return "", QuadKeyError{Message: fmt.Sprintf(
+			return "", ErrQuadKey{Message: fmt.Sprintf(
 				"cannot form a quadkey digit at zoom %d; quadkeys need zoom levels above zero", z)}
 		}
 
@@ -1075,7 +1105,7 @@ func (t *TileMatrixSet) Quadkey(tile Tile) (string, error) {
 // Ported from morecantile.models.TileMatrixSet.quadkey_to_tile.
 func (t *TileMatrixSet) QuadkeyToTile(qk string) (Tile, error) {
 	if !t.quadtree {
-		return Tile{}, NoQuadkeySupportError{Identifier: t.def.ID}
+		return Tile{}, ErrNoQuadkeySupport{Identifier: t.def.ID}
 	}
 
 	if qk == "" {
@@ -1098,7 +1128,7 @@ func (t *TileMatrixSet) QuadkeyToTile(qk string) (Tile, error) {
 			xtile |= mask
 			ytile |= mask
 		default:
-			return Tile{}, QuadKeyError{
+			return Tile{}, ErrQuadKey{
 				Message: fmt.Sprintf("unexpected quadkey digit %q", string(digit)),
 			}
 		}
@@ -1127,7 +1157,7 @@ func (t *TileMatrixSet) ZoomForRes(res float64, minZoom, maxZoom int, strategy s
 	}
 
 	if minZoom > maxZoom {
-		return 0, InvalidZoomError{Message: fmt.Sprintf(
+		return 0, ErrInvalidZoom{Message: fmt.Sprintf(
 			"minimum zoom (%d) is above maximum zoom (%d)", minZoom, maxZoom)}
 	}
 
