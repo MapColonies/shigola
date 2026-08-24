@@ -163,7 +163,16 @@ A counter of the number of tile hits
 
 ##### shigola_cache_duration_seconds
 
-A histogram of latencies for requests.
+Buckets: 1-2-5 per decade from 100µs to 5 seconds — 100µs, 250µs, 500µs, 1ms, 2.5ms, 5ms, 10ms,
+25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s.
+
+Chosen to separate the kinds of tier a chain can hold: an in-process memory tier answers in ~1µs, a
+redis or file tier in 0.1–2ms, an object store in 20–200ms. These boundaries are deliberately *not*
+the HTTP handler's, which floor at 250ms and so put every tier in one bucket — where a quantile
+interpolates on the observation count alone and reports the same latency for a hot tier and a cold
+one.
+
+A histogram of latencies for cache operations.
 
 As part of a histogram include the support tags:
 * shigola_cache_duration_seconds_sum
@@ -181,7 +190,10 @@ As part of a histogram include the support tags:
 
 ##### shigola_cache_response_size_bytes
 
-A histogram of response sizes for requests.
+Buckets: 1KB, 5KB, 25KB, 100KB, 250KB, 500KB, 1MB, 5MB — sized for vector tiles, which typically run
+10–200KB, rather than for HTTP responses.
+
+A histogram of tile sizes for cache operations.
 
 As part of a histogram include the support tags:
 * shigola_cache_response_size_sum

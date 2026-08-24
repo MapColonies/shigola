@@ -11,6 +11,42 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Buckets for the cache metric families — both the whole-cache one and the
+// per-tier one, which measure the same kind of operation and so share them.
+//
+// Deliberately *not* httpHandlerDurationBuckets. Those start at 250ms, which is
+// a sensible floor for an HTTP request and the wrong one for a cache read by
+// three to five orders of magnitude: an in-process memory tier answers in ~1µs,
+// redis or a file tier in 0.1–2ms, an object store in 20–200ms. Under HTTP
+// boundaries every tier lands in the first bucket, and a quantile over a
+// single-populated-bucket histogram interpolates on the observation count alone
+// — so a memory tier and an S3 tier report the *same* latency. Telling those
+// apart is the whole signal a layered cache exists to expose, which is why
+// these are named constants rather than literals inlined per family: the two
+// sets must not be confused again.
+//
+// 1-2-5 per decade from 100µs to 5s. Fine enough to separate the tier kinds,
+// coarse enough that the series count stays manageable once the `tier` label
+// and any configured observe-vars multiply out.
+var (
+	cacheDurationBuckets = []float64{
+		0.0001, 0.00025, 0.0005, // 100–500µs: in-process memory
+		0.001, 0.0025, 0.005, // 1–5ms: redis, file
+		0.01, 0.025, 0.05, // 10–50ms: object store, same region
+		0.1, 0.25, 0.5, // 100–500ms: object store further away, or degrading
+		1, 2.5, 5, // seconds: a tier in trouble
+	}
+
+	// A vector tile is typically 10–200KB. The HTTP response-size buckets floor
+	// at 500KB, so they collapse every tile into one bucket for exactly the same
+	// reason the duration buckets did.
+	cacheResponseSizeBuckets = []float64{
+		float64(1 * kb), float64(5 * kb), float64(25 * kb),
+		float64(100 * kb), float64(250 * kb), float64(500 * kb),
+		float64(1 * mb), float64(5 * mb),
+	}
+)
+
 type cache struct {
 	observeVars       []string
 	cache             tegolaCache.Interface
@@ -97,8 +133,8 @@ func newCache(registry prometheus.Registerer, prefix string, observeVars []strin
 	c.durationSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    prefix + "_duration_seconds",
-			Help:    "A histogram of latencies for requests.",
-			Buckets: []float64{.25, .5, 1, 2.5, 5, 10},
+			Help:    "A histogram of latencies for cache operations.",
+			Buckets: cacheDurationBuckets,
 		},
 		names,
 	)
@@ -106,8 +142,8 @@ func newCache(registry prometheus.Registerer, prefix string, observeVars []strin
 	c.responseSizeBytes = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    prefix + "_response_size_bytes",
-			Help:    "A histogram of response sizes for requests.",
-			Buckets: []float64{float64(500 * kb), float64(1 * mb), float64(5 * mb)},
+			Help:    "A histogram of tile sizes for cache operations.",
+			Buckets: cacheResponseSizeBuckets,
 		},
 		names,
 	)
