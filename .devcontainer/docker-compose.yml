@@ -1,13 +1,21 @@
 services:
   dev:
     build:
-      context: ..
+      # Relative to the compose *project directory* -- the directory of the first
+      # -f file, which is the repo root both here and in devcontainer.json, where
+      # ../docker-compose.yml is listed first. ".." resolved a level too high and
+      # broke the build; putting this file first fixes the context but then
+      # resolves the root file's ./testdata mount under .devcontainer/.
+      context: .
       dockerfile: .devcontainer/Dockerfile
     container_name: shigola-dev
     command: sleep infinity
     working_dir: /workspace/shigola
     volumes:
-      - ..:/workspace/shigola:cached
+      # ".", not "..", for the same reason as the build context above: ".."
+      # mounted the directory holding both shigola and shigola-docs, so the
+      # repo landed at /workspace/shigola/shigola and go.mod was not found.
+      - .:/workspace/shigola:cached
       - go-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:
