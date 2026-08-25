@@ -24,7 +24,7 @@ const TESTENV = "RUN_POSTGIS_TESTS"
 var DefaultEnvConfig map[string]any
 
 var DefaultConfig map[string]any = map[string]any{
-	ConfigKeyURI:         "postgres://postgres:postgres@localhost:5432/tegola?sslmode=disable",
+	ConfigKeyURI:         "postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable",
 	ConfigKeySSLMode:     "disable",
 	ConfigKeySSLKey:      "",
 	ConfigKeySSLCert:     "",
@@ -35,7 +35,7 @@ func getConfigFromEnv() map[string]any {
 	return map[string]any{
 		ConfigKeyURI: ttools.GetEnvDefault(
 			"PGURI",
-			"postgres://postgres:postgres@localhost:5432/tegola?sslmode=disable",
+			"postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable",
 		),
 		ConfigKeySSLMode:     ttools.GetEnvDefault("PGSSLMODE", "disable"),
 		ConfigKeySSLKey:      ttools.GetEnvDefault("PGSSLKEY", ""),
@@ -131,6 +131,53 @@ func TestMVTProviders(t *testing.T) {
 			},
 			layerNames: []string{"land"},
 			tile:       provider.NewTile(0, 0, 0, 16, 4326),
+		},
+		// The Athens OSM extract, reached through ST_AsMVT rather than through
+		// the GeoPackage provider that has historically been its only home. The
+		// three layers and their id_fieldname are the ones .github/cite/config.toml
+		// serves, so this covers the same ground the OGC conformance suite does
+		// without needing TeamEngine to run.
+		//
+		// The tile is the one .github/workflows/ogc_cite.yml passes to run.sh for
+		// WebMercatorQuad, deliberately: a tile chosen independently could drift
+		// into empty ground and turn assertMVTForLayers' "has no features" check
+		// into a false alarm about the fixture. This one holds 2 land polygons,
+		// 629 roads and 2 places.
+		//
+		// The layers are SRID 4326 while the tile is WebMercatorQuad, which is
+		// the interesting case: !BBOX! has to arrive already transformed into the
+		// layer's SRID, not the tile's.
+		"athens, on the tile the conformance suite runs": {
+			TCConfig: TCConfig{
+				LayerConfig: []map[string]any{
+					{
+						ConfigKeyGeomIDField: "fid",
+						ConfigKeyGeomType:    "multipolygon",
+						ConfigKeyGeomField:   "geom",
+						ConfigKeyLayerName:   "land",
+						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid FROM land_polygons WHERE geom && !BBOX!",
+						ConfigKeySRID:        4326,
+					},
+					{
+						ConfigKeyGeomIDField: "fid",
+						ConfigKeyGeomType:    "multilinestring",
+						ConfigKeyGeomField:   "geom",
+						ConfigKeyLayerName:   "roads",
+						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, highway FROM roads_lines WHERE geom && !BBOX!",
+						ConfigKeySRID:        4326,
+					},
+					{
+						ConfigKeyGeomIDField: "fid",
+						ConfigKeyGeomType:    "point",
+						ConfigKeyGeomField:   "geom",
+						ConfigKeyLayerName:   "places",
+						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, place, is_in FROM places_points WHERE geom && !BBOX!",
+						ConfigKeySRID:        4326,
+					},
+				},
+			},
+			layerNames: []string{"land", "roads", "places"},
+			tile:       provider.NewTile(14, 9271, 6324, 16, 3857),
 		},
 	}
 	for name, tc := range tests {
@@ -266,7 +313,7 @@ func TestLayerGeomType(t *testing.T) {
 				ConfigOverride: map[string]any{
 					ConfigKeyURI: ttools.GetEnvDefault(
 						"PGURI_NO_ACCESS",
-						"postgres://tegola_no_access:postgres@localhost:5432/tegola",
+						"postgres://shigola_no_access:postgres@localhost:5432/shigola",
 					),
 				},
 				LayerConfig: []map[string]any{
@@ -313,18 +360,18 @@ func TestBuildUri(t *testing.T) {
 		"add sslmode to uri if missing": {
 			TCConfig: TCConfig{
 				ConfigOverride: map[string]any{
-					ConfigKeyURI: "postgres://postgres:postgres@localhost:5432/tegola",
+					ConfigKeyURI: "postgres://postgres:postgres@localhost:5432/shigola",
 				},
 			},
-			expectedUri: "postgres://postgres:postgres@localhost:5432/tegola?sslmode=disable",
+			expectedUri: "postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable",
 		},
 		"add sslmode of uri and dont overwrite with default": {
 			TCConfig: TCConfig{
 				ConfigOverride: map[string]any{
-					ConfigKeyURI: "postgres://postgres:postgres@localhost:5432/tegola?sslmode=prefer",
+					ConfigKeyURI: "postgres://postgres:postgres@localhost:5432/shigola?sslmode=prefer",
 				},
 			},
-			expectedUri: "postgres://postgres:postgres@localhost:5432/tegola?sslmode=prefer",
+			expectedUri: "postgres://postgres:postgres@localhost:5432/shigola?sslmode=prefer",
 		},
 		"invalid uri": {
 			TCConfig: TCConfig{
@@ -417,7 +464,12 @@ func TestPGXOnNotice(t *testing.T) {
 	ttools.ShouldSkip(t, TESTENV)
 
 	tc := &TCConfig{}
-	c := tc.Config(DefaultConfig)
+	// DefaultEnvConfig, not DefaultConfig: this test opens a real connection, so
+	// it has to honour PGURI like every other connecting test here. DefaultConfig
+	// hardcodes localhost:5432, which is not where the database is when the tests
+	// run inside the devcontainer -- and TestBuildUri above still uses it, because
+	// asserting how a URI is built needs a fixed input, not the environment's.
+	c := tc.Config(DefaultEnvConfig)
 	uri, _, err := BuildURI(c)
 	if err != nil {
 		t.Fatal("building the uri should not fail:", err)

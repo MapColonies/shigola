@@ -8,7 +8,7 @@ The connection between shigola and PostGIS is configured in a `shigola.toml` fil
 [[providers]]
 name = "test_postgis"       # provider name is referenced from map layers (required)
 type = "mvt_postgis"        # the type of data provider must be "mvt_postgis" for this data provider (required)
-uri = "postgres://postgres:postgres@localhost:5432/tegola"          # PostGIS database uri (required)
+uri = "postgres://postgres:postgres@localhost:5432/shigola"          # PostGIS database uri (required)
 ```
 
 ## Connection Properties
@@ -27,7 +27,7 @@ connection method as of v0.16.0. Connecting via host/port/database is deprecated
 
 ```
 # {protocol}://{user}:{password}@{host}:{port}/{database}?{options}=
-postgres://shigola:supersecret@localhost:5432/tegola?sslmode=prefer&pool_max_conns=10
+postgres://shigola:supersecret@localhost:5432/shigola?sslmode=prefer&pool_max_conns=10
 ```
 
 #### Options
@@ -83,7 +83,7 @@ sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom
 [[providers]]
 name = "test_postgis"
 type = "mvt_postgis"
-uri = "postgres://postgres:postgres@localhost:5432/tegola"
+uri = "postgres://postgres:postgres@localhost:5432/shigola"
 
   [[providers.layers]]
   name = "landuse"
@@ -108,7 +108,7 @@ When using a 4326 projection with ST_AsMVT the SQL statement needs to be modifie
 [[providers]]
 name = "test_postgis"
 type = "mvt_postgis"
-uri = "postgres://postgres:postgres@localhost:5432/tegola"
+uri = "postgres://postgres:postgres@localhost:5432/shigola"
 srid = 4326 # setting the srid on the provider to 4326 will cause the !BBOX! value to use the 4326 projection.
 
   [[providers.layers]]
@@ -135,8 +135,8 @@ Testing is designed to work against a live PostGIS database. To see how to set u
 
 ```bash
 $ export RUN_POSTGIS_TESTS=yes
-$ export PGURI="postgres://postgres:postgres@localhost:5432/tegola"
-$ export PGURI_NO_ACCESS="postgres://tegola_no_access:postgres@localhost:5432/tegola" # used for testing errors when user does not have read permissions on a table
+$ export PGURI="postgres://postgres:postgres@localhost:5432/shigola"
+$ export PGURI_NO_ACCESS="postgres://shigola_no_access:postgres@localhost:5432/shigola" # used for testing errors when user does not have read permissions on a table
 $ export PGPASSWORD=""
 $ export PGSSLMODE="disable"
 ```

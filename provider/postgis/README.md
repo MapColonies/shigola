@@ -14,7 +14,7 @@ name = "test_postgis"
 type = "postgis"
 
 # PostGIS connection string (required)
-uri = "postgres://shigola:supersecret@localhost:5432/tegola?sslmode=prefer" #
+uri = "postgres://shigola:supersecret@localhost:5432/shigola?sslmode=prefer" #
 
 # PostGIS connection config run time parameter to label
 # the origin of a connection
@@ -46,7 +46,7 @@ connection method as of v0.16.0. Connecting via host/port/database is deprecated
 
 ```
 # {protocol}://{user}:{password}@{host}:{port}/{database}?{options}=
-postgres://shigola:supersecret@localhost:5432/tegola?sslmode=prefer&pool_max_conns=10
+postgres://shigola:supersecret@localhost:5432/shigola?sslmode=prefer&pool_max_conns=10
 ```
 
 #### Options
@@ -126,17 +126,64 @@ $ SHIGOLA_SQL_DEBUG=LAYER_SQL shigola serve --config=/path/to/conf.toml
 
 ## Testing
 
-Testing is designed to work against a live PostGIS database. To see how to set
-up a database check this [github actions script](https://github.com/go-spatial/tegola/blob/master/.github/worksflows/on_pr_push.yml).
+Testing is designed to work against a live PostGIS database. `docker compose up -d`
+from the repository root brings one up and loads the fixture; the
+[CI workflow](../../.github/workflows/on_pr_push.yml) runs the same thing.
 To run the PostGIS tests, the following environment variables need to be set:
 
 ```bash
 $ export RUN_POSTGIS_TESTS=yes
-$ export PGURI="postgres://postgres:postgres@localhost:5432/tegola"
-$ export PGURI_NO_ACCESS="postgres://tegola_no_access:@localhost:5432/tegola" # used for testing errors when user does not have read permissions on a table
+$ export PGURI="postgres://postgres:postgres@localhost:5432/shigola"
+$ export PGURI_NO_ACCESS="postgres://shigola_no_access:postgres@localhost:5432/shigola" # used for testing errors when user does not have read permissions on a table
 $ export PGPASSWORD=""
 $ export PGSSLMODE="disable"
 ```
+
+`localhost` is right when the compose stack's published port is what you are
+dialling. **Inside the devcontainer it is not** — the database is a sibling
+service reachable as `postgis`, and `.devcontainer/docker-compose.yml` already
+exports `PGURI` and `PGURI_NO_ACCESS` pointing there. Exporting the block above
+inside the devcontainer replaces working values with `localhost` and the tests
+stop connecting; set only `RUN_POSTGIS_TESTS=yes` there.
+
+### The fixture database
+
+The compose stack's `migration` service restores `testdata/postgis/shigola.dump`
+into a database called **`shigola`** and creates the `shigola_no_access` role the
+permission-error tests log in as. It also drops the pre-rename `tegola` database
+and role, so a volume that predates the rename does not keep a stale copy around
+for `PGURI` to find.
+
+The fixture holds two groups of tables:
+
+| Tables | Where they come from |
+|:---|:---|
+| `hstore_test`, `ne_10m_land_scale_rank`, `null_geom_test`, `osm_buildings_test`, `three_d_test`, and the `as_numeric`/`tilebbox` functions | Inherited from upstream Tegola. No higher-level source exists, so they are carried forward from the previous dump on each regeneration. |
+| `land_polygons`, `roads_lines`, `places_points` | The Athens OSM extract at `provider/gpkg/testdata/athens-osm-20170921.gpkg` — the same three layers `.github/cite/config.toml` serves, so the OGC conformance suite's data is reachable through `mvt_postgis` and not only through the GeoPackage provider. |
+
+`test_tags_table` and `test_warning_log()` are not in the dump; they are applied
+afterwards from the `testdata/postgis/postgis-*.sql` files.
+
+### Regenerating the dump
+
+```bash
+testdata/postgis/generate-dump.sh
+```
+
+Needs Docker and nothing else — it starts its own throwaway PostGIS and GDAL
+containers. Run it after changing which Athens layers the fixture carries, or
+after adding a table that belongs in the dump rather than in a `postgis-*.sql`
+file.
+
+Two things about the dump are worth knowing before editing it:
+
+- **The database name is inside the archive.** A pg_dump custom-format archive
+  records the database it was dumped from, and `pg_restore -C` recreates *that*
+  name. Renaming every reference in the tree does not rename the database; only
+  rebuilding the archive from a correctly named database does.
+- **Regeneration is reproducible in content, not in bytes.** pg_dump stamps a
+  creation time into the header, so two runs always differ. Review the dump by
+  what `pg_restore -l` lists, not by its checksum.
 
 If you're testing SSL, the following additional env vars can be set:
 

@@ -22,8 +22,22 @@ jobs:
           echo ${HOME}
           echo ${GITHUB_WORKSPACE}
 
+      # `up -d` returns as soon as the containers start, not when the fixture is
+      # loaded, so the suite could begin against a half-restored database. The
+      # devcontainer gates on migration's service_completed_successfully; this is
+      # the same gate for CI, and it matters more now the dump carries Athens and
+      # takes longer to restore. migration.sh runs under `set -eo pipefail`, so a
+      # failed restore reaches us as a non-zero status rather than as an empty
+      # database the tests then blame.
       - name: Setup test environment
-        run: docker compose up -d
+        run: |
+          docker compose up -d
+          status=$(docker wait migration)
+          docker logs migration
+          if [ "$status" != "0" ]; then
+            echo "::error::fixture migration failed with exit status $status"
+            exit 1
+          fi
 
       - name: Postgres Debug
         env:
@@ -46,8 +60,8 @@ jobs:
 
           # PostGIS tests
           RUN_POSTGIS_TESTS: yes
-          PGURI: postgres://postgres:postgres@localhost:5432/tegola
-          PGURI_NO_ACCESS: postgres://tegola_no_access:postgres@localhost:5432/tegola
+          PGURI: postgres://postgres:postgres@localhost:5432/shigola
+          PGURI_NO_ACCESS: postgres://shigola_no_access:postgres@localhost:5432/shigola
           PGSSLMODE: disable
           PGSSLKEY: ''
           PGSSLCERT: ''

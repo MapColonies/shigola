@@ -29,6 +29,15 @@ services:
       PGDATABASE: postgres
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      # The Go tests read PGURI, not the PG* variables above: PG* configure psql,
+      # PGURI configures the provider under test, and its default points at
+      # localhost, which inside this container is not the database. Set here so
+      # RUN_POSTGIS_TESTS=yes is the only thing left to export -- and note that
+      # exporting provider/postgis/README.md's localhost block in here would
+      # override these and break the connection, which that README now says.
+      PGURI: postgres://postgres:postgres@postgis:5432/shigola?sslmode=disable
+      PGURI_NO_ACCESS: postgres://shigola_no_access:postgres@postgis:5432/shigola?sslmode=disable
+      PGSSLMODE: disable
     depends_on:
       redis:
         condition: service_started
