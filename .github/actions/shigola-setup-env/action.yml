@@ -1,10 +1,6 @@
 name: 'setup base env'
 description: "setup base environment for build shigola"
 inputs:
-  ui:
-    description: 'Download UI'
-    required: false
-    default: 'false'
   go:
     description: 'Download install go'
     required: false
@@ -20,13 +16,6 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: version
-
-    - name: Download ui artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: ui
-        path: ${{ github.workspace }}/ui/dist
-      if: ${{ inputs.ui == 'true' }}
 
     - name: Set up Go
       uses: actions/setup-go@v5

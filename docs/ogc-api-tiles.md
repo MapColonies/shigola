@@ -5,15 +5,12 @@ data, alongside its native `/maps/...` routes.
 
 ## Upgrading — two breaking changes
 
-**1. The viewer moved from `/` to `/viewer`.**
+**1. The service root is the landing page.**
 
-OGC API - Tiles requires a landing page at the service root, so the embedded viewer moved.
-`/viewer` redirects to `/viewer/`; the viewer's assets are referenced relatively and only resolve
-from a URL ending in a slash. Update any bookmark, reverse-proxy rule or health check that pointed
-at `/`. A request for `/` now returns the JSON landing page.
+OGC API - Tiles requires a landing page at the service root, so a request for `/` returns the JSON
+landing page. Update any bookmark, reverse-proxy rule or health check that pointed at `/`.
 
-An unknown path now returns 404. Previously the viewer's catch-all sat at the service root and
-answered everything.
+An unknown path returns 404.
 
 **2. The cache key format changed — purge and re-seed.**
 

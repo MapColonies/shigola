@@ -92,12 +92,6 @@ jobs:
           go install -mod=vendor github.com/mattn/goveralls
           $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
 
-      - name: Build embedded UI
-        run: |
-          pushd ${GITHUB_WORKSPACE}/server
-          go generate ./...
-          popd
-
       - name: Tear down test environment
         run: docker compose down
 

@@ -10,8 +10,12 @@ import (
 	"github.com/MapColonies/shigola/server"
 )
 
-// TestOGCMount covers the one non-additive change of the OGC work (ADR-0003):
-// the landing page takes over "/", and the viewer moves to /viewer.
+// TestOGCMount covers the landing page taking over "/".
+//
+// ADR-0003 originally recorded this as a trade: the landing page took the root
+// and displaced the embedded viewer to /viewer. The viewer is gone, so what is
+// left of that decision is only the first half -- and the /viewer path it was
+// moved to must now be served by nothing at all.
 func TestOGCMount(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
 	server.URIPrefix = "/"
@@ -48,20 +52,19 @@ func TestOGCMount(t *testing.T) {
 		}
 	})
 
-	// The viewer's assets are referenced relatively, so they only resolve from a
-	// URL ending in a slash.
-	t.Run("the viewer redirects to its own directory", func(t *testing.T) {
-		w, _, err := doRequest(t, a, http.MethodGet, "/viewer", nil)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
+	// Both paths, because the viewer answered on both: /viewer redirected to
+	// /viewer/, and the catch-all under it served the embedded assets. A removal
+	// that left either one registered would still be serving a viewer.
+	t.Run("no viewer route is registered", func(t *testing.T) {
+		for _, path := range []string{"/viewer", "/viewer/", "/viewer/index.html"} {
+			w, _, err := doRequest(t, a, http.MethodGet, path, nil)
+			if err != nil {
+				t.Fatalf("request %s: %v", path, err)
+			}
 
-		if w.Code != http.StatusMovedPermanently {
-			t.Fatalf("status = %d, want 301", w.Code)
-		}
-
-		if got := w.Header().Get("Location"); got != "/viewer/" {
-			t.Errorf("Location = %q, want %q", got, "/viewer/")
+			if w.Code != http.StatusNotFound {
+				t.Errorf("GET %s status = %d, want 404", path, w.Code)
+			}
 		}
 	})
 

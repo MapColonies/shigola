@@ -8,12 +8,11 @@ import (
 )
 
 var (
-	Version              = "version not set"
-	GitRevision          = "not set"
-	GitBranch            = "not set"
-	uiVersionDefaultText = "viewer not built"
-	Tags                 []string
-	Commands             = []string{"shigola"}
+	Version     = "version not set"
+	GitRevision = "not set"
+	GitBranch   = "not set"
+	Tags        []string
+	Commands    = []string{"shigola"}
 )
 
 var ordered bool

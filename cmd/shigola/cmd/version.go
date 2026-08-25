@@ -15,6 +15,5 @@ var versionCmd = &cobra.Command{
 		fmt.Printf("   version: %s\n", build.Version)
 		fmt.Printf("       git: %s @ %v\n", build.GitBranch, build.GitRevision)
 		fmt.Printf("build tags: %s\n", strings.Join(build.OrderedTags(), " "))
-		fmt.Printf(" ui viewer: %s\n", build.ViewerVersion())
 	},
 }

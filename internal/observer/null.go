@@ -23,11 +23,6 @@ func (Null) InstrumentedAPIHttpHandler(_, _ string, handler http.Handler) http.H
 	return handler
 }
 
-// InstrumentedViewerHttpHandler does not do anything and just returns the handler
-func (Null) InstrumentedViewerHttpHandler(_, _ string, handler http.Handler) http.Handler {
-	return handler
-}
-
 func (Null) Name() string { return "none" }
 
 func (Null) InstrumentedCache(c cache.Interface) cache.Interface { return c }
