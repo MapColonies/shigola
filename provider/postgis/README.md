@@ -139,6 +139,13 @@ $ export PGPASSWORD=""
 $ export PGSSLMODE="disable"
 ```
 
+`localhost` is right when the compose stack's published port is what you are
+dialling. **Inside the devcontainer it is not** — the database is a sibling
+service reachable as `postgis`, and `.devcontainer/docker-compose.yml` already
+exports `PGURI` and `PGURI_NO_ACCESS` pointing there. Exporting the block above
+inside the devcontainer replaces working values with `localhost` and the tests
+stop connecting; set only `RUN_POSTGIS_TESTS=yes` there.
+
 ### The fixture database
 
 The compose stack's `migration` service restores `testdata/postgis/shigola.dump`

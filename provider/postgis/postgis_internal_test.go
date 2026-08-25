@@ -464,7 +464,12 @@ func TestPGXOnNotice(t *testing.T) {
 	ttools.ShouldSkip(t, TESTENV)
 
 	tc := &TCConfig{}
-	c := tc.Config(DefaultConfig)
+	// DefaultEnvConfig, not DefaultConfig: this test opens a real connection, so
+	// it has to honour PGURI like every other connecting test here. DefaultConfig
+	// hardcodes localhost:5432, which is not where the database is when the tests
+	// run inside the devcontainer -- and TestBuildUri above still uses it, because
+	// asserting how a URI is built needs a fixed input, not the environment's.
+	c := tc.Config(DefaultEnvConfig)
 	uri, _, err := BuildURI(c)
 	if err != nil {
 		t.Fatal("building the uri should not fail:", err)
