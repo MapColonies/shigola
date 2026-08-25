@@ -64,9 +64,18 @@ jobs:
 
       # A bind clash makes shigola panic rather than exit cleanly, so run.sh's
       # readiness poll is what turns that into a legible failure.
+      #
+      # A shell expansion, deliberately not a ${{ }} expression: it reads the
+      # runner's own environment, so `SHIGOLA_PORT=9081 act ...` reaches it. A
+      # workflow-level `env:` default would not -- that takes precedence over the
+      # process environment and would pin the port at its literal.
+      #
+      # The TEGOLA_PORT leg must match run.sh exactly. Without it, setting only
+      # the legacy name binds the server on 8081 while the suite polls 9081, and
+      # the only symptom is run.sh's readiness poll timing out.
       - name: Start shigola
         run: |
-          "${{ runner.temp }}/shigola" serve --config .github/cite/config.toml --port ":8081" &
+          "${{ runner.temp }}/shigola" serve --config .github/cite/config.toml --port ":${SHIGOLA_PORT:-${TEGOLA_PORT:-8081}}" &
           echo $! > shigola.pid
 
       # Both active tiling schemes: the tile row and column differ because the

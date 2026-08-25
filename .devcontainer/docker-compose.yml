@@ -1,13 +1,23 @@
 services:
   dev:
     build:
-      context: ..
+      # Relative to the compose *project directory* -- the directory of the
+      # first -f file. That is the repo root in every supported invocation,
+      # including devcontainer.json, which lists ../docker-compose.yml first.
+      #
+      # So this file is not usable on its own: passing it first makes itself the
+      # project directory, which resolves the root file's ./testdata mount under
+      # .devcontainer/. Always pass the root compose file first.
+      context: .
       dockerfile: .devcontainer/Dockerfile
     container_name: shigola-dev
     command: sleep infinity
-    working_dir: /workspace/tegola
+    working_dir: /workspace/shigola
     volumes:
-      - ..:/workspace/tegola:cached
+      # ".", not "..", for the same reason as the build context above: ".."
+      # mounted the directory holding both shigola and shigola-docs, so the
+      # repo landed at /workspace/shigola/shigola and go.mod was not found.
+      - .:/workspace/shigola:cached
       - go-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:
