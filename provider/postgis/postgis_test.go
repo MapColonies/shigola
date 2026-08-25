@@ -12,7 +12,7 @@ import (
 )
 
 func TestDBConfig(t *testing.T) {
-	uri := ttools.GetEnvDefault("PGURI", "postgres://postgres:postgres@localhost:5432/tegola")
+	uri := ttools.GetEnvDefault("PGURI", "postgres://postgres:postgres@localhost:5432/shigola")
 
 	type tcase struct {
 		opts                          *postgis.DBConfigOptions

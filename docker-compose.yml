@@ -1,4 +1,4 @@
-# this file is used to bootstrap services to run tegola tests against
+# this file is used to bootstrap services to run shigola tests against
 services:
     redis:
         image: redis:6.2.6

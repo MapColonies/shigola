@@ -133,7 +133,7 @@ func TestDecipherFields(t *testing.T) {
 		expectedTags     map[string]any
 	}
 
-	uri := ttools.GetEnvDefault("PGURI", "postgres://postgres:postgres@localhost:5432/tegola")
+	uri := ttools.GetEnvDefault("PGURI", "postgres://postgres:postgres@localhost:5432/shigola")
 	dbconfig, err := BuildDBConfig(
 		&DBConfigOptions{
 			Uri:                        uri,
