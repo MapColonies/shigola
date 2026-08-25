@@ -1,5 +1,9 @@
 {
   "name": "shigola",
+  // Order matters: the root file first makes the compose project directory the
+  // repo root, which is what the relative build context and workspace mount in
+  // the sibling docker-compose.yml resolve against. Reversing these, or running
+  // .devcontainer/docker-compose.yml on its own, resolves them elsewhere.
   "dockerComposeFile": [
     "../docker-compose.yml",
     "docker-compose.yml"

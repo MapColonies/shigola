@@ -68,6 +68,9 @@ jobs:
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # secrets.GITHUB_TOKEN is always injected on GitHub-hosted runs, so
+          # this only fires locally (act) or wherever secrets are absent. There
+          # the upload is pure telemetry and must not fail the job.
           if [ -z "$COVERALLS_TOKEN" ]; then
             echo "Skipping Coveralls upload: no GitHub token is available"
             exit 0
