@@ -27,7 +27,7 @@
 #  $ docker run -v /path/to/docker-config:/opt/shigola_config -p 8080 shigola serve
 
 # Intermediary container for building
-FROM golang:1.26.2-alpine3.23 AS build
+FROM golang:1.26.6-alpine3.23 AS build
 
 ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"
 ARG VER="Version Not Set"
