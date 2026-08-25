@@ -26,7 +26,12 @@
 #  $ cp my-db.gpkg docker-config/
 #  $ docker run -v /path/to/docker-config:/opt/shigola_config -p 8080 shigola serve
 
-# Intermediary container for building
+# Intermediary container for building.
+#
+# The Go version must track the go directive in go.mod: the module sets no
+# toolchain directive, so a lower Go fails with "go.mod requires go >= ..."
+# rather than downloading one. Also pinned in .devcontainer/Dockerfile and
+# .github/actions/amazon-linux-build-action/Dockerfile.
 FROM golang:1.26.6-alpine3.23 AS build
 
 ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"

@@ -1,11 +1,13 @@
 services:
   dev:
     build:
-      # Relative to the compose *project directory* -- the directory of the first
-      # -f file, which is the repo root both here and in devcontainer.json, where
-      # ../docker-compose.yml is listed first. ".." resolved a level too high and
-      # broke the build; putting this file first fixes the context but then
-      # resolves the root file's ./testdata mount under .devcontainer/.
+      # Relative to the compose *project directory* -- the directory of the
+      # first -f file. That is the repo root in every supported invocation,
+      # including devcontainer.json, which lists ../docker-compose.yml first.
+      #
+      # So this file is not usable on its own: passing it first makes itself the
+      # project directory, which resolves the root file's ./testdata mount under
+      # .devcontainer/. Always pass the root compose file first.
       context: .
       dockerfile: .devcontainer/Dockerfile
     container_name: shigola-dev

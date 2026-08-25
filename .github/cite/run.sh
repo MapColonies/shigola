@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run the OGC CITE "OGC API - Tiles" executable test suite against a tegola
+# Run the OGC CITE "OGC API - Tiles" executable test suite against a shigola
 # already serving .github/cite/config.toml, and fail if any assertion fails.
 #
 # Usage, from the repository root:
@@ -40,7 +40,12 @@ OUT=${5:-cite-$SCHEME.xml}
 MIN_PASSED=${MIN_PASSED:-15}
 
 # SHIGOLA_PORT, falling back to the pre-rename TEGOLA_PORT so an existing caller
-# keeps working -- the same precedence the Go code uses (internal/env.Getenv).
+# keeps working. internal/env.Getenv resolves the same way and warns on the
+# legacy name; warn here too, or the deprecation is silent in exactly the place
+# someone is still using it.
+if [ -z "${SHIGOLA_PORT:-}" ] && [ -n "${TEGOLA_PORT:-}" ]; then
+	echo "warning: TEGOLA_PORT is deprecated, use SHIGOLA_PORT" >&2
+fi
 SHIGOLA_PORT=${SHIGOLA_PORT:-${TEGOLA_PORT:-8081}}
 TE_PORT=${TE_PORT:-8080}
 TE_IMAGE=${TE_IMAGE:-ogccite/ets-ogcapi-tiles10}
@@ -49,7 +54,7 @@ TE_NAME=${TE_NAME:-cite-teamengine}
 # TeamEngine's REST API is authenticated; these are the image's stock credentials.
 TE_AUTH=${TE_AUTH:-ogctest:ogctest}
 
-# How TeamEngine, in a container, addresses tegola on the host. host-gateway is
+# How TeamEngine, in a container, addresses shigola on the host. host-gateway is
 # resolved by Docker on Linux and already present on Docker Desktop, so the same
 # command works on a CI runner and on a developer's machine.
 IUT_HOST=${IUT_HOST:-host.docker.internal}
@@ -57,7 +62,7 @@ IUT="http://${IUT_HOST}:${SHIGOLA_PORT}/"
 
 log() { echo "==> $*"; }
 
-# --- tegola must be up before the suite is pointed at it ----------------------
+# --- shigola must be up before the suite is pointed at it ----------------------
 log "checking shigola on :${SHIGOLA_PORT}"
 for i in $(seq 1 30); do
   if curl -fs -o /dev/null "http://localhost:${SHIGOLA_PORT}/conformance" 2>/dev/null; then
