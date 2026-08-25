@@ -5,9 +5,9 @@ services:
       dockerfile: .devcontainer/Dockerfile
     container_name: shigola-dev
     command: sleep infinity
-    working_dir: /workspace/tegola
+    working_dir: /workspace/shigola
     volumes:
-      - ..:/workspace/tegola:cached
+      - ..:/workspace/shigola:cached
       - go-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:

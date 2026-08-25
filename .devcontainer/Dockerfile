@@ -1,4 +1,4 @@
-FROM golang:1.26.2-bookworm
+FROM golang:1.26.6-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -14,6 +14,6 @@ RUN apt-get update \
         sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace/tegola
+WORKDIR /workspace/shigola
 
 CMD ["sleep", "infinity"]
