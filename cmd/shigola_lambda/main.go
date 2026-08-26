@@ -94,7 +94,6 @@ func init() {
 	}
 
 	// set our server version
-	server.Version = build.Version
 	if conf.Webserver.HostName.Host != "" {
 		u := url.URL(conf.Webserver.HostName)
 		server.HostName = &u

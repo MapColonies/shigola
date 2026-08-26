@@ -17,6 +17,6 @@ Access-Control-Allow-Origin = "*"
 
 - `port` (string): [Optional] Port and bind string. For example ":9090" or "127.0.0.1:9090". Defaults to ":8080"
 - `hostname` (string): [Optional] The hostname to use in the various JSON endpoints. This is useful if shigola is behind a proxy and can't read the API consumer's request host directly.
-- `uri_prefix` (string): [Optional] A prefix to add to all API routes. This is useful when shigola is behind a proxy (i.e. example.com/shigola). The prexfix will be added to all URLs included in the capabilities endpoint responses.
+- `uri_prefix` (string): [Optional] A prefix to add to all API routes. This is useful when shigola is behind a proxy (i.e. example.com/shigola). The prefix will be added to all URLs the server includes in its responses.
 - `ssl_cert` (string): [Optional, unless ssl_key provided] Path to a certificate file for serving through HTTPS
 - `ssl_key` (string): [Optional, unless ssl_cert provided] Path to a private key file for serving through HTTPS

@@ -24,7 +24,6 @@ import (
 // test server config
 const (
 	httpPort       = ":8080"
-	serverVersion  = "0.10.0"
 	serverHostName = "tegola.io"
 	serverCert     = "testcert/cert.pem"
 	serverKey      = "testcert/key.pem"
@@ -138,7 +137,6 @@ func doRequest(t *testing.T, a *atlas.Atlas, method string, uri string, body io.
 
 // pre test setup phase
 func TestMain(m *testing.M) {
-	server.Version = serverVersion
 	server.HostName = &url.URL{
 		Host: serverHostName,
 	}
@@ -255,8 +253,8 @@ func TestHTTPS(t *testing.T) {
 			url:  "https://localhost:8123/",
 			code: http.StatusOK,
 		},
-		"capabilities": {
-			url:  "https://localhost:8123/capabilities",
+		"conformance": {
+			url:  "https://localhost:8123/conformance",
 			code: http.StatusOK,
 		},
 	}

@@ -26,10 +26,6 @@ const (
 )
 
 var (
-	// Version is the version of the software, this should be set by the main program, before starting up.
-	// It is used by various Middleware to determine the version.
-	Version string = "version not set"
-
 	// HostName is the name of the host to use for construction of URLS.
 	// configurable via the tegola config.toml file (set in main.go)
 	HostName *url.URL
@@ -53,8 +49,8 @@ var (
 	URIPrefix = "/"
 
 	// ProxyProtocol is a custom protocol that will be used to generate the URLs
-	// included in the capabilities endpoint responses. This is useful when he
-	// server sits behind a reverse proxy
+	// this server includes in its responses. This is useful when the server sits
+	// behind a reverse proxy
 	// (See https://github.com/go-spatial/tegola/pull/967)
 	ProxyProtocol string
 
@@ -84,12 +80,6 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 			group.UsingContext().Handler(http.MethodGet, metricsRoute, h)
 		}
 	}
-
-	// capabilities endpoints
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/capabilities", o, HeadersHandler(HandleCapabilities{})))
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/capabilities/:map_name", o, HeadersHandler(HandleMapCapabilities{})))
 
 	// map tiles
 	hMapLayerZXY := HandleMapLayerZXY{Atlas: a}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/MapColonies/shigola/mapbox/style"
 	"github.com/MapColonies/shigola/server"
+	"github.com/MapColonies/shigola/tms"
 	"github.com/go-test/deep"
 )
 
@@ -75,9 +76,10 @@ func TestHandleMapStyle(t *testing.T) {
 					testMapName: {
 						Type: style.SourceTypeVector,
 						URL: (&url.URL{
-							Scheme: "http",
-							Host:   serverHostName,
-							Path:   path.Join(server.URIPrefix, "capabilities", testMapName+".json"),
+							Scheme:   "http",
+							Host:     serverHostName,
+							Path:     path.Join(server.URIPrefix, "collections", testMapName, "tiles", tms.WebMercatorQuad),
+							RawQuery: "f=tilejson",
 						}).String(),
 					},
 				},
@@ -125,9 +127,10 @@ func TestHandleMapStyle(t *testing.T) {
 					testMapName: {
 						Type: style.SourceTypeVector,
 						URL: (&url.URL{
-							Scheme: "http",
-							Host:   serverHostName,
-							Path:   path.Join(server.URIPrefix, "tegola", "capabilities", testMapName+".json"),
+							Scheme:   "http",
+							Host:     serverHostName,
+							Path:     path.Join(server.URIPrefix, "tegola", "collections", testMapName, "tiles", tms.WebMercatorQuad),
+							RawQuery: "f=tilejson",
 						}).String(),
 					},
 				},

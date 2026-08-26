@@ -24,10 +24,9 @@ type HandleMapStyle struct {
 	extension string
 }
 
-// returns details about a map according to the
-// tileJSON spec (https://github.com/mapbox/tilejson-spec/tree/master/2.1.0)
+// ServeHTTP returns a Mapbox GL style document for a map.
 //
-// URI scheme: /capabilities/:map_name.json
+// URI scheme: /maps/:map_name/style.json
 //
 //	map_name - map name in the config file
 func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +63,19 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m = m.AddDebugLayers()
 	}
 
+	// A vector source names a TileJSON document, which used to be
+	// /capabilities/{map}.json. That endpoint is gone (MAPCO-11483), so the
+	// source names the OGC tileset resource that serves the same TileJSON, for
+	// the map's default tiling scheme -- the one the capabilities document
+	// described.
+	//
+	// The debug parameter is deliberately not carried into this URL. It has no
+	// meaning on the OGC surface, which has no debug layers, so a debug style's
+	// own layers still include them while the TileJSON it points at does not.
+	// This endpoint is itself due for removal in MAPCO-11485, which is why that
+	// is recorded rather than resolved.
+	tileJSONQuery := url.Values{"f": []string{"tilejson"}}
+
 	mapboxStyle := style.Root{
 		Name:    m.Name,
 		Version: style.Version,
@@ -73,10 +85,12 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			req.mapName: {
 				Type: style.SourceTypeVector,
 				URL: (&url.URL{
-					Scheme:   scheme(r),
-					Host:     hostName(r).Host,
-					Path:     path.Join(URIPrefix, "capabilities", req.mapName+".json"),
-					RawQuery: debugQuery.Encode(),
+					Scheme: scheme(r),
+					Host:   hostName(r).Host,
+					Path: path.Join(
+						URIPrefix, "collections", req.mapName, "tiles", m.TileGrid().ID(),
+					),
+					RawQuery: tileJSONQuery.Encode(),
 				}).String(),
 			},
 		},
