@@ -120,3 +120,48 @@ For more information about this work flow, please refer to this [great explanati
 
 For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://github.com/go-spatial/tegola/blob/master/geom/cmp/cmp_test.go).
 
+### Coverage floor
+
+CI fails a build whose total statement coverage falls below the floor recorded in
+[`ci/coverage-baseline.txt`](ci/coverage-baseline.txt). The floor is **43.00%**, set from a measured
+44.26% — it is a floor, not a target, and it exists to stop a silent slide rather than to describe
+where coverage ought to be. Raising it is a deliberate decision to make once the coverage is really
+there.
+
+To run the same check locally you need the fixture services up, because the baseline was measured
+with the PostGIS and Redis suites enabled:
+
+```bash
+docker compose up -d
+
+RUN_POSTGIS_TESTS=yes RUN_REDIS_TESTS=yes \
+  PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGURI_NO_ACCESS="postgres://shigola_no_access:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGSSLMODE=disable \
+  go test -mod vendor -race -covermode atomic -coverprofile=profile.cov ./...
+
+go run -mod vendor ./ci/coverage        # check the profile against the floor
+```
+
+`-race` alongside `-covermode atomic` is not redundant: atomic is race-safe *counting*, not race
+*detection*, and the cache write path runs a goroutine pool, detached contexts and a concurrent tier
+fan-out that only `-race` inspects.
+
+Running with fewer gates enabled measures less, so the check may fail locally on a tree that is fine
+in CI. Compare the per-package rows in the baseline rather than only the total.
+
+The baseline deliberately records **only** the gates that this repository can provision for itself.
+`RUN_S3_TESTS` and `RUN_HANA_TESTS` are enabled in CI but excluded from the baseline: no AWS
+credentials are configured in the workflow, and the HANA connection string points at a third-party
+instance the project does not control. A baseline nobody can reproduce is not a baseline.
+
+To regenerate after a change that is *meant* to move the numbers:
+
+```bash
+go run -mod vendor ./ci/coverage -write -gates "RUN_POSTGIS_TESTS RUN_REDIS_TESTS"
+```
+
+Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
+explicit edit you justify in the pull request, not a side effect of running `-write` on a machine
+with fewer services running.
+

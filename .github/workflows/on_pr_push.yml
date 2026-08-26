@@ -92,6 +92,23 @@ jobs:
           go install -mod=vendor github.com/mattn/goveralls
           $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
 
+      # Deliberately after the Coveralls upload rather than before it: when this
+      # step fails, the run that produced the number is already recorded, so the
+      # drop can be read there instead of only in this log.
+      #
+      # The floor lives in ci/coverage-baseline.txt, not here. A number in the
+      # workflow and a baseline in the tree drift apart, and then nobody can say
+      # which one was ever measured.
+      #
+      # The baseline was measured with RUN_POSTGIS_TESTS and RUN_REDIS_TESTS only
+      # (see its `gates` header). This job additionally enables RUN_S3_TESTS and
+      # RUN_HANA_TESTS, which can only run *more* tests over the same statements,
+      # so CI measures at or above the baseline and the floor stays green here.
+      # If that ever inverts, it is a real finding and not a reason to lower the
+      # floor: read the per-package rows to see which package lost coverage.
+      - name: Check coverage against the floor
+        run: go run -mod vendor ./ci/coverage
+
       - name: Build embedded UI
         run: |
           pushd ${GITHUB_WORKSPACE}/server
