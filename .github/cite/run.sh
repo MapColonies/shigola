@@ -10,6 +10,10 @@
 # The suite runs inside TeamEngine (a container this script starts) and reaches
 # shigola on the host, so shigola must already be listening on SHIGOLA_PORT.
 #
+# .github/cite/config.toml serves its data out of the PostGIS fixture through
+# ST_AsMVT, so `docker compose up -d && docker wait migration` has to have run
+# before the server it points at was started.
+#
 # Two things about this suite are not obvious and cost an afternoon to find:
 #
 #  1. Six of its arguments are TEST INPUTS it does not discover for itself —
@@ -70,6 +74,10 @@ for i in $(seq 1 30); do
   fi
   if [ "$i" = 30 ]; then
     echo "shigola did not answer on :${SHIGOLA_PORT}" >&2
+    # The likeliest cause, and the one whose symptom is least self-explanatory:
+    # the mvt_postgis provider fails at startup when it cannot reach the fixture
+    # database, so the server is not merely slow, it is gone.
+    echo "if it exited at startup, check that the PostGIS fixture is up: docker compose up -d && docker wait migration" >&2
     exit 1
   fi
   sleep 2
