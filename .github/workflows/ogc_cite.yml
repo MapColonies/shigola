@@ -17,7 +17,9 @@ on:
       - 'server/server.go'
       - 'tms/**'
       - 'atlas/**'
-      - 'provider/gpkg/**'
+      - 'provider/postgis/**'
+      - 'testdata/postgis/**'
+      - 'docker-compose.yml'
       - '.github/cite/**'
       - '.github/workflows/ogc_cite.yml'
   pull_request:
@@ -26,7 +28,9 @@ on:
       - 'server/server.go'
       - 'tms/**'
       - 'atlas/**'
-      - 'provider/gpkg/**'
+      - 'provider/postgis/**'
+      - 'testdata/postgis/**'
+      - 'docker-compose.yml'
       - '.github/cite/**'
       - '.github/workflows/ogc_cite.yml'
   workflow_dispatch:
@@ -50,12 +54,42 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
 
-      # CGO, because the suite is served real data out of a GeoPackage and the
-      # gpkg provider needs sqlite.
+      # The suite's data is the Athens OSM extract in the PostGIS fixture; it used
+      # to be a GeoPackage checked into the tree, which needed no provisioning and
+      # made this workflow's evidence an invisible dependency of the GeoPackage
+      # provider.
+      #
+      # `up -d` returns as soon as the containers start, not when the fixture is
+      # loaded, so the suite could otherwise begin against a half-restored
+      # database. This is the same gate on_pr_push.yml uses: migration.sh runs
+      # under `set -eo pipefail`, so a failed restore arrives as a non-zero status
+      # rather than as an empty database the suite then blames on the service.
+      - name: Provision the PostGIS fixture
+        run: |
+          docker compose up -d
+          status=$(docker wait migration)
+          docker logs migration
+          if [ "$status" != "0" ]; then
+            echo "::error::fixture migration failed with exit status $status"
+            exit 1
+          fi
+
+      # The data reaches shigola over pgx now, so this binary has no reason to be
+      # able to open a GeoPackage, and being unable to is what makes "conformance
+      # passes with no GeoPackage present" a fact about the build rather than
+      # about the config.
+      #
+      # CGO_ENABLED=0 is already sufficient for that: the init() that registers
+      # the provider lives in provider/gpkg/gpkg_register.go, behind
+      # `//go:build cgo`, so without cgo the `gpkg` type is simply unknown and
+      # config.Validate rejects it at startup. -tags noGpkgProvider is belt and
+      # braces, and it is the one of the two that survives someone needing cgo
+      # back for an unrelated reason. It is also the build MAPCO-11488 will make
+      # the default.
       - name: Build shigola
         env:
-          CGO_ENABLED: 1
-        run: go build -mod vendor -o "${{ runner.temp }}/shigola" ./cmd/shigola
+          CGO_ENABLED: 0
+        run: go build -mod vendor -tags noGpkgProvider -o "${{ runner.temp }}/shigola" ./cmd/shigola
 
       # Pulled before shigola starts so the ~1 GB download is not counted against
       # the readiness timeouts in run.sh.
@@ -78,14 +112,19 @@ jobs:
           "${{ runner.temp }}/shigola" serve --config .github/cite/config.toml --port ":${SHIGOLA_PORT:-${TEGOLA_PORT:-8081}}" &
           echo $! > shigola.pid
 
-      # Both active tiling schemes: the tile row and column differ because the
-      # same ground is a different tile in each, which is the property the whole
-      # TileMatrixSet abstraction exists for.
+      # Both declared tiling schemes: the tile differs because the same ground is
+      # a different tile in each, which is the property the whole TileMatrixSet
+      # abstraction exists for. A WorldCRS84Quad tile is half the width and a bit
+      # over half the height of a WebMercatorQuad one at the same zoom, so the two
+      # cannot be the same index — and the WorldCRS84Quad tile here is the nearest
+      # one in Athens that holds all three layers, which ST_AsMVT will only emit
+      # for layers that have rows. TestCiteConformanceWorkflowTiles checks these
+      # arguments against the config that serves them.
       - name: Run the suite — WebMercatorQuad
         run: .github/cite/run.sh WebMercatorQuad 14 6324 9271 cite-WebMercatorQuad.xml
 
       - name: Run the suite — WorldCRS84Quad
-        run: .github/cite/run.sh WorldCRS84Quad 14 4742 18542 cite-WorldCRS84Quad.xml
+        run: .github/cite/run.sh WorldCRS84Quad 14 4740 18542 cite-WorldCRS84Quad.xml
 
       # Uploaded even on failure: the EARL report names the assertion that broke
       # and why, which the step log summarises but does not reproduce in full.
@@ -102,3 +141,4 @@ jobs:
         run: |
           [ -f shigola.pid ] && kill "$(cat shigola.pid)" || true
           docker rm -f cite-teamengine >/dev/null 2>&1 || true
+          docker compose down

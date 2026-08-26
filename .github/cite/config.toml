@@ -1,40 +1,87 @@
 # Shigola configuration for the OGC CITE conformance run.
 #
 # The suite fetches tiles and inspects what comes back, so it needs real data:
-# this uses the Athens OSM extract already in the repository for the GeoPackage
-# provider's own tests. Paths are relative to the repository root, which is where
-# .github/cite/run.sh expects to be run from.
+# this serves the Athens OSM extract out of the PostGIS fixture
+# (testdata/postgis/shigola.dump), through ST_AsMVT.
 #
-# The map declares both active tiling schemes so the tilesets list, the per-scheme
-# tileset metadata, and the tile paths are all exercised rather than assumed.
+# It used to serve the same three layers out of provider/gpkg/testdata via the
+# GeoPackage provider, which made the project's only external conformance
+# evidence an invisible dependency of that provider — removing it would have
+# deleted the evidence and said nothing. Nothing here is file-backed now, and
+# config/config_cite_test.go loads this file in a test binary that has no
+# GeoPackage provider registered, so a relapse fails a unit test rather than
+# surfacing as a weekly CI job that quietly stopped proving anything.
+#
+# The map declares both distinct servable tiling schemes so the tilesets list,
+# the per-scheme tileset metadata, and the tile paths are all exercised rather
+# than assumed. .github/workflows/ogc_cite.yml runs the suite once per scheme;
+# TestCiteConformanceWorkflowTiles keeps the two lists in agreement.
 
 # The port is passed on the command line rather than set here, so that the value
 # run.sh polls and the value Shigola binds cannot drift apart.
 [webserver]
 hostname = "localhost"
 
+# A literal URI, not ${PGURI}. env interpolation has no default and fails the
+# whole config load when the variable is unset, so ${PGURI} would make serving
+# this file depend on ambient environment — the opposite of what a fixture
+# wants. This is the database `docker compose up -d` publishes, which is what
+# CI and the documented local run both use.
+#
+# srid = 4326 because the Athens tables are stored in 4326, and !BBOX! arrives
+# in the *layer's* SRID: the provider transforms the tile's own extent into it.
+# That is what lets one provider serve both schemes — see the layer SQL below.
 [[providers]]
 name = "athens"
-type = "gpkg"
-filepath = "provider/gpkg/testdata/athens-osm-20170921.gpkg"
+type = "mvt_postgis"
+uri = "postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable"
+srid = 4326
 
+# geometry_type is declared rather than inferred: with a `sql` layer the provider
+# would otherwise inspect the query at startup to guess it.
+#
+# The SQL passes !BBOX! to ST_AsMVTGeom unwrapped, and that choice is what makes
+# the zoom window the map declares below as narrow as it is.
+#
+# ST_AsMVTGeom maps !BBOX! affinely onto the tile's 0..4096 grid. A
+# WorldCRS84Quad tile's grid *is* linear in lon/lat, so unwrapped is exact for
+# that scheme. A WebMercatorQuad tile's grid is linear in mercator y instead, and
+# !BBOX! arrives here already transformed into the layer's 4326 — so for that
+# scheme the mapping is out by the difference between the two, which grows as the
+# square of the tile's latitude span: about half of one unit in 4096 at zoom 14,
+# but roughly 100 units at zoom 4.
+#
+# The alternative — ST_Transform(...,3857) around both the geom and !BBOX!, the
+# pattern mvtprovider/postgis/README.md documents for a 4326 provider — is exact
+# for WebMercatorQuad and out by the same amount for WorldCRS84Quad, and at low
+# zoom it asks PostGIS to project latitude 90. One SQL string cannot be exact for
+# both schemes: nothing in it says which grid the request came from. That is a
+# real cost of encoding in the database, and it is why this file is a conformance
+# fixture rather than an example to copy.
   [[providers.layers]]
   name = "land_polygons"
-  tablename = "land_polygons"
+  geometry_type = "multipolygon"
   id_fieldname = "fid"
+  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid FROM land_polygons WHERE geom && !BBOX!"
 
   [[providers.layers]]
   name = "roads_lines"
-  tablename = "roads_lines"
-  fields = ["highway"]
+  geometry_type = "multilinestring"
   id_fieldname = "fid"
+  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, highway FROM roads_lines WHERE geom && !BBOX!"
 
   [[providers.layers]]
   name = "places_points"
-  tablename = "places_points"
-  fields = ["place", "is_in"]
+  geometry_type = "point"
   id_fieldname = "fid"
+  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, place, is_in FROM places_points WHERE geom && !BBOX!"
 
+# The zoom window is narrow on purpose: it is the range over which the layer SQL
+# above is accurate for both schemes, so the map does not advertise tiles it would
+# render visibly wrong. It brackets the zoom .github/workflows/ogc_cite.yml asks
+# for, and TestCiteConformanceWorkflowTiles fails if the workflow moves outside
+# it — which is the point, because moving outside it is a decision about accuracy
+# rather than about the tile.
 [[maps]]
 name = "athens"
 attribution = "OpenStreetMap contributors"
@@ -45,17 +92,17 @@ tile_matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"]
   [[maps.layers]]
   name = "land"
   provider_layer = "athens.land_polygons"
-  min_zoom = 4
+  min_zoom = 13
   max_zoom = 15
 
   [[maps.layers]]
   name = "roads"
   provider_layer = "athens.roads_lines"
-  min_zoom = 4
+  min_zoom = 13
   max_zoom = 15
 
   [[maps.layers]]
   name = "places"
   provider_layer = "athens.places_points"
-  min_zoom = 4
+  min_zoom = 13
   max_zoom = 15
