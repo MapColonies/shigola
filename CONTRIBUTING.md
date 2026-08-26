@@ -120,3 +120,61 @@ For more information about this work flow, please refer to this [great explanati
 
 For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://github.com/go-spatial/tegola/blob/master/geom/cmp/cmp_test.go).
 
+### Coverage floor
+
+CI fails a build whose total statement coverage falls below the floor recorded in
+[`ci/coverage-baseline.txt`](ci/coverage-baseline.txt). That file is the only place the number
+lives — read the `floor` line for the current value. It is a floor, not a target: it exists to stop
+a silent slide, not to describe where coverage ought to be, and raising it is a deliberate decision
+to make once the coverage is really there.
+
+To run the same check locally you need the fixture services up, because the baseline is measured with
+the PostGIS and Redis suites enabled. `docker compose up -d` returns as soon as the containers
+start, not when the fixture is loaded, so wait for the one-shot `migration` service the way CI does —
+otherwise the suite runs against a half-restored database and measures nonsense:
+
+```bash
+docker compose up -d
+docker wait migration        # must print 0 before going on
+
+RUN_POSTGIS_TESTS=yes RUN_REDIS_TESTS=yes \
+  PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGURI_NO_ACCESS="postgres://shigola_no_access:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGSSLMODE=disable \
+  go test -mod vendor -race -covermode atomic -coverprofile=profile.cov ./...
+
+go run -mod vendor ./ci/coverage        # check the profile against the floor
+```
+
+`-race` alongside `-covermode atomic` is not redundant: atomic is race-safe *counting*, not race
+*detection*, and the cache write path runs a goroutine pool, detached contexts and a concurrent tier
+fan-out that only `-race` inspects.
+
+Running with fewer gates enabled measures less, so the check may fail locally on a tree that is fine
+in CI. Compare the per-package rows in the baseline rather than only the total.
+
+The baseline deliberately records **only** the gates a contributor can provision from this
+repository. `RUN_S3_TESTS` and `RUN_HANA_TESTS` are enabled in CI and do really run there — as of
+this writing they measure `cache/s3` at 65.6% and `provider/hana` at 67.7% — but neither is
+reproducible locally: they reach an S3 bucket and a third-party SAP HANA instance that this
+repository does not provision and a contributor has no way to stand up. A baseline nobody can
+regenerate is not a baseline, so they are left out.
+
+The consequence is worth being clear about: those packages are recorded near zero in the baseline,
+so **CI measures a good deal higher than the recorded total**. That is the safe direction for a
+floor, but it does mean the baseline understates coverage for exactly the backends the
+provider-removal work deletes — check the CI log, not this file, if you need to know what those
+packages are really covered at.
+
+To regenerate after a change that is *meant* to move the numbers, run `-write` in the same shell that
+ran the tests — it records the `RUN_*_TESTS` gates it finds set, so the baseline says which suites
+its numbers came from:
+
+```bash
+go run -mod vendor ./ci/coverage -write
+```
+
+Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
+explicit edit you justify in the pull request, not a side effect of running `-write` on a machine
+with fewer services running.
+

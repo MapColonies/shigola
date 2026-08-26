@@ -92,7 +92,32 @@ jobs:
           go install -mod=vendor github.com/mattn/goveralls
           $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
 
+      # Deliberately after the Coveralls upload rather than before it: when this
+      # step fails, the run that produced the number is already recorded, so the
+      # drop can be read there instead of only in this log.
+      #
+      # The floor lives in ci/coverage-baseline.txt, not here. A number in the
+      # workflow and a baseline in the tree drift apart, and then nobody can say
+      # which one was ever measured.
+      #
+      # The baseline is measured with RUN_POSTGIS_TESTS and RUN_REDIS_TESTS only
+      # (see its `gates` header), because those are the only suites a contributor
+      # can provision from this repository. This job also enables RUN_S3_TESTS
+      # and RUN_HANA_TESTS, which really do run here and cover a lot more of
+      # cache/s3 and provider/hana than the baseline records.
+      #
+      # So the total measured here sits comfortably above the recorded one. That
+      # is the safe direction, and it is why this gate is not a tight one: it
+      # catches a slide, not a percentage point. If it ever inverts, that is a
+      # real finding rather than a reason to lower the floor -- read the
+      # per-package rows to see which package lost coverage.
+      - name: Check coverage against the floor
+        run: go run -mod vendor ./ci/coverage
+
+      # always(): the coverage gate above can fail the job, and a teardown that
+      # only runs on success leaves the fixture containers behind.
       - name: Tear down test environment
+        if: always()
         run: docker compose down
 
   govulncheck:

@@ -24,3 +24,7 @@ yarn-error.log*
 *.sln
 *.sw?
 cmd/tegola_lambda/tegola_lambda
+
+# Coverage profiles. The measured baseline in ci/coverage-baseline.txt is
+# committed; the profile it is derived from is a build artifact and is not.
+profile.cov

@@ -1,0 +1,90 @@
+# Test-coverage baseline for MapColonies/shigola.
+#
+# Regenerate with:
+#
+#     go run ./ci/coverage -write
+#
+# and check a profile against it with:
+#
+#     go run ./ci/coverage
+#
+# The floor below is what CI enforces. It is deliberately set from the measured
+# total rather than from an aspiration, so it starts green: raising it is a
+# decision to make on purpose, after the coverage is really there.
+#
+# This file exists to be a before-picture. Percentages here were taken while the
+# tree still had every provider in it, so they are the thing later work -- the
+# provider removals in particular -- gets held against. Regenerating it discards
+# that comparison, so regenerate it when the numbers are meant to move, not to
+# make a red build green.
+#
+mode atomic
+floor 43.00
+gates RUN_POSTGIS_TESTS RUN_REDIS_TESTS
+total 44.42
+#
+# percent  covered/statements  package
+  29.08  73/251  github.com/MapColonies/shigola
+  53.94  253/469  github.com/MapColonies/shigola/atlas
+  28.26  167/591  github.com/MapColonies/shigola/basic
+  76.47  26/34  github.com/MapColonies/shigola/basic/maths
+  67.13  194/289  github.com/MapColonies/shigola/cache
+   1.10  1/91  github.com/MapColonies/shigola/cache/azblob
+  76.47  52/68  github.com/MapColonies/shigola/cache/file
+   0.00  0/60  github.com/MapColonies/shigola/cache/gcs
+ 100.00  16/16  github.com/MapColonies/shigola/cache/memory
+  92.81  155/167  github.com/MapColonies/shigola/cache/multi
+  92.86  65/70  github.com/MapColonies/shigola/cache/redis
+  19.53  25/128  github.com/MapColonies/shigola/cache/s3
+   0.00  0/24  github.com/MapColonies/shigola/ci
+  79.29  134/169  github.com/MapColonies/shigola/ci/coverage
+  75.78  97/128  github.com/MapColonies/shigola/cmd/internal/register
+   0.00  0/3  github.com/MapColonies/shigola/cmd/shigola
+  31.67  38/120  github.com/MapColonies/shigola/cmd/shigola/cmd
+  33.26  151/454  github.com/MapColonies/shigola/cmd/shigola/cmd/cache
+   0.00  0/55  github.com/MapColonies/shigola/cmd/shigola_lambda
+  65.92  118/179  github.com/MapColonies/shigola/config
+  67.57  100/148  github.com/MapColonies/shigola/container/list
+  51.43  36/70  github.com/MapColonies/shigola/container/list/point/list
+  69.90  137/196  github.com/MapColonies/shigola/container/singlelist
+   0.00  0/86  github.com/MapColonies/shigola/container/singlelist/point/list
+   6.93  7/101  github.com/MapColonies/shigola/dict
+   0.00  0/189  github.com/MapColonies/shigola/draw/svg
+   0.00  0/24  github.com/MapColonies/shigola/example
+   0.00  0/15  github.com/MapColonies/shigola/internal/build
+  23.08  12/52  github.com/MapColonies/shigola/internal/cmd
+  78.26  72/92  github.com/MapColonies/shigola/internal/convert
+  56.94  238/418  github.com/MapColonies/shigola/internal/env
+  89.42  93/104  github.com/MapColonies/shigola/internal/faketier
+  21.21  7/33  github.com/MapColonies/shigola/internal/log
+   0.00  0/5  github.com/MapColonies/shigola/internal/observer
+   0.00  0/11  github.com/MapColonies/shigola/internal/p
+  44.44  4/9  github.com/MapColonies/shigola/internal/ttools
+   7.71  84/1090  github.com/MapColonies/shigola/maths
+  96.55  56/58  github.com/MapColonies/shigola/maths/clip
+   0.00  0/129  github.com/MapColonies/shigola/maths/clip/internal/draw
+  62.75  64/102  github.com/MapColonies/shigola/maths/clip/intersect
+  74.53  79/106  github.com/MapColonies/shigola/maths/clip/region
+  34.78  24/69  github.com/MapColonies/shigola/maths/clip/subject
+  50.50  102/202  github.com/MapColonies/shigola/maths/hitmap
+   0.00  0/13  github.com/MapColonies/shigola/maths/internal/assert
+   0.00  0/4  github.com/MapColonies/shigola/maths/lines
+  42.79  184/430  github.com/MapColonies/shigola/maths/makevalid
+  50.33  304/604  github.com/MapColonies/shigola/maths/makevalid/plyg
+  16.67  13/78  github.com/MapColonies/shigola/maths/points
+   0.00  0/95  github.com/MapColonies/shigola/maths/simplify
+   0.00  0/53  github.com/MapColonies/shigola/maths/testhelpers
+   0.00  0/79  github.com/MapColonies/shigola/maths/validate
+   0.00  0/66  github.com/MapColonies/shigola/maths/webmercator
+   0.00  0/36  github.com/MapColonies/shigola/observability
+   1.00  2/201  github.com/MapColonies/shigola/observability/prometheus
+  48.85  85/174  github.com/MapColonies/shigola/provider
+   0.00  0/26  github.com/MapColonies/shigola/provider/debug
+  83.97  309/368  github.com/MapColonies/shigola/provider/gpkg
+   3.77  30/796  github.com/MapColonies/shigola/provider/hana
+  68.06  390/573  github.com/MapColonies/shigola/provider/postgis
+   0.00  0/35  github.com/MapColonies/shigola/provider/test
+   0.00  0/11  github.com/MapColonies/shigola/provider/test/emptycollection
+  78.57  363/462  github.com/MapColonies/shigola/server
+  83.07  319/384  github.com/MapColonies/shigola/server/ogc
+  78.30  646/825  github.com/MapColonies/shigola/tms
