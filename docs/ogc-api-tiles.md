@@ -186,15 +186,15 @@ http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30
 ```
 
 **Verified against the OGC CITE suite** (`ets-ogcapi-tiles10` 1.2, via TeamEngine), serving the
-Athens OSM GeoPackage from `provider/gpkg/testdata`:
+Athens OSM extract out of the PostGIS fixture through `ST_AsMVT`:
 
 ```
-15 passed · 0 failed · 1 skipped     WebMercatorQuad
-15 passed · 0 failed · 1 skipped     WorldCRS84Quad
+15 passed · 0 failed · 1 untested     WebMercatorQuad
+15 passed · 0 failed · 1 untested     WorldCRS84Quad
 ```
 
-The skip is `.../conf/dataset-tilesets`, which this service does not implement and does not
-declare — tilesets are per collection, not for the dataset as a whole.
+The untested assertion is `.../conf/dataset-tilesets`, which this service does not implement and
+does not declare — tilesets are per collection, not for the dataset as a whole.
 
 The responses are also validated against the OGC schemas the standard points at, which CITE does
 not check exhaustively: the tileset metadata against
@@ -206,21 +206,59 @@ tilesets list against the schema embedded in Requirement 10 C. Both validate wit
 CI runs this suite on both schemes — see `.github/workflows/ogc_cite.yml`, which drives
 `.github/cite/run.sh`. It triggers on changes to the OGC surface, on demand, and weekly, since the
 suite is versioned separately from this repository and a passing implementation can start failing
-without a commit. To reproduce a CI run locally:
+without a commit.
+
+The suite's data source is the Athens OSM extract in the PostGIS fixture, served through the
+`mvt_postgis` provider, so a run needs the fixture up first. To reproduce a CI run locally:
 
 ```sh
-go build -o /tmp/shigola ./cmd/shigola      # CGO_ENABLED=1: the data is a GeoPackage
+docker compose up -d && docker wait migration       # the Athens fixture, in PostGIS
+CGO_ENABLED=0 go build -mod vendor -tags noGpkgProvider -o /tmp/shigola ./cmd/shigola
 /tmp/shigola serve --config .github/cite/config.toml --port ":8081" &
 .github/cite/run.sh WebMercatorQuad 14 6324 9271
+.github/cite/run.sh WorldCRS84Quad 14 4740 18542
 ```
+
+Each run prints `<scheme>: 15 passed, 1 untested` and then `<scheme>: OK`. `run.sh` enforces a
+floor of 15 passed assertions (`MIN_PASSED`), because the EARL report has no summary line and a run
+that reached nothing at all reports no failures.
+
+The build flags say something the config cannot. The conformance fixture used to be a GeoPackage,
+which made this suite — the project's only external conformance evidence — an invisible dependency
+of a provider that is on its way out; building without the GeoPackage provider is what turns
+"conformance passes with no GeoPackage present" into a fact about the binary. `CGO_ENABLED=0` is
+already enough on its own, since the `init()` that registers the provider is behind
+`//go:build cgo` and `config.Validate` then rejects the `gpkg` type outright. `-tags
+noGpkgProvider` is belt and braces — and it is the half that keeps holding if someone needs cgo
+back for an unrelated reason.
+
+The fixture's layers declare a **narrow zoom window** (13–15), which is deliberate and is about
+accuracy rather than about data volume: `ST_AsMVTGeom` maps the bounding box onto the tile grid
+affinely, and one SQL string cannot be affine-correct for a mercator grid and a geographic one at
+once. See the comments in `.github/cite/config.toml` for the arithmetic. `TestCiteConformanceWorkflowTiles`
+fails if the workflow asks for a zoom outside the window, so widening it is a deliberate act.
+
+The tile arguments are `<tileMatrixSetId> <tileMatrix> <tileRow> <tileCol>`, row before column, and
+they are not interchangeable between schemes: a WorldCRS84Quad tile is half the width and a bit
+over half the height of a WebMercatorQuad tile at the same zoom, so the same ground has a different
+index in each. Both tiles above hold all three layers, which matters because `ST_AsMVT` emits
+nothing at all for a layer with no rows and the suite reports no failure for a tile that is empty.
+`TestCiteConformanceWorkflowTiles` checks these arguments against the config that serves them.
 
 The manual equivalent, for reference:
 
 The suite needs a TeamEngine instance and a running shigola it can reach, serving real data. Both
-run as containers on one docker network:
+run as containers on one docker network — and shigola now needs to reach PostGIS as well, so the
+fixture joins that network and the config it serves has to name the database by a hostname a
+container can resolve, not `localhost`:
 
 ```sh
 docker network create cite-net
+
+# 0. the fixture, reachable from the network the server is on. `uri` in the
+#    config copy under citedata/ has to point at postgis:5432, not localhost.
+docker compose up -d && docker wait migration
+docker network connect cite-net postgis
 
 # 1. shigola, serving a map with data
 docker run -d --name cite-shigola --network cite-net \
