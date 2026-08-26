@@ -27,7 +27,6 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 
 - Native geometry processing (simplification, clipping, make valid, intersection, contains, scaling, translation)
 - [Mapbox Vector Tile v2 specification](https://github.com/mapbox/vector-tile-spec) compliant.
-- An embedded viewer with an automatically generated style for quick data visualization and inspection.
 - Support for [PostGIS](provider/postgis) and [GeoPackage](provider/gpkg) data providers. Extensible design to support additional data providers.
 - Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob).
 - [Layered caching](#layered-cache): an ordered chain of cache backends with read-through promotion, per-tier read deadlines and non-blocking writes.
@@ -76,9 +75,7 @@ Use "shigola [command] --help" for more information about a command.
 /
 ```
 
-The server root will display the built-in viewer with an automatically generated style. For example:
-
-![shigola built in viewer](docs/screenshots/built-in-viewer.png "shigola built in viewer")
+The server root returns the OGC API - Tiles landing page.
 
 ```
 /maps/:map_name/:z/:x/:y
@@ -447,16 +444,17 @@ The following build flags can be used to turn off certain features of shigola:
 - `noAzblobCache` - turn off the Azure Blob cache back end.
 - `noS3Cache` - turn off the AWS S3 cache back end.
 - `noRedisCache` - turn off the Redis cache back end.
+- `noGCSCache` - turn off the Google Cloud Storage cache back end.
 - `noPostgisProvider` - turn off the PostGIS data provider.
 - `noGpkgProvider` - turn off the GeoPackage data provider. Note, GeoPackage uses CGO and will be turned off if the environment variable `CGO_ENABLED=0` is set prior to building.
-- `noViewer` - turn off the built-in viewer.
+- `noHanaProvider` - turn off the SAP HANA data provider.
 - `pprof` - enable [Go profiler](https://golang.org/pkg/net/http/pprof/). Start profile server by setting the environment `SHIGOLA_HTTP_PPROF_BIND` environment (e.g. `SHIGOLA_HTTP_PPROF_BIND=localhost:6060`).
 - `noPrometheusObserver` - turn off support for the Prometheus metric end point.
 
-Example of using the build flags to turn of the Redis cache back end, the GeoPackage provider and the built-in viewer.
+Example of using the build flags to turn off the Redis cache back end and the GeoPackage provider.
 
 ```bash
-go build -tags 'noRedisCache noGpkgProvider noViewer'
+go build -tags 'noRedisCache noGpkgProvider'
 ```
 
 **Setting Version Information** The following flags can be used to set version information:
@@ -490,7 +488,7 @@ except where noted below.
 
 | Change | Consequence |
 |:---|:---|
-| The embedded viewer moved from `/` to `/viewer` | OGC API - Tiles requires the service root for its landing page. An unknown path now 404s. |
+| The service root is the OGC API - Tiles landing page | `/` returns JSON. An unknown path returns 404. |
 | Cache keys gained a leading `{tileMatrixSetId}` | Existing cache entries are unreachable. **Purge and re-seed.** |
 | The binary is `shigola`, not `tegola` | Update deploy scripts, Dockerfiles and unit files. |
 | Prometheus metrics are `shigola_*`, not `tegola_*` | **Dashboards and alerts need updating** — `tegola_cache_hits_total` is now `shigola_cache_hits_total`, and so on. Nothing emits the old names. |

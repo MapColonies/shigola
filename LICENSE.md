@@ -40,10 +40,10 @@ Copyright (c) 2016 The Tegola Authors
 Shigola is a FORK of Tegola, an open source vector tile server created and
 maintained by the Go Spatial team and documented at https://tegola.io.
 Effectively all of this codebase originates there: the data providers, the
-geometry processing, the MVT encoder, the tile pipeline, the cache backends and
-the embedded viewer are all Tegola's work. Shigola renames the project, adds an
-OGC API - Tiles surface, a TileMatrixSet registry and a layered cache, and makes
-no commitment to remain compatible with Tegola.
+geometry processing, the MVT encoder, the tile pipeline and the cache backends
+are all Tegola's work. Shigola renames the project, adds an OGC API - Tiles
+surface, a TileMatrixSet registry and a layered cache, and makes no commitment
+to remain compatible with Tegola.
 
 Tegola is released under the MIT License, the full text of which appears above
 and applies to those portions. Its contributors are credited in CONTRIBUTORS.md

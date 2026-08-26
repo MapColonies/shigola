@@ -88,47 +88,6 @@ As part of a histogram include the support tags:
 
 * le is the buckets in bytes
 
-#### shigola server viewer http handlers
-
-##### shigola_viewer_duration_seconds
-
-A histogram of latencies for requests.
-
-As part of a histogram include the support tags:
-* shigola_viewer_duration_seconds_sum
-* shigola_viewer_duration_seconds_count
-
-###### labels
-
-* handler is the URL for the requested resource 
-* method is the HTTP method used to request the resource
-* le is the buckets in seconds
-
-##### shigola_viewer_flight_requests
-
-A gauge of requests currently being served by the wrapped handler.
-
-##### shigola_viewer_requests_total
-
-A counter for requests to the wrapped handler.
-
-###### labels
-
-* code  is the returned HTTP code
-
-##### shigola_viewer_response_size_bytes
-
-A histogram of response sizes in bytes for requests.
-
-As part of a histogram include the support tags:
-* shigola_viewer_response_size_sum
-* shigola_viewer_response_size_count
-
-###### labels
-
-* le is the buckets in bytes
-
-
 #### shigola cache 
 
 ##### shigola_cache_flight_requests

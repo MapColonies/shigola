@@ -109,12 +109,6 @@ jobs:
       - name: Check coverage against the floor
         run: go run -mod vendor ./ci/coverage
 
-      - name: Build embedded UI
-        run: |
-          pushd ${GITHUB_WORKSPACE}/server
-          go generate ./...
-          popd
-
       - name: Tear down test environment
         run: docker compose down
 

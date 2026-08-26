@@ -33,8 +33,7 @@ const (
 const (
 	Name = "prometheus"
 
-	httpAPI    = "shigola_api"
-	httpViewer = "shigola_viewer"
+	httpAPI = "shigola_api"
 
 	// cachePrefix is the whole-cache family: one hit means "served from
 	// somewhere". No tier label.
@@ -203,19 +202,6 @@ func (obs *observer) InstrumentedAPIHttpHandler(method, route string, next http.
 		// need to initialize the handler
 		handler = newHttpHandler(obs.registry, httpAPI, obs.URLPrefix, obs.observeVars)
 		obs.httpHandlers[httpAPI] = handler
-	}
-	return handler.InstrumentedHttpHandler(method, route, next)
-}
-
-func (obs *observer) InstrumentedViewerHttpHandler(method, route string, next http.Handler) http.Handler {
-	if obs == nil {
-		return next
-	}
-	handler := obs.httpHandlers[httpViewer]
-	if handler == nil {
-		// need to initialize the handler
-		handler = newHttpHandler(obs.registry, httpViewer, obs.URLPrefix, obs.observeVars)
-		obs.httpHandlers[httpViewer] = handler
 	}
 	return handler.InstrumentedHttpHandler(method, route, next)
 }

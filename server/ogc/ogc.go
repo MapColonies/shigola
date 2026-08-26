@@ -4,7 +4,9 @@
 //
 // It is additive to tegola's native routes, which keep serving the same tiles at
 // the same URLs. The one thing it takes over is "/", the landing page's required
-// location, which displaces the embedded viewer to /viewer (ADR-0003).
+// location. ADR-0003 recorded that as a trade, because it displaced the embedded
+// viewer to /viewer; the viewer has since been removed, so nothing is displaced
+// and "/" is simply the landing page.
 //
 // The package deliberately does not import tegola/server: the server mounts this
 // surface, so the dependency runs one way. Everything this package needs from

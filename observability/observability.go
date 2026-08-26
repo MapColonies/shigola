@@ -63,7 +63,6 @@ type Interface interface {
 	CollectorConfig(key string) map[string]interface{}
 
 	APIObserver
-	ViewerObserver
 	CacheObserver
 }
 
@@ -71,12 +70,6 @@ type APIObserver interface {
 	// InstrumentedAPIHttpHandler returns an http.Handler that will instrument the given http handler, for the
 	// route and method that was given
 	InstrumentedAPIHttpHandler(method, route string, handler http.Handler) http.Handler
-}
-
-type ViewerObserver interface {
-	// InstrumentedViewerHttpHandler returns an http.Handler that will instrument the given http handler, for the
-	// route and method that was given
-	InstrumentedViewerHttpHandler(method, route string, handler http.Handler) http.Handler
 }
 
 type CacheObserver interface {
@@ -119,14 +112,6 @@ func InstrumentAPIHandler(method, route string, observer APIObserver, handler ht
 		return method, route, handler
 	}
 	return method, route, observer.InstrumentedAPIHttpHandler(method, route, handler)
-}
-
-// InstrumentViewerHandler is a convenience  function
-func InstrumentViewerHandler(method, route string, observer ViewerObserver, handler http.Handler) (string, string, http.Handler) {
-	if observer == nil {
-		return method, route, handler
-	}
-	return method, route, observer.InstrumentedViewerHttpHandler(method, route, handler)
 }
 
 type observerFunctions struct {
