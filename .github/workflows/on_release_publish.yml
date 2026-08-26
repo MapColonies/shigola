@@ -46,35 +46,9 @@ jobs:
         name: default-branch-ref
         path: ${{ github.workspace }}/default-branch-ref.txt
 
-  build_ui:
-    name: Build for embedded ui
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          check-latest: true
-
-      - name: Build embedded UI
-        run: |
-          pushd ${GITHUB_WORKSPACE}/server
-          go generate ./...
-          popd
-
-      - name: Upload build artifact version
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui
-          path: ${{ github.workspace }}/ui/dist
-
   build_linux_amd64:
     name: Build for Linux (amd64)
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: ubuntu-22.04
 
     steps:
@@ -83,8 +57,6 @@ jobs:
 
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
-      with:
-        ui: true
 
     - name: Build for Linux
       env:
@@ -103,7 +75,7 @@ jobs:
 
   build_linux_arm:
     name: Build for Linux (arm64)
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: ubuntu-22.04
 
     steps:
@@ -112,8 +84,6 @@ jobs:
 
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
-      with:
-        ui: true
 
     - name: Build for Linux
       env:
@@ -133,7 +103,7 @@ jobs:
 
   build_shigola_lambda_amd64:
     name: Build shigola_lambda on Amazon Linux (amd64)
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: ubuntu-22.04
 
     steps:
@@ -143,7 +113,6 @@ jobs:
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
       with:
-        ui: true
         go: true
 
     - name: Build shigola_lambda
@@ -163,7 +132,7 @@ jobs:
 
   build_shigola_lambda_arm64:
     name: Build shigola_lambda on Amazon Linux (arm64)
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: ubuntu-22.04
 
     steps:
@@ -173,7 +142,6 @@ jobs:
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
       with:
-        ui: true
         go: true
 
     - name: Build shigola_lambda
@@ -193,7 +161,7 @@ jobs:
 
   build_macos:
     name: Build for MacOS
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: macos-latest
 
     steps:
@@ -202,8 +170,6 @@ jobs:
 
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
-      with:
-        ui: true
 
     - name: Build for Darwin
       env:
@@ -221,7 +187,7 @@ jobs:
 
   build_docker:
     name: Build Docker image and publish to Docker Hub
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: ubuntu-22.04
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -253,8 +219,6 @@ jobs:
 
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
-      with:
-        ui: true
 
     # Buildx can only output single-platform result image to docker
     # so for testing purposes we are building only for linux/amd64
@@ -298,7 +262,7 @@ jobs:
 
   build_windows:
     name: Build for Windows
-    needs: [gen_version,build_ui]
+    needs: [gen_version]
     runs-on: windows-latest
 
     steps:
@@ -307,8 +271,6 @@ jobs:
 
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
-      with:
-        ui: true
 
     - name: Build for Windows
       run: |

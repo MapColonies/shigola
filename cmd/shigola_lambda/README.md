@@ -3,7 +3,6 @@
 Run shigola on AWS lambda. This implementation uses the native Go AWS Lambda rutime. There are a couple limitations to using lambda to run shigola:
 
 - No connection pooling: The database connection will be rebuilt on every lambda request.
-- No built in viewer: Lambda + API Gateway have limitations which restrict the configuration from being easily setup to support the built in viewer and return vector tiles.
 
 The following steps assume you have a working shigola configuration. 
 

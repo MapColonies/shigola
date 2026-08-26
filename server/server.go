@@ -104,8 +104,9 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 
 	// OGC API - Tiles surface. Mounted with the same middleware as the native
 	// routes so that headers, CORS and instrumentation behave identically.
-	// It takes over "/", which is why the viewer is registered after it, at
-	// /viewer (ADR-0003).
+	// It takes over "/" for the landing page (ADR-0003), which it can now do
+	// unconditionally: the embedded viewer that used to be displaced to /viewer
+	// no longer exists.
 	ogcService := ogc.New(ogc.Config{
 		Atlas: a,
 		// Wrapped rather than passed directly: URLRoot is a package variable
@@ -126,9 +127,6 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		group.UsingContext().
 			Handler(observability.InstrumentAPIHandler(route.Method, route.Path, o, HeadersHandler(handler)))
 	}
-
-	// setup viewer routes, which can be excluded via build flags
-	setupViewer(o, group)
 
 	return r
 }
