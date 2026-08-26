@@ -74,6 +74,39 @@ func (cfg TCConfig) Config(mConfig map[string]any) dict.Dict {
 	return dict.Dict(config)
 }
 
+// athensCiteLayers returns the three Athens layer configs .github/cite/config.toml
+// serves, as the mvt_postgis provider config equivalent. Both conformance-tile
+// cases in TestMVTProviders use it: they differ only in the tile, and pinning the
+// layers in one place is what makes that the visible difference.
+func athensCiteLayers() []map[string]any {
+	return []map[string]any{
+		{
+			ConfigKeyGeomIDField: "fid",
+			ConfigKeyGeomType:    "multipolygon",
+			ConfigKeyGeomField:   "geom",
+			ConfigKeyLayerName:   "land",
+			ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid FROM land_polygons WHERE geom && !BBOX!",
+			ConfigKeySRID:        4326,
+		},
+		{
+			ConfigKeyGeomIDField: "fid",
+			ConfigKeyGeomType:    "multilinestring",
+			ConfigKeyGeomField:   "geom",
+			ConfigKeyLayerName:   "roads",
+			ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, highway FROM roads_lines WHERE geom && !BBOX!",
+			ConfigKeySRID:        4326,
+		},
+		{
+			ConfigKeyGeomIDField: "fid",
+			ConfigKeyGeomType:    "point",
+			ConfigKeyGeomField:   "geom",
+			ConfigKeyLayerName:   "places",
+			ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, place, is_in FROM places_points WHERE geom && !BBOX!",
+			ConfigKeySRID:        4326,
+		},
+	}
+}
+
 func TestMVTProviders(t *testing.T) {
 	ttools.ShouldSkip(t, TESTENV)
 
@@ -148,36 +181,28 @@ func TestMVTProviders(t *testing.T) {
 		// the interesting case: !BBOX! has to arrive already transformed into the
 		// layer's SRID, not the tile's.
 		"athens, on the tile the conformance suite runs": {
-			TCConfig: TCConfig{
-				LayerConfig: []map[string]any{
-					{
-						ConfigKeyGeomIDField: "fid",
-						ConfigKeyGeomType:    "multipolygon",
-						ConfigKeyGeomField:   "geom",
-						ConfigKeyLayerName:   "land",
-						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid FROM land_polygons WHERE geom && !BBOX!",
-						ConfigKeySRID:        4326,
-					},
-					{
-						ConfigKeyGeomIDField: "fid",
-						ConfigKeyGeomType:    "multilinestring",
-						ConfigKeyGeomField:   "geom",
-						ConfigKeyLayerName:   "roads",
-						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, highway FROM roads_lines WHERE geom && !BBOX!",
-						ConfigKeySRID:        4326,
-					},
-					{
-						ConfigKeyGeomIDField: "fid",
-						ConfigKeyGeomType:    "point",
-						ConfigKeyGeomField:   "geom",
-						ConfigKeyLayerName:   "places",
-						ConfigKeySQL:         "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, place, is_in FROM places_points WHERE geom && !BBOX!",
-						ConfigKeySRID:        4326,
-					},
-				},
-			},
+			TCConfig:   TCConfig{LayerConfig: athensCiteLayers()},
 			layerNames: []string{"land", "roads", "places"},
 			tile:       provider.NewTile(14, 9271, 6324, 16, 3857),
+		},
+		// The other half of the pair above. The conformance config serves one map
+		// on both schemes, so a provider that could only answer for one of them
+		// would pass CI on WebMercatorQuad and fail the suite on WorldCRS84Quad.
+		// Here tile SRID and layer SRID are both 4326, so !BBOX! is the tile's own
+		// extent untransformed -- the case .github/cite/config.toml's SQL comment
+		// explains the choice of unwrapped ST_AsMVTGeom for.
+		//
+		// Athens again, but not the same tile: a WorldCRS84Quad z14 tile is half
+		// the width and a bit over half the height of the WebMercatorQuad one, so
+		// the ground the other case covers spills across four tiles here. This is
+		// the nearest tile in the same column that holds all three layers -- 2 land
+		// polygons, 168 roads and 1 place -- and holding all three is the point:
+		// assertMVTForLayers only sees a layer ST_AsMVT emitted, and ST_AsMVT
+		// emits nothing at all for a layer with no rows.
+		"athens, on the WorldCRS84Quad tile the conformance suite runs": {
+			TCConfig:   TCConfig{LayerConfig: athensCiteLayers()},
+			layerNames: []string{"land", "roads", "places"},
+			tile:       provider.NewTile(14, 18542, 4740, 16, 4326),
 		},
 	}
 	for name, tc := range tests {
