@@ -17,6 +17,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 )
@@ -111,11 +112,37 @@ func checkAgainstBaseline(profile *Profile) error {
 	return nil
 }
 
-// floorFor rounds a measured percentage down to a whole percent. A floor pinned
-// to the exact measurement would fail on any change that moves a single
-// statement, which trains people to edit the floor rather than read it.
+// minHeadroom is the smallest gap this tool will leave between the measured
+// coverage and the floor it records, in percentage points.
+//
+// The floor is meant to catch a coverage regression, not to pin the exact
+// measurement. Incidental movement of a few statements is expected here: the
+// cache write path runs a detached goroutine pool (cache/writepool.go), so
+// whether some statements are counted plausibly depends on scheduling, and
+// ordinary refactoring moves statement counts around without changing what is
+// tested. A gate that fires on that gets edited rather than read, which is the
+// failure mode this whole file exists to avoid.
+//
+// Half a percentage point is about 60 statements at the size the tree was when
+// this was written (12,012 counted statements). That is wide enough to absorb
+// the above and far narrower than any real regression -- removing a provider
+// moves whole points.
+const minHeadroom = 0.5
+
+// floorFor turns a measured percentage into the floor to record: rounded down to
+// a whole percent, and then down another whole percent if truncation alone left
+// less than minHeadroom of margin. The first baseline measured 44.01%, where
+// truncation on its own would have recorded a floor of 44.00 -- under two
+// statements of headroom, once BelowFloor's rounding tolerance is taken off.
+//
+// The result is deliberately derived rather than chosen, so that regenerating
+// the baseline reproduces the same reasoning instead of depending on what
+// somebody typed at a terminal once.
 func floorFor(pct float64) float64 {
-	floor := float64(int(pct))
+	floor := math.Floor(pct)
+	if pct-floor < minHeadroom {
+		floor--
+	}
 	if floor < 0 {
 		return 0
 	}

@@ -234,3 +234,146 @@ total 57.31
 		t.Run(name, fn(tc))
 	}
 }
+
+// The baseline is written by one function and read back by another, and CI
+// depends on the two agreeing. Nothing else in this package tests them against
+// each other: TestParseBaseline reads a hand-written body, so a change to
+// renderBaseline's formatting would leave it green while the gate stopped being
+// able to read its own file.
+func TestRenderBaselineRoundTrips(t *testing.T) {
+	profile := &Profile{
+		Mode: "atomic",
+		Packages: []PackageCoverage{
+			{Package: "github.com/MapColonies/shigola/atlas", Covered: 123, Statements: 272},
+			{Package: "github.com/MapColonies/shigola/tms", Covered: 46, Statements: 50},
+			// A package with no statements renders as 100% over 0/0, which is the
+			// shape most likely to trip a naive parser.
+			{Package: "github.com/MapColonies/shigola/dict", Covered: 0, Statements: 0},
+		},
+	}
+
+	rendered := renderBaseline(profile, 57, "RUN_POSTGIS_TESTS RUN_REDIS_TESTS")
+
+	got, err := ParseBaseline(strings.NewReader(rendered))
+	if err != nil {
+		t.Fatalf("ParseBaseline could not read renderBaseline's own output: %v\n%s", err, rendered)
+	}
+
+	if got.Mode != profile.Mode {
+		t.Errorf("mode = %q, want %q", got.Mode, profile.Mode)
+	}
+	if got.Floor != 57 {
+		t.Errorf("floor = %v, want 57", got.Floor)
+	}
+	if got.Gates != "RUN_POSTGIS_TESTS RUN_REDIS_TESTS" {
+		t.Errorf("gates = %q, want the two gates", got.Gates)
+	}
+	if math.Abs(got.Total-profile.Percent()) > 0.005 {
+		t.Errorf("total = %.2f, want %.2f", got.Total, profile.Percent())
+	}
+	if len(got.Packages) != len(profile.Packages) {
+		t.Fatalf("package count = %d, want %d", len(got.Packages), len(profile.Packages))
+	}
+	for i, want := range profile.Packages {
+		if got.Packages[i] != want {
+			t.Errorf("package %d = %+v, want %+v", i, got.Packages[i], want)
+		}
+	}
+}
+
+func TestFloorFor(t *testing.T) {
+	type tcase struct {
+		pct  float64
+		want float64
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			if got := floorFor(tc.pct); got != tc.want {
+				t.Errorf("floorFor(%v) = %v, want %v", tc.pct, got, tc.want)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		// Rounding down, not to nearest: a floor above the measurement would not
+		// start green, which is the one thing the ticket asks of it.
+		"rounds down to a whole percent": {pct: 57.94, want: 57},
+		// Truncation alone is not enough when the measurement sits just above a
+		// whole percent: 44.01% would yield a floor of 44.00 and about four
+		// statements of headroom. Coverage here is not bit-stable between runs --
+		// the cache write path runs a detached goroutine pool, so whether a
+		// statement is counted can depend on scheduling -- and a floor that thin
+		// fires on that noise rather than on a regression.
+		"a measurement just above a whole percent drops one": {pct: 44.01, want: 43},
+		"an exact percent drops one":                         {pct: 60, want: 59},
+		"just under a whole percent":                         {pct: 59.999, want: 59},
+		"zero cannot go negative":                            {pct: 0, want: 0},
+		"a sub-one-percent measurement cannot go negative":   {pct: 0.4, want: 0},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// Regenerating the baseline on a machine with fewer integration gates enabled
+// measures less coverage. The floor must not follow it down: a floor that
+// quietly drops every time somebody runs -write on a laptop is not a floor. The
+// only way down is to pass -floor deliberately.
+func TestWriteBaselineKeepsTheRecordedFloor(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/coverage-baseline.txt"
+
+	restore := func(p *string, v string) func() {
+		old := *p
+		*p = v
+		return func() { *p = old }
+	}
+	defer restore(baselinePath, path)()
+
+	oldFloor, oldGates := *floorFlag, *gatesFlag
+	defer func() { *floorFlag, *gatesFlag = oldFloor, oldGates }()
+
+	// A first run with no baseline present seeds the floor from what it measured.
+	rich := &Profile{Mode: "atomic", Packages: []PackageCoverage{
+		{Package: "github.com/MapColonies/shigola/atlas", Covered: 60, Statements: 100},
+	}}
+	*floorFlag, *gatesFlag = -1, "RUN_POSTGIS_TESTS RUN_REDIS_TESTS"
+	if err := writeBaseline(rich); err != nil {
+		t.Fatalf("seeding the baseline: %v", err)
+	}
+
+	seeded, err := readBaseline(path)
+	if err != nil {
+		t.Fatalf("reading the seeded baseline: %v", err)
+	}
+	// 60% measured seeds a floor of 59: floorFor leaves headroom below the
+	// measurement. See TestFloorFor.
+	if seeded.Floor != 59 {
+		t.Fatalf("seeded floor = %v, want 59", seeded.Floor)
+	}
+
+	// A second run measuring less, with no -floor and no -gates, must keep both.
+	lean := &Profile{Mode: "atomic", Packages: []PackageCoverage{
+		{Package: "github.com/MapColonies/shigola/atlas", Covered: 20, Statements: 100},
+	}}
+	*floorFlag, *gatesFlag = -1, ""
+	if err := writeBaseline(lean); err != nil {
+		t.Fatalf("regenerating the baseline: %v", err)
+	}
+
+	after, err := readBaseline(path)
+	if err != nil {
+		t.Fatalf("reading the regenerated baseline: %v", err)
+	}
+	if after.Floor != 59 {
+		t.Errorf("floor = %v after regenerating on a leaner run, want it held at 59", after.Floor)
+	}
+	if after.Gates != "RUN_POSTGIS_TESTS RUN_REDIS_TESTS" {
+		t.Errorf("gates = %q, want the recorded gates kept", after.Gates)
+	}
+	if math.Abs(after.Total-20) > 0.005 {
+		t.Errorf("total = %.2f, want the newly measured 20.00", after.Total)
+	}
+}
