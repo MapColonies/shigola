@@ -109,7 +109,10 @@ jobs:
       - name: Check coverage against the floor
         run: go run -mod vendor ./ci/coverage
 
+      # always(): the coverage gate above can fail the job, and a teardown that
+      # only runs on success leaves the fixture containers behind.
       - name: Tear down test environment
+        if: always()
         run: docker compose down
 
   govulncheck:

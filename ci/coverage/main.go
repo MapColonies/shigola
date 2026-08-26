@@ -15,10 +15,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -60,7 +63,18 @@ func run() error {
 func writeBaseline(profile *Profile) error {
 	floor := *floorFlag
 	gates := *gatesFlag
-	if existing, err := readBaseline(*baselinePath); err == nil {
+	if gates == "" {
+		// Read the provenance off the environment that was actually in effect
+		// rather than trusting what someone typed. A `gates` line nobody checks
+		// is worse than none: it is the only record of which suites the numbers
+		// below were measured with, and the whole claim that the baseline is
+		// reproducible rests on it.
+		gates = enabledGates()
+	}
+
+	existing, err := readBaseline(*baselinePath)
+	switch {
+	case err == nil:
 		// Keep whatever is already recorded unless this run was told otherwise.
 		// Lowering the floor should be a deliberate edit, not a side effect of
 		// regenerating the numbers on a machine with fewer gates enabled.
@@ -70,6 +84,12 @@ func writeBaseline(profile *Profile) error {
 		if gates == "" {
 			gates = existing.Gates
 		}
+	case !errors.Is(err, fs.ErrNotExist):
+		// A baseline that exists but will not parse must not be treated as an
+		// absent one: that path reseeds the floor from whatever was just
+		// measured, silently lowering it at the moment the file is least
+		// trustworthy. Refuse instead, and let the author look at it.
+		return fmt.Errorf("refusing to overwrite a baseline that cannot be read: %w", err)
 	}
 	if floor < 0 {
 		// No floor anywhere: seed it from what was actually measured, which is
@@ -112,7 +132,7 @@ func checkAgainstBaseline(profile *Profile) error {
 	return nil
 }
 
-// minHeadroom is the smallest gap this tool will leave between the measured
+// minHeadroom is the least margin floorFor will leave between the measured
 // coverage and the floor it records, in percentage points.
 //
 // The floor is meant to catch a coverage regression, not to pin the exact
@@ -123,17 +143,24 @@ func checkAgainstBaseline(profile *Profile) error {
 // tested. A gate that fires on that gets edited rather than read, which is the
 // failure mode this whole file exists to avoid.
 //
-// Half a percentage point is about 60 statements at the size the tree was when
-// this was written (12,012 counted statements). That is wide enough to absorb
-// the above and far narrower than any real regression -- removing a provider
-// moves whole points.
+// This is a lower bound, not the margin itself: floorFor drops a whole percent
+// at a time, so the actual headroom lands somewhere in [minHeadroom, 1 +
+// minHeadroom) depending on where the measurement falls. At the size of this
+// tree a percentage point is roughly 120 statements, so the realised margin is
+// something like 60-180 -- wide enough to absorb the above, and far narrower
+// than any real regression, since removing a provider moves whole points.
 const minHeadroom = 0.5
 
 // floorFor turns a measured percentage into the floor to record: rounded down to
 // a whole percent, and then down another whole percent if truncation alone left
-// less than minHeadroom of margin. The first baseline measured 44.01%, where
-// truncation on its own would have recorded a floor of 44.00 -- under two
-// statements of headroom, once BelowFloor's rounding tolerance is taken off.
+// less than minHeadroom of margin.
+//
+// The second step is what makes this more than truncation. A measurement that
+// lands just above a whole percent -- 44.01%, say -- truncates to 44.00, which
+// is barely more than one statement of headroom once BelowFloor's rounding
+// tolerance is taken off. Whether the margin is usable would then depend on
+// where the measurement happened to fall, which is not a property a gate should
+// have.
 //
 // The result is deliberately derived rather than chosen, so that regenerating
 // the baseline reproduces the same reasoning instead of depending on what
@@ -147,6 +174,34 @@ func floorFor(pct float64) float64 {
 		return 0
 	}
 	return floor
+}
+
+// gateVars are the opt-in environment switches that decide which integration
+// suites run at all (internal/ttools.ShouldSkip). Which of them were set is the
+// single most load-bearing fact about a coverage number here: with none of them
+// on, whole packages measure near zero for reasons that have nothing to do with
+// how well they are tested.
+var gateVars = []string{
+	"RUN_POSTGIS_TESTS",
+	"RUN_REDIS_TESTS",
+	"RUN_S3_TESTS",
+	"RUN_AZBLOB_TESTS",
+	"RUN_GCS_TESTS",
+	"RUN_HANA_TESTS",
+}
+
+// enabledGates lists the gate variables set to the literal "yes" that
+// internal/ttools requires, in a stable order so a regenerated baseline does not
+// churn on map iteration.
+func enabledGates() string {
+	var on []string
+	for _, v := range gateVars {
+		if os.Getenv(v) == "yes" {
+			on = append(on, v)
+		}
+	}
+	sort.Strings(on)
+	return strings.Join(on, " ")
 }
 
 func renderBaseline(profile *Profile, floor float64, gates string) string {

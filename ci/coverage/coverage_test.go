@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"os"
 	"strings"
 	"testing"
 )
@@ -300,11 +301,9 @@ func TestFloorFor(t *testing.T) {
 		// start green, which is the one thing the ticket asks of it.
 		"rounds down to a whole percent": {pct: 57.94, want: 57},
 		// Truncation alone is not enough when the measurement sits just above a
-		// whole percent: 44.01% would yield a floor of 44.00 and about four
-		// statements of headroom. Coverage here is not bit-stable between runs --
-		// the cache write path runs a detached goroutine pool, so whether a
-		// statement is counted can depend on scheduling -- and a floor that thin
-		// fires on that noise rather than on a regression.
+		// whole percent: 44.01% would yield a floor of 44.00, barely more than one
+		// statement of headroom once BelowFloor's tolerance is taken off. See
+		// minHeadroom for why that is too thin to gate on.
 		"a measurement just above a whole percent drops one": {pct: 44.01, want: 43},
 		"an exact percent drops one":                         {pct: 60, want: 59},
 		"just under a whole percent":                         {pct: 59.999, want: 59},
@@ -325,15 +324,11 @@ func TestWriteBaselineKeepsTheRecordedFloor(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/coverage-baseline.txt"
 
-	restore := func(p *string, v string) func() {
-		old := *p
-		*p = v
-		return func() { *p = old }
-	}
-	defer restore(baselinePath, path)()
-
-	oldFloor, oldGates := *floorFlag, *gatesFlag
-	defer func() { *floorFlag, *gatesFlag = oldFloor, oldGates }()
+	oldPath, oldFloor, oldGates := *baselinePath, *floorFlag, *gatesFlag
+	defer func() {
+		*baselinePath, *floorFlag, *gatesFlag = oldPath, oldFloor, oldGates
+	}()
+	*baselinePath = path
 
 	// A first run with no baseline present seeds the floor from what it measured.
 	rich := &Profile{Mode: "atomic", Packages: []PackageCoverage{
@@ -375,5 +370,40 @@ func TestWriteBaselineKeepsTheRecordedFloor(t *testing.T) {
 	}
 	if math.Abs(after.Total-20) > 0.005 {
 		t.Errorf("total = %.2f, want the newly measured 20.00", after.Total)
+	}
+}
+
+// A baseline that exists but cannot be parsed must not be mistaken for one that
+// is absent. Treating the two the same reseeds the floor from whatever was just
+// measured, which is exactly the silent lowering the recorded floor exists to
+// prevent -- and it would happen at the moment the file is least trustworthy.
+func TestWriteBaselineRefusesAnUnreadableBaseline(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/coverage-baseline.txt"
+	if err := os.WriteFile(path, []byte("mode atomic\nthis is not a baseline\n"), 0o644); err != nil {
+		t.Fatalf("seeding a malformed baseline: %v", err)
+	}
+
+	old := *baselinePath
+	*baselinePath = path
+	defer func() { *baselinePath = old }()
+
+	oldFloor := *floorFlag
+	*floorFlag = -1
+	defer func() { *floorFlag = oldFloor }()
+
+	err := writeBaseline(&Profile{Mode: "atomic", Packages: []PackageCoverage{
+		{Package: "github.com/MapColonies/shigola/atlas", Covered: 5, Statements: 100},
+	}})
+	if err == nil {
+		t.Fatal("writeBaseline overwrote an unreadable baseline; want an error")
+	}
+
+	body, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("reading the baseline back: %v", readErr)
+	}
+	if !strings.Contains(string(body), "this is not a baseline") {
+		t.Errorf("the unreadable baseline was overwritten:\n%s", body)
 	}
 }

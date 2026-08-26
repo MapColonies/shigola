@@ -123,16 +123,19 @@ For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://git
 ### Coverage floor
 
 CI fails a build whose total statement coverage falls below the floor recorded in
-[`ci/coverage-baseline.txt`](ci/coverage-baseline.txt). The floor is **43.00%**, set from a measured
-44.26% — it is a floor, not a target, and it exists to stop a silent slide rather than to describe
-where coverage ought to be. Raising it is a deliberate decision to make once the coverage is really
-there.
+[`ci/coverage-baseline.txt`](ci/coverage-baseline.txt). That file is the only place the number
+lives — read the `floor` line for the current value. It is a floor, not a target: it exists to stop
+a silent slide, not to describe where coverage ought to be, and raising it is a deliberate decision
+to make once the coverage is really there.
 
-To run the same check locally you need the fixture services up, because the baseline was measured
-with the PostGIS and Redis suites enabled:
+To run the same check locally you need the fixture services up, because the baseline is measured with
+the PostGIS and Redis suites enabled. `docker compose up -d` returns as soon as the containers
+start, not when the fixture is loaded, so wait for the one-shot `migration` service the way CI does —
+otherwise the suite runs against a half-restored database and measures nonsense:
 
 ```bash
 docker compose up -d
+docker wait migration        # must print 0 before going on
 
 RUN_POSTGIS_TESTS=yes RUN_REDIS_TESTS=yes \
   PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
@@ -155,10 +158,12 @@ The baseline deliberately records **only** the gates that this repository can pr
 credentials are configured in the workflow, and the HANA connection string points at a third-party
 instance the project does not control. A baseline nobody can reproduce is not a baseline.
 
-To regenerate after a change that is *meant* to move the numbers:
+To regenerate after a change that is *meant* to move the numbers, run `-write` in the same shell that
+ran the tests — it records the `RUN_*_TESTS` gates it finds set, so the baseline says which suites
+its numbers came from:
 
 ```bash
-go run -mod vendor ./ci/coverage -write -gates "RUN_POSTGIS_TESTS RUN_REDIS_TESTS"
+go run -mod vendor ./ci/coverage -write
 ```
 
 Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
