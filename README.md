@@ -97,18 +97,6 @@ Return vector tiles for a map layer. The URI supports the same variables as the 
 - `:layer_name` is the name of the map layer as defined in the `config.toml` file.
 
 ```
-/capabilities
-```
-
-Return a JSON encoded list of the server's configured maps and layers with various attributes.
-
-```
-/capabilities/:map_name
-```
-
-Return [TileJSON](https://github.com/mapbox/tilejson-spec) details about the map.
-
-```
 /maps/:map_name/style.json
 ```
 
