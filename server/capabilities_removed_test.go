@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	providerDebug "github.com/MapColonies/shigola/provider/debug"
 	"github.com/MapColonies/shigola/server"
 )
 
@@ -88,5 +89,53 @@ func TestCapabilitiesRemoved(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("GET %v (the style's source URL) status = %d, want 200", u.RequestURI(), w.Code)
 		}
+	})
+
+	t.Run("a debug style still sources tiles with debug layers", func(t *testing.T) {
+		w, _, err := doRequest(t, a, http.MethodGet, "/maps/"+testMapName+"/style.json?debug=true", nil)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+
+		var doc struct {
+			Sources map[string]struct {
+				Tiles []string `json:"tiles"`
+			} `json:"sources"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
+			t.Fatalf("decoding style: %v (body %s)", err, w.Body.String())
+		}
+
+		source, ok := doc.Sources[testMapName]
+		if !ok {
+			t.Fatalf("style has no source for %q: %s", testMapName, w.Body.String())
+		}
+		if len(source.Tiles) != 1 {
+			t.Fatalf("style source has %d tile templates, want 1: %s", len(source.Tiles), w.Body.String())
+		}
+
+		tileURL := strings.NewReplacer("{z}", "4", "{x}", "2", "{y}", "3").Replace(source.Tiles[0])
+		u, err := url.Parse(tileURL)
+		if err != nil {
+			t.Fatalf("parsing debug tile URL %q: %v", tileURL, err)
+		}
+		if u.Query().Get(server.QueryKeyDebug) != "true" {
+			t.Fatalf("debug tile URL = %q, want debug=true", tileURL)
+		}
+
+		MapHandlerTester(MapHandlerTCase{
+			method:       http.MethodGet,
+			uri:          u.RequestURI(),
+			atlas:        a,
+			expectedCode: http.StatusOK,
+			expectedLayers: []string{
+				testLayer1.MVTName(),
+				providerDebug.LayerDebugTileOutline,
+				providerDebug.LayerDebugTileCenter,
+			},
+		})(t)
 	})
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
@@ -69,12 +70,29 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the map's default tiling scheme -- the one the capabilities document
 	// described.
 	//
-	// The debug parameter is deliberately not carried into this URL. It has no
-	// meaning on the OGC surface, which has no debug layers, so a debug style's
-	// own layers still include them while the TileJSON it points at does not.
-	// This endpoint is itself due for removal in MAPCO-11485, which is why that
-	// is recorded rather than resolved.
 	tileJSONQuery := url.Values{"f": []string{"tilejson"}}
+	mapSource := style.Source{
+		Type: style.SourceTypeVector,
+		URL: (&url.URL{
+			Scheme: scheme(r),
+			Host:   hostName(r).Host,
+			Path: path.Join(
+				URIPrefix, "collections", req.mapName, "tiles", m.TileGrid().ID(),
+			),
+			RawQuery: tileJSONQuery.Encode(),
+		}).String(),
+	}
+
+	// The OGC surface does not expose native debug layers. Preserve the debug
+	// style's existing behavior with an inline template for the native tile route.
+	if debugQuery.Get(QueryKeyDebug) == "true" {
+		mapSource.URL = ""
+		mapSource.Tiles = []string{fmt.Sprintf("%s://%s%s?%s",
+			scheme(r), hostName(r).Host,
+			path.Join(URIPrefix, "maps", req.mapName, "{z}", "{x}", "{y}.pbf"),
+			debugQuery.Encode(),
+		)}
+	}
 
 	mapboxStyle := style.Root{
 		Name:    m.Name,
@@ -82,17 +100,7 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Center:  [2]float64{m.Center[0], m.Center[1]},
 		Zoom:    m.Center[2],
 		Sources: map[string]style.Source{
-			req.mapName: {
-				Type: style.SourceTypeVector,
-				URL: (&url.URL{
-					Scheme: scheme(r),
-					Host:   hostName(r).Host,
-					Path: path.Join(
-						URIPrefix, "collections", req.mapName, "tiles", m.TileGrid().ID(),
-					),
-					RawQuery: tileJSONQuery.Encode(),
-				}).String(),
-			},
+			req.mapName: mapSource,
 		},
 		Layers: []style.Layer{},
 	}
