@@ -320,57 +320,109 @@ func TestFloorFor(t *testing.T) {
 // measures less coverage. The floor must not follow it down: a floor that
 // quietly drops every time somebody runs -write on a laptop is not a floor. The
 // only way down is to pass -floor deliberately.
-func TestWriteBaselineKeepsTheRecordedFloor(t *testing.T) {
-	dir := t.TempDir()
-	path := dir + "/coverage-baseline.txt"
+//
+// The gate list is different: it is provenance for the numbers being written, so
+// the environment in effect for *this* run wins, and the recorded value is kept
+// only when the environment says nothing. Both directions are asserted here,
+// with the environment pinned -- this test used to read whatever the host had
+// set and so passed locally and failed in CI, where the gates are on.
+func TestWriteBaselineFloorAndGates(t *testing.T) {
+	clearGates := func(t *testing.T) {
+		t.Helper()
+		for _, v := range gateVars {
+			t.Setenv(v, "")
+		}
+	}
 
-	oldPath, oldFloor, oldGates := *baselinePath, *floorFlag, *gatesFlag
-	defer func() {
-		*baselinePath, *floorFlag, *gatesFlag = oldPath, oldFloor, oldGates
-	}()
-	*baselinePath = path
-
-	// A first run with no baseline present seeds the floor from what it measured.
 	rich := &Profile{Mode: "atomic", Packages: []PackageCoverage{
 		{Package: "github.com/MapColonies/shigola/atlas", Covered: 60, Statements: 100},
 	}}
-	*floorFlag, *gatesFlag = -1, "RUN_POSTGIS_TESTS RUN_REDIS_TESTS"
-	if err := writeBaseline(rich); err != nil {
-		t.Fatalf("seeding the baseline: %v", err)
-	}
-
-	seeded, err := readBaseline(path)
-	if err != nil {
-		t.Fatalf("reading the seeded baseline: %v", err)
-	}
-	// 60% measured seeds a floor of 59: floorFor leaves headroom below the
-	// measurement. See TestFloorFor.
-	if seeded.Floor != 59 {
-		t.Fatalf("seeded floor = %v, want 59", seeded.Floor)
-	}
-
-	// A second run measuring less, with no -floor and no -gates, must keep both.
 	lean := &Profile{Mode: "atomic", Packages: []PackageCoverage{
 		{Package: "github.com/MapColonies/shigola/atlas", Covered: 20, Statements: 100},
 	}}
-	*floorFlag, *gatesFlag = -1, ""
-	if err := writeBaseline(lean); err != nil {
-		t.Fatalf("regenerating the baseline: %v", err)
+
+	// seed writes a first baseline into a fresh temp file and returns its path.
+	seed := func(t *testing.T) string {
+		t.Helper()
+		path := t.TempDir() + "/coverage-baseline.txt"
+
+		oldPath, oldFloor, oldGates := *baselinePath, *floorFlag, *gatesFlag
+		t.Cleanup(func() {
+			*baselinePath, *floorFlag, *gatesFlag = oldPath, oldFloor, oldGates
+		})
+		*baselinePath, *floorFlag, *gatesFlag = path, -1, "RUN_POSTGIS_TESTS RUN_REDIS_TESTS"
+
+		if err := writeBaseline(rich); err != nil {
+			t.Fatalf("seeding the baseline: %v", err)
+		}
+		// 60% measured seeds a floor of 59: floorFor leaves headroom below the
+		// measurement. See TestFloorFor.
+		b, err := readBaseline(path)
+		if err != nil {
+			t.Fatalf("reading the seeded baseline: %v", err)
+		}
+		if b.Floor != 59 {
+			t.Fatalf("seeded floor = %v, want 59", b.Floor)
+		}
+		*gatesFlag = ""
+		return path
 	}
 
-	after, err := readBaseline(path)
-	if err != nil {
-		t.Fatalf("reading the regenerated baseline: %v", err)
-	}
-	if after.Floor != 59 {
-		t.Errorf("floor = %v after regenerating on a leaner run, want it held at 59", after.Floor)
-	}
-	if after.Gates != "RUN_POSTGIS_TESTS RUN_REDIS_TESTS" {
-		t.Errorf("gates = %q, want the recorded gates kept", after.Gates)
-	}
-	if math.Abs(after.Total-20) > 0.005 {
-		t.Errorf("total = %.2f, want the newly measured 20.00", after.Total)
-	}
+	t.Run("a leaner run keeps the recorded floor", func(t *testing.T) {
+		clearGates(t)
+		path := seed(t)
+
+		if err := writeBaseline(lean); err != nil {
+			t.Fatalf("regenerating the baseline: %v", err)
+		}
+		after, err := readBaseline(path)
+		if err != nil {
+			t.Fatalf("reading the regenerated baseline: %v", err)
+		}
+		if after.Floor != 59 {
+			t.Errorf("floor = %v after a leaner run, want it held at 59", after.Floor)
+		}
+		if math.Abs(after.Total-20) > 0.005 {
+			t.Errorf("total = %.2f, want the newly measured 20.00", after.Total)
+		}
+	})
+
+	t.Run("an empty environment keeps the recorded gates", func(t *testing.T) {
+		clearGates(t)
+		path := seed(t)
+
+		if err := writeBaseline(lean); err != nil {
+			t.Fatalf("regenerating the baseline: %v", err)
+		}
+		after, err := readBaseline(path)
+		if err != nil {
+			t.Fatalf("reading the regenerated baseline: %v", err)
+		}
+		if after.Gates != "RUN_POSTGIS_TESTS RUN_REDIS_TESTS" {
+			t.Errorf("gates = %q, want the recorded gates kept", after.Gates)
+		}
+	})
+
+	// The gates describe how the numbers being written were produced, so a run
+	// with different suites enabled must say so rather than inherit a stale
+	// claim from the file it is replacing.
+	t.Run("the environment overrides the recorded gates", func(t *testing.T) {
+		clearGates(t)
+		path := seed(t)
+		t.Setenv("RUN_S3_TESTS", "yes")
+		t.Setenv("RUN_HANA_TESTS", "yes")
+
+		if err := writeBaseline(lean); err != nil {
+			t.Fatalf("regenerating the baseline: %v", err)
+		}
+		after, err := readBaseline(path)
+		if err != nil {
+			t.Fatalf("reading the regenerated baseline: %v", err)
+		}
+		if after.Gates != "RUN_HANA_TESTS RUN_S3_TESTS" {
+			t.Errorf("gates = %q, want the two gates the environment had set", after.Gates)
+		}
+	})
 }
 
 // A baseline that exists but cannot be parsed must not be mistaken for one that

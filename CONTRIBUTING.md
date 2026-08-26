@@ -153,10 +153,18 @@ fan-out that only `-race` inspects.
 Running with fewer gates enabled measures less, so the check may fail locally on a tree that is fine
 in CI. Compare the per-package rows in the baseline rather than only the total.
 
-The baseline deliberately records **only** the gates that this repository can provision for itself.
-`RUN_S3_TESTS` and `RUN_HANA_TESTS` are enabled in CI but excluded from the baseline: no AWS
-credentials are configured in the workflow, and the HANA connection string points at a third-party
-instance the project does not control. A baseline nobody can reproduce is not a baseline.
+The baseline deliberately records **only** the gates a contributor can provision from this
+repository. `RUN_S3_TESTS` and `RUN_HANA_TESTS` are enabled in CI and do really run there — as of
+this writing they measure `cache/s3` at 65.6% and `provider/hana` at 67.7% — but neither is
+reproducible locally: they reach an S3 bucket and a third-party SAP HANA instance that this
+repository does not provision and a contributor has no way to stand up. A baseline nobody can
+regenerate is not a baseline, so they are left out.
+
+The consequence is worth being clear about: those packages are recorded near zero in the baseline,
+so **CI measures a good deal higher than the recorded total**. That is the safe direction for a
+floor, but it does mean the baseline understates coverage for exactly the backends the
+provider-removal work deletes — check the CI log, not this file, if you need to know what those
+packages are really covered at.
 
 To regenerate after a change that is *meant* to move the numbers, run `-write` in the same shell that
 ran the tests — it records the `RUN_*_TESTS` gates it finds set, so the baseline says which suites
