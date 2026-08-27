@@ -72,6 +72,27 @@ func (s *Service) HandleAPI(w http.ResponseWriter, r *http.Request) {
 		{"url": strings.TrimSuffix(s.hrefRoot(r), "/"), "description": "this server"},
 	}
 
+	// The build that is answering, as an OpenAPI specification extension.
+	//
+	// Not info.version: that is the version of the API this document describes,
+	// which is fixed by the specification the surface implements and does not
+	// move when the binary is rebuilt. Conflating the two would make a client
+	// pinning an API version track our release cadence instead.
+	//
+	// info is copied rather than written through: the shallow copy above shares
+	// every nested value with the parsed document, which is served to every
+	// other request.
+	if s.cfg.Version != "" {
+		if info, ok := doc["info"].(map[string]any); ok {
+			withVersion := make(map[string]any, len(info)+1)
+			for k, v := range info {
+				withVersion[k] = v
+			}
+			withVersion["x-shigola-version"] = s.cfg.Version
+			doc["info"] = withVersion
+		}
+	}
+
 	body, err := json.Marshal(doc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

@@ -104,6 +104,11 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		// happen after the router is built.
 		URLRoot:   func(r *http.Request) *url.URL { return URLRoot(r) },
 		URIPrefix: URIPrefix,
+		// Read here rather than assigned into a package variable by each
+		// entrypoint, which is what the removed server.Version was: every
+		// binary that builds a router gets the version right without having to
+		// remember to set it.
+		Version: build.Version,
 	})
 	for _, route := range ogcService.Routes() {
 		var handler http.Handler = route.Handler

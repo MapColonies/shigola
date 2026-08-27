@@ -344,6 +344,7 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
+          "shigolaVersion": { "type": "string", "description": "The Shigola build serving this API. An extension member: OGC API - Common defines no place for an implementation's version. Absent when the build is unknown." },
           "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
         }
       },

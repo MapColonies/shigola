@@ -88,6 +88,22 @@ projection backend that is not wired up. `/tileMatrixSets` lists only what can b
 | `/tileMatrixSets` | The tiling schemes served |
 | `/tileMatrixSets/{tileMatrixSetId}` | One scheme's definition |
 
+### Which build is answering
+
+Two resources report the running build, so an operator can tell from the service itself:
+
+```
+GET /       ->  { "title": "shigola", "shigolaVersion": "v1.2.3", ... }
+GET /api    ->  { "info": { "version": "1.0.0", "x-shigola-version": "v1.2.3", ... } }
+```
+
+Both are extension members. OGC API - Common defines no place for an implementation's version, and
+OpenAPI's `info.version` is the version of the *API* — fixed by the specification this surface
+implements, and unmoved by a rebuild — so the build is reported alongside it as an `x-` extension
+rather than in it. Neither member appears when the binary was built without a version stamped in.
+
+The removed `/capabilities` endpoint used to be the only place this was reported.
+
 ### Collections
 
 Every map is a collection, and so is every layer of every map:

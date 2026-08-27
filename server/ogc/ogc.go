@@ -35,6 +35,16 @@ type Config struct {
 	// URIPrefix is the path the service is mounted under, e.g. "/tegola" behind
 	// a reverse proxy. Empty means "/".
 	URIPrefix string
+	// Version is the build this service is running, reported on the landing page
+	// and in the API definition so that an operator can tell from the service
+	// itself which build answered. Optional: empty omits it rather than
+	// reporting a version the binary cannot vouch for.
+	//
+	// Passed in rather than read from internal/build directly, for the same
+	// reason as everything else here: this package takes what it needs from its
+	// host, so a host that knows its version differently -- a test, an embedding
+	// binary -- can say so.
+	Version string
 }
 
 // Service serves the OGC API - Tiles resources for one atlas.
