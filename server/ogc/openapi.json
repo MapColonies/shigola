@@ -174,7 +174,7 @@
       "get": {
         "tags": ["Tiles"],
         "summary": "Fetch one vector tile",
-        "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from Shigola's native /maps/ routes, which are z/x/y.",
+        "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from the z/x/y order of the /maps/ routes this replaced.",
         "operationId": ".collection.vector.getTile",
         "parameters": [
           { "$ref": "#/components/parameters/collectionId" },
@@ -344,6 +344,7 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
+          "shigolaVersion": { "type": "string", "description": "The Shigola build serving this API. An extension member: OGC API - Common defines no place for an implementation's version. Absent when the build is unknown." },
           "links": { "type": "array", "items": { "$ref": "#/components/schemas/link" } }
         }
       },

@@ -50,12 +50,49 @@ func init() {
 	}
 }
 
+// defaultObserveVars are the route variables whose value is kept in the http
+// "handler" label, and the tile coordinates the cache metrics label by.
+//
+// The list serves two consumers, which is why removing the native routes did not
+// shorten it:
+//
+//   - The http handler label (see httpHandler.instrumentHandlerDuration). A
+//     route variable named here keeps the request's actual value in the label;
+//     one that is not is collapsed back to its ":name", which is what keeps
+//     cardinality bounded. The OGC route variables were added when the native
+//     routes were removed (MAPCO-11484): none of the older names appears in an
+//     OGC route path, so without them every tile request collapsed to one
+//     label value and the per-map and per-zoom breakdown was gone.
+//
+//   - The cache metrics (see newCache), which read these from the request
+//     context rather than the path, and only understand the names
+//     observability.LabelForObserveVar maps. The OGC names map to nothing there
+//     and are ignored, so adding them costs the cache metrics nothing -- while
+//     dropping ":map_name", ":layer_name" or ":z" would silently drop those
+//     labels from every cache metric.
+//
+// Breaking change for dashboards: a native tile request used to land in the
+// handler label as /maps/<map>/<layer>/<z>/:x/:y. That route no longer exists,
+// so no series carries it. The equivalent series is now
+// /collections/<collectionId>/tiles/<tileMatrixSetId>/<tileMatrix>/:tile_row/:tile_col,
+// where collectionId is the map, or "<map>:<layer>" for a single layer.
+// ":tile_row" and ":tile_col" are deliberately absent from the list, as ":x" and
+// ":y" always were: a label per tile is a cardinality explosion, not a metric.
+var defaultObserveVars = []string{
+	observability.ObserveVarMapName,
+	observability.ObserveVarLayerName,
+	observability.ObserveVarTileZ,
+	":collection_id",
+	":tile_matrix_set_id",
+	":tile_matrix",
+}
+
 type observer struct {
 	// URLPrefix is the server's prefix
 	URLPrefix string
 
 	// observeVars are the vars (:foo) in a url that should be turned into a label
-	// Default values for this via new is []string{":map_name",":layer_name",":z"}
+	// Defaults to defaultObserveVars.
 	observeVars []string
 
 	httpHandlers map[string]*httpHandler
@@ -84,7 +121,9 @@ func New(config dict.Dicter) (observability.Interface, error) {
 
 	obs.observeVars, _ = config.StringSlice("variables")
 	if len(obs.observeVars) == 0 {
-		obs.observeVars = []string{":map_name", ":layer_name", ":z"}
+		// Copied rather than aliased: an observer must not be able to alter the
+		// default for the next one.
+		obs.observeVars = append([]string(nil), defaultObserveVars...)
 	}
 
 	NewBuildInfo(obs.registry)

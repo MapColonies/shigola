@@ -2,11 +2,11 @@
 // conformance declaration, collections, tilesets, tiles, and the tiling schemes
 // they are cut in.
 //
-// It is additive to tegola's native routes, which keep serving the same tiles at
-// the same URLs. The one thing it takes over is "/", the landing page's required
-// location. ADR-0003 recorded that as a trade, because it displaced the embedded
-// viewer to /viewer; the viewer has since been removed, so nothing is displaced
-// and "/" is simply the landing page.
+// It began as an addition to tegola's native routes and is now the whole tile
+// surface: the /maps/... routes it served alongside have been removed, so a
+// tile has exactly one URL. "/" is the landing page's required location;
+// ADR-0003 recorded taking it as a trade, because it displaced the embedded
+// viewer to /viewer, and neither the viewer nor that trade remains.
 //
 // The package deliberately does not import tegola/server: the server mounts this
 // surface, so the dependency runs one way. Everything this package needs from
@@ -35,6 +35,16 @@ type Config struct {
 	// URIPrefix is the path the service is mounted under, e.g. "/tegola" behind
 	// a reverse proxy. Empty means "/".
 	URIPrefix string
+	// Version is the build this service is running, reported on the landing page
+	// and in the API definition so that an operator can tell from the service
+	// itself which build answered. Optional: empty omits it rather than
+	// reporting a version the binary cannot vouch for.
+	//
+	// Passed in rather than read from internal/build directly, for the same
+	// reason as everything else here: this package takes what it needs from its
+	// host, so a host that knows its version differently -- a test, an embedding
+	// binary -- can say so.
+	Version string
 }
 
 // Service serves the OGC API - Tiles resources for one atlas.

@@ -2,49 +2,60 @@ package server_test
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/server"
-	"github.com/go-spatial/geom/encoding/mvt"
+	"github.com/MapColonies/shigola/tms"
 )
 
-// gzipTile is what the tile handler writes: already-gzipped MVT bytes.
-func gzipTile(t *testing.T, body string) []byte {
+// ogcTileURI is one tile of the whole-map collection, in the map's own scheme.
+//
+// z/y/x, transposed from the native routes this replaced: the tile below is
+// z=4 x=2 y=3.
+var ogcTileURI = "/collections/" + testMapName + "/tiles/WebMercatorQuad/4/3/2"
+
+// ogcTileKey is the cache key that tile is filed under.
+func ogcTileKey(t *testing.T) *cache.Key {
 	t.Helper()
 
-	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
-	if _, err := w.Write([]byte(body)); err != nil {
-		t.Fatalf("gzip write: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("gzip close: %v", err)
+	grid, err := tms.Get("WebMercatorQuad")
+	if err != nil {
+		t.Fatalf("tms.Get: %v", err)
 	}
 
-	return buf.Bytes()
+	key, err := cache.NewKey(grid, testMapName, "", 4, 2, 3)
+	if err != nil {
+		t.Fatalf("cache.NewKey: %v", err)
+	}
+
+	return &key
 }
 
 // TestFlushBeforeCacheWrite is the assertion that passes vacuously if written
 // naively.
 //
-// A type-level check — var _ http.Flusher = (*tileCacheResponseWriter)(nil) —
+// A type-level check — that the response writer implements http.Flusher —
 // compiles happily while the flush no-ops in the assembled stack, which is the
-// defect this exists to catch. So it drives a real request through
-// HeadersHandler(GZipHandler(TileCacheHandler(...))) over a real connection,
-// with a cache whose Set blocks, and asserts the client already has the tile.
+// defect this exists to catch. So it drives a real request through the router as
+// the server builds it, over a real connection, with a cache whose Set blocks,
+// and asserts the client already has the tile.
+//
+// The property was the native tile-cache middleware's until MAPCO-11484 deleted
+// it, and moved to ogc.cacheAfterResponse with the caching itself. What is under
+// test is unchanged: a slow tier must not delay a tile the client is waiting for.
 //
 // Both Accept-Encoding cases run, and that is not thoroughness. GZipHandler
-// hands the cache middleware the original ResponseWriter for a gzip client and
-// a *gzipDecompressResponseWriter for everyone else — so the gzip case passes
-// with or without the second Flush, and would hide the bug on its own.
+// hands the tile handler the original ResponseWriter for a gzip client and a
+// *gzipDecompressResponseWriter for everyone else — so the gzip case passes with
+// or without a working flush, and would hide the bug on its own.
 func TestFlushBeforeCacheWrite(t *testing.T) {
 	type tcase struct {
 		acceptEncoding string
@@ -54,9 +65,6 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			const body = "a tile, of sorts"
-			tile := gzipTile(t, body)
-
 			// A cache that blocks in Set. Nothing releases it until the client
 			// has its bytes, so if the flush does not work the read below
 			// cannot complete.
@@ -66,25 +74,16 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 			tier := faketier.New("blocking")
 			tier.GateOn(faketier.OpSet, gate)
 
-			// A real map, not a bare atlas: the middleware looks the map up to
-			// get its tile-grid SRID before it parses the cache key, and
-			// bypasses the cache entirely when the lookup fails. Without one
-			// the gate below is never entered and this test hangs.
+			server.HostName = &url.URL{Host: serverHostName}
+			server.URIPrefix = "/"
+
 			a := newTestMapWithLayers(testLayer1)
 			a.SetCache(tier)
 
-			tileHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", mvt.MimeType)
-				w.WriteHeader(http.StatusOK)
-				w.Write(tile)
-			})
-
-			handler := server.HeadersHandler(server.GZipHandler(server.TileCacheHandler(a, tileHandler)))
-
-			srv := httptest.NewServer(handler)
+			srv := httptest.NewServer(server.NewRouter(a))
 			defer srv.Close()
 
-			req, err := http.NewRequest(http.MethodGet, srv.URL+"/maps/"+testMapName+"/1/1/1.pbf", nil)
+			req, err := http.NewRequest(http.MethodGet, srv.URL+ogcTileURI, nil)
 			if err != nil {
 				t.Fatalf("request: %v", err)
 			}
@@ -101,6 +100,10 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", resp.StatusCode)
+			}
+
 			// Read only the first chunk. Reading to EOF would wait for the
 			// handler to return, which is exactly what this must not require.
 			type readResult struct {
@@ -110,7 +113,7 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 			}
 			read := make(chan readResult, 1)
 			go func() {
-				buf := make([]byte, len(tile)+len(body))
+				buf := make([]byte, 4096)
 				n, err := resp.Body.Read(buf)
 				read <- readResult{n: n, buf: buf[:max(n, 0)], err: err}
 			}()
@@ -126,18 +129,15 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 				t.Fatalf("read returned no bytes: %v", got.err)
 			}
 
-			// The bytes are the tile, in whichever form this client asked for.
-			if tc.clientGetsGzip {
-				if !bytes.HasPrefix(got.buf, tile[:2]) {
-					t.Errorf("expected gzipped bytes, got %q", got.buf)
-				}
-			} else if !bytes.Contains(got.buf, []byte(body)) {
-				t.Errorf("expected the decompressed tile, got %q", got.buf)
+			// gzip's magic bytes, either declared to this client or already
+			// removed on its behalf.
+			if hasGzipMagic := bytes.HasPrefix(got.buf, []byte{0x1f, 0x8b}); hasGzipMagic != tc.clientGetsGzip {
+				t.Errorf("body starts %x; gzipped = %v, want %v", got.buf[:min(2, len(got.buf))], hasGzipMagic, tc.clientGetsGzip)
 			}
 
 			// Sanity: the write really was still blocked throughout.
 			gate.WaitEntered(1)
-			if _, ok := tier.Value(&cache.Key{MapName: testMapName, Z: 1, X: 1, Y: 1}); ok {
+			if _, ok := tier.Value(ogcTileKey(t)); ok {
 				t.Error("the cache write completed, so this proved nothing")
 			}
 		}
@@ -159,56 +159,38 @@ func TestFlushBeforeCacheWrite(t *testing.T) {
 
 // TestResponseWritersAreFlushers is the cheap check. It is not a substitute for
 // the test above — it is what passed while the flush no-opped — but it fails
-// fast and names the type if either wrapper loses its Flush.
+// fast and names the type if the wrapper loses its Flush.
 func TestResponseWritersAreFlushers(t *testing.T) {
-	a := newTestMapWithLayers(testLayer1)
-	a.SetCache(faketier.New("noop"))
+	var gzipWriter http.ResponseWriter
 
-	var (
-		cacheWriter http.ResponseWriter
-		gzipWriter  http.ResponseWriter
-	)
-
-	tileHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cacheWriter = w
-		w.Header().Set("Content-Type", mvt.MimeType)
-		w.WriteHeader(http.StatusOK)
-		w.Write(gzipTile(t, "tile"))
-	})
-
-	gzipProbe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gzipWriter = w
-		server.TileCacheHandler(a, tileHandler).ServeHTTP(w, r)
+		w.WriteHeader(http.StatusOK)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/maps/"+testMapName+"/1/1/1.pbf", nil)
+	req := httptest.NewRequest(http.MethodGet, ogcTileURI, nil)
 	req.Header.Set("Accept-Encoding", "gzip;q=0")
-	server.GZipHandler(gzipProbe).ServeHTTP(httptest.NewRecorder(), req)
+	server.GZipHandler(probe).ServeHTTP(httptest.NewRecorder(), req)
 
 	if _, ok := gzipWriter.(http.Flusher); !ok {
-		t.Errorf("%T is not an http.Flusher, so the tile cache middleware's flush no-ops for every non-gzip client", gzipWriter)
-	}
-	if _, ok := cacheWriter.(http.Flusher); !ok {
-		t.Errorf("%T is not an http.Flusher", cacheWriter)
+		t.Errorf("%T is not an http.Flusher, so the tile handler's flush no-ops for every non-gzip client", gzipWriter)
 	}
 }
 
 // TestFlushWithoutAFlushableWriter — a response writer that cannot be flushed
-// must degrade to today's behaviour rather than panicking, and say so once.
+// must degrade to serving the tile on the handler's return rather than
+// panicking.
 func TestFlushWithoutAFlushableWriter(t *testing.T) {
+	server.HostName = &url.URL{Host: serverHostName}
+	server.URIPrefix = "/"
+
 	a := newTestMapWithLayers(testLayer1)
 	a.SetCache(faketier.New("noop"))
 
-	tileHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", mvt.MimeType)
-		w.WriteHeader(http.StatusOK)
-		w.Write(gzipTile(t, "tile"))
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/maps/"+testMapName+"/1/1/1.pbf", nil)
+	req := httptest.NewRequest(http.MethodGet, ogcTileURI, nil)
 	w := &unflushableWriter{ResponseRecorder: httptest.NewRecorder()}
 
-	server.TileCacheHandler(a, tileHandler).ServeHTTP(w, req)
+	server.NewRouter(a).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status: got %d, expected 200", w.Code)

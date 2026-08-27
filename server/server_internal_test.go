@@ -51,41 +51,41 @@ func TestHostName(t *testing.T) {
 	tests := map[string]tcase{
 		"no host or port set": {
 			// With hostname & port unset in config, expect host:port matching URL
-			url:      "http://localhost:8080/capabilities",
+			url:      "http://localhost:8080/collections",
 			expected: "localhost:8080",
 		},
 		"hostname set": {
 			// With hostname set and port set to "none" in config, expect "cdn.tegola.io"
-			url:      "http://localhost:8080/capabilities",
+			url:      "http://localhost:8080/collections",
 			hostName: "cdn.tegola.io",
 			port:     "none",
 			expected: "cdn.tegola.io",
 		},
 		"hostname set port set": {
 			// With hostname set and port set to "none" in config, expect "cdn.tegola.io"
-			url:      "http://localhost:8080/capabilities",
+			url:      "http://localhost:8080/collections",
 			hostName: "cdn.tegola.io",
 			port:     ":9090",
 			expected: "cdn.tegola.io",
 		},
 		"hostname set port in request": {
 			// Hostname set, no port in config, but port in url.  Expect <config_host>
-			url:      "http://localhost:8080/capabilities",
+			url:      "http://localhost:8080/collections",
 			hostName: "cdn.tegola.io",
 			expected: "cdn.tegola.io",
 		},
 		"hostname set no port in config or url": {
-			url:      "http://localhost/capabilities",
+			url:      "http://localhost/collections",
 			hostName: "cdn.tegola.io",
 			expected: "cdn.tegola.io",
 		},
 		"hostname unset no port in config or url": {
-			url:      "http://localhost/capabilities",
+			url:      "http://localhost/collections",
 			expected: "localhost",
 		},
 		"no host on url": {
 			// With hostname & port unset in config, expect host:port matching URL
-			url:      "/capabilities",
+			url:      "/collections",
 			expected: "",
 		},
 	}

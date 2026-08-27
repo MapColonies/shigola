@@ -21,8 +21,9 @@ func (s *Service) HandleLandingPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, format, LandingPage{
-		Title:       "shigola",
-		Description: "OGC API - Tiles served by shigola",
+		Title:          "shigola",
+		Description:    "OGC API - Tiles served by shigola",
+		ShigolaVersion: s.cfg.Version,
 		Links: []Link{
 			{Rel: relSelf, Href: s.hrefRoot(r), Type: MediaTypeJSON, Title: "this document"},
 			{Rel: relServiceDesc, Href: s.href(r, "api"), Type: MediaTypeOpenAPI, Title: "the API definition"},

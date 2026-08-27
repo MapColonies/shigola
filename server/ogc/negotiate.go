@@ -35,10 +35,9 @@ const (
 // emits.
 //
 // "pbf" is what tegola's native routes call a Mapbox Vector Tile — the tile
-// extension, and the `format` member of both the TileJSON this service serves
-// and the capabilities document the native surface serves. Without this, a
-// client that read either of those and asked for ?f=pbf would be refused for
-// naming the format the way we named it to them.
+// extension, and the `format` member of the TileJSON this service serves.
+// Without this, a client that read that and asked for ?f=pbf would be refused
+// for naming the format the way we named it to them.
 //
 // An alias is resolved before the resource's own formats are consulted, so it
 // succeeds only where the format it names is actually served: ?f=pbf on a

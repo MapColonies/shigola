@@ -1,7 +1,7 @@
 # OGC API - Tiles
 
 shigola serves [OGC API - Tiles](https://ogcapi.ogc.org/tiles/) for vector (Mapbox Vector Tile)
-data, alongside its native `/maps/...` routes.
+data. It is the only tile surface shigola serves.
 
 ## Upgrading — two breaking changes
 
@@ -45,17 +45,17 @@ before:
 [[maps]]
   name = "parks"
   # Omit for every scheme this build serves. The first entry is the map's
-  # default: the scheme its native /maps/... routes serve.
+  # default: WebMercatorQuad.
   tile_matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"]
 ```
 
 Schemes are configured per map, not per layer. A map's layer-collections offer exactly the schemes
 their map does.
 
-The native `/capabilities/{map}.json` endpoint describes the map's first, default scheme. Its
-TileJSON 2.1 response includes Shigola's `crs` and `tileMatrixSetId` extension members; TileJSON
-itself assumes WebMercator and does not define either member. Clients that need standard metadata,
-or metadata for another supported scheme, should request the OGC tileset metadata endpoint.
+A map's tileset metadata is served per scheme, at
+`/collections/{collectionId}/tiles/{tileMatrixSetId}`. Asking for it as TileJSON (`?f=tilejson`) adds
+Shigola's `crs` and `tileMatrixSetId` extension members, since TileJSON itself assumes WebMercator
+and defines neither.
 
 This build serves the schemes that need no coordinate transformation backend:
 
@@ -88,6 +88,38 @@ projection backend that is not wired up. `/tileMatrixSets` lists only what can b
 | `/tileMatrixSets` | The tiling schemes served |
 | `/tileMatrixSets/{tileMatrixSetId}` | One scheme's definition |
 
+### Which build is answering
+
+Two resources report the running build, so an operator can tell from the service itself:
+
+```
+GET /       ->  { "title": "shigola", "shigolaVersion": "v1.2.3", ... }
+GET /api    ->  { "info": { "version": "1.0.0", "x-shigola-version": "v1.2.3", ... } }
+```
+
+Both are extension members. OGC API - Common defines no place for an implementation's version, and
+OpenAPI's `info.version` is the version of the *API* — fixed by the specification this surface
+implements, and unmoved by a rebuild — so the build is reported alongside it as an `x-` extension
+rather than in it. Neither member appears when the binary was built without a version stamped in.
+
+### No style document
+
+Shigola serves no style document. Styling is a separate specification — OGC API - Styles — which this
+server does not implement. A client brings its own style and points its vector source at a tileset's
+TileJSON:
+
+```json
+"sources": {
+  "parks": {
+    "type": "vector",
+    "url": "http://localhost:8080/collections/parks/tiles/WebMercatorQuad?f=tilejson"
+  }
+}
+```
+
+This is a deliberate omission, not a gap: guessing colours from layer names is not something a tile
+server is better placed to decide than the client rendering the tiles.
+
 ### Collections
 
 Every map is a collection, and so is every layer of every map:
@@ -103,11 +135,10 @@ usable collection id.
 ### Tile paths are z/y/x
 
 OGC orders a tile path `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then **column**. This is
-transposed from shigola's native `/maps/{map}/{z}/{x}/{y}`, which is zoom, column, row.
+worth checking against a client that assumes the `z/x/y` order most tile URLs use:
 
 ```
-/maps/parks/3/5/2                                  z=3 x=5 y=2
-/collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5   — the same tile
+/collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5
 ```
 
 Rows and columns are validated separately, so a transposed request is rejected rather than served
@@ -132,22 +163,24 @@ the representation, and for this resource that representation is an OpenAPI 3.0 
 OGC requires carry the specific media type.
 
 `mvt` is canonical: it is what every link and template this service emits says, and it is the name
-in the OGC conformance class. `pbf` is accepted because that is what the same tile is called by
-shigola's native routes, which serve it at a `.pbf` extension, and by the `format` member of the
-TileJSON above — being refused for using our own word for it would be surprising. Matching ignores
+in the OGC conformance class. `pbf` is accepted because it is the name the same tile carries in the
+`format` member of the TileJSON above, and the extension vector tiles are commonly served at — being
+refused for using that word would be surprising. Matching ignores
 case. The alias resolves to MVT before a resource's own formats are consulted, so `?f=pbf` on a
 JSON-only resource is still a 400.
 
 ## Caching
 
-OGC tile requests use the same cache keys as the native routes, so a tile seeded through
-`shigola cache seed` is served by both, and neither generates it twice. The key is
+Tile requests use the same cache keys `shigola cache seed` writes, so a seeded tile is served rather
+than generated a second time. The key is
 `{tileMatrixSetId}/{map}/{layer}/{z}/{x}/{y}` — it does not include the query string, so every
 spelling of `?f=` shares one entry rather than storing the same bytes twice.
 
 A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
-it, and a shigola map can declare query parameters that change what a tile contains. The native
-routes take the same position more bluntly, skipping the cache for any query string at all.
+it. Nothing on this surface passes query parameters through to a provider — `[[maps.params]]` is
+configurable but unread — so no such request can reach a different rendering. Serving it uncached is
+what keeps that true if it ever changes: tiles must not already be pooled under a key that ignores a
+parameter.
 
 `cache seed` and `cache purge` take `--tile-matrix-set`. One run covers one scheme: it enumerates a
 single tile pyramid, so a run cannot cover two schemes at once.

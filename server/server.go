@@ -26,10 +26,6 @@ const (
 )
 
 var (
-	// Version is the version of the software, this should be set by the main program, before starting up.
-	// It is used by various Middleware to determine the version.
-	Version string = "version not set"
-
 	// HostName is the name of the host to use for construction of URLS.
 	// configurable via the tegola config.toml file (set in main.go)
 	HostName *url.URL
@@ -53,8 +49,8 @@ var (
 	URIPrefix = "/"
 
 	// ProxyProtocol is a custom protocol that will be used to generate the URLs
-	// included in the capabilities endpoint responses. This is useful when he
-	// server sits behind a reverse proxy
+	// this server includes in its responses. This is useful when the server sits
+	// behind a reverse proxy
 	// (See https://github.com/go-spatial/tegola/pull/967)
 	ProxyProtocol string
 
@@ -85,25 +81,10 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		}
 	}
 
-	// capabilities endpoints
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/capabilities", o, HeadersHandler(HandleCapabilities{})))
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/capabilities/:map_name", o, HeadersHandler(HandleMapCapabilities{})))
-
-	// map tiles
-	hMapLayerZXY := HandleMapLayerZXY{Atlas: a}
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/:z/:x/:y", o, HeadersHandler(GZipHandler(TileCacheHandler(a, hMapLayerZXY)))))
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/:layer_name/:z/:x/:y", o, HeadersHandler(GZipHandler(TileCacheHandler(a, hMapLayerZXY)))))
-
-	// map style
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/style.json", o, HeadersHandler(HandleMapStyle{})))
-
-	// OGC API - Tiles surface. Mounted with the same middleware as the native
-	// routes so that headers, CORS and instrumentation behave identically.
+	// OGC API - Tiles surface, and the only tile surface: the native /maps/...
+	// routes it was once additive to are gone (MAPCO-11484, MAPCO-11485), so
+	// every route below this point is registered by ogc.Service.
+	//
 	// It takes over "/" for the landing page (ADR-0003), which it can now do
 	// unconditionally: the embedded viewer that used to be displaced to /viewer
 	// no longer exists.
@@ -114,13 +95,17 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		// happen after the router is built.
 		URLRoot:   func(r *http.Request) *url.URL { return URLRoot(r) },
 		URIPrefix: URIPrefix,
+		// Read here rather than assigned into a package variable by each
+		// entrypoint, which is what the removed server.Version was: every
+		// binary that builds a router gets the version right without having to
+		// remember to set it.
+		Version: build.Version,
 	})
 	for _, route := range ogcService.Routes() {
 		var handler http.Handler = route.Handler
 		if route.Gzipped {
 			// The handler writes gzipped tile bytes; this negotiates whether the
-			// client gets them compressed or decompressed, as on the native
-			// tile routes.
+			// client gets them compressed or decompressed.
 			handler = GZipHandler(handler)
 		}
 

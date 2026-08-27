@@ -14,8 +14,9 @@ import (
 //
 // ADR-0003 originally recorded this as a trade: the landing page took the root
 // and displaced the embedded viewer to /viewer. The viewer is gone, so what is
-// left of that decision is only the first half -- and the /viewer path it was
-// moved to must now be served by nothing at all.
+// left of that decision is only the first half. That /viewer is now served by
+// nothing is one instance of TestRouterSurface's rule rather than a fact about
+// this mount, and is asserted there.
 func TestOGCMount(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
 	server.URIPrefix = "/"
@@ -52,30 +53,19 @@ func TestOGCMount(t *testing.T) {
 		}
 	})
 
-	// Both paths, because the viewer answered on both: /viewer redirected to
-	// /viewer/, and the catch-all under it served the embedded assets. A removal
-	// that left either one registered would still be serving a viewer.
-	t.Run("no viewer route is registered", func(t *testing.T) {
-		for _, path := range []string{"/viewer", "/viewer/", "/viewer/index.html"} {
-			w, _, err := doRequest(t, a, http.MethodGet, path, nil)
-			if err != nil {
-				t.Fatalf("request %s: %v", path, err)
-			}
-
-			if w.Code != http.StatusNotFound {
-				t.Errorf("GET %s status = %d, want 404", path, w.Code)
-			}
-		}
-	})
-
-	t.Run("the native routes are untouched", func(t *testing.T) {
-		w, _, err := doRequest(t, a, http.MethodGet, "/capabilities", nil)
+	// There is no longer a native surface for the mount to displace: the
+	// capabilities, style and tile routes it once shared the router with are all
+	// gone (MAPCO-11483, MAPCO-11485, MAPCO-11484). What is left to check is that
+	// the surface taking the root still serves a tile from it, which is the whole
+	// point of taking the root at all.
+	t.Run("a tile is served under the mounted surface", func(t *testing.T) {
+		w, _, err := doRequest(t, a, http.MethodGet, ogcTileURI, nil)
 		if err != nil {
 			t.Fatalf("request: %v", err)
 		}
 
 		if w.Code != http.StatusOK {
-			t.Errorf("/capabilities status = %d, want 200", w.Code)
+			t.Errorf("%v status = %d, want 200", ogcTileURI, w.Code)
 		}
 	})
 }

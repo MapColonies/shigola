@@ -38,10 +38,17 @@ const (
 )
 
 // LandingPage is the service's root document.
+//
+// shigolaVersion is an extension member: OGC API - Common defines no place for
+// an implementation's version, and the landing page is where an operator looks
+// first. It is named for the product rather than called "version" so that it
+// cannot collide with a member the specification may later define, and so that
+// it is not mistaken for the version of the API.
 type LandingPage struct {
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Links       []Link `json:"links"`
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	ShigolaVersion string `json:"shigolaVersion,omitempty"`
+	Links          []Link `json:"links"`
 }
 
 // Conformance declares the conformance classes this service implements.

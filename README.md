@@ -78,41 +78,16 @@ Use "shigola [command] --help" for more information about a command.
 The server root returns the OGC API - Tiles landing page.
 
 ```
-/maps/:map_name/:z/:x/:y
+/collections/:collection_id/tiles/:tile_matrix_set_id/:tile_matrix/:tile_row/:tile_col
 ```
 
-Return vector tiles for a map. The URI supports the following variables:
+Return a vector tile. Every route this server serves belongs to the OGC API - Tiles surface; see
+[docs/ogc-api-tiles.md](docs/ogc-api-tiles.md) for the full list.
 
-- `:map_name` is the name of the map as defined in the `config.toml` file.
-- `:z` is the zoom level of the map.
-- `:x` is the row of the tile at the zoom level.
-- `:y` is the column of the tile at the zoom level.
-
-```
-/maps/:map_name/:layer_name/:z/:x/:y
-```
-
-Return vector tiles for a map layer. The URI supports the same variables as the map URI with the additional variable:
-
-- `:layer_name` is the name of the map layer as defined in the `config.toml` file.
-
-```
-/capabilities
-```
-
-Return a JSON encoded list of the server's configured maps and layers with various attributes.
-
-```
-/capabilities/:map_name
-```
-
-Return [TileJSON](https://github.com/mapbox/tilejson-spec) details about the map.
-
-```
-/maps/:map_name/style.json
-```
-
-Return an auto generated [Mapbox GL Style](https://www.mapbox.com/mapbox-gl-js/style-spec/) for the configured map.
+- `:collection_id` is a map name from the `config.toml` file, or `map:layer` for a single layer.
+- `:tile_matrix_set_id` is the tiling scheme, e.g. `WebMercatorQuad`.
+- `:tile_matrix` is the zoom level, and `:tile_row`/`:tile_col` are the tile's **row then column** —
+  worth checking against a client that assumes the `z/x/y` order most tile URLs use.
 
 ## Configuration
 
@@ -142,7 +117,7 @@ uri = "postgresql://shigola:<password>@localhost:5432/shigola?ssl_mode=prefer" #
 
 # maps are made up of layers
 [[maps]]
-name = "zoning"                           # used in the URL to reference this map (/maps/zoning)
+name = "zoning"                           # the collection id: /collections/zoning/tiles/...
 
   [[maps.layers]]
   name = "landuse"                        # name is optional. If it's not defined the name of the ProviderLayer will be used.
@@ -150,8 +125,9 @@ name = "zoning"                           # used in the URL to reference this ma
   min_zoom = 10                           # minimum zoom level to include this layer
   max_zoom = 16                           # maximum zoom level to include this layer
 
-  # configure addition URL parameters: /maps/:map_name/:layer_name/:z/:x/:y?param=value
-  # which will be passed to the database queries
+  # NOT READ BY ANY ROUTE. No route passes query parameters through to a
+  # provider query. The keys still validate, so a config carrying them keeps
+  # loading, and the server logs that they have no effect.
   [[maps.params]]
   name          = "param"         # name used in the URL
   token         = "!PARAM!"       # token to replace in providers.layers.sql query
@@ -413,13 +389,24 @@ The following environment variables can be used to control various runtime optio
 
 ## Client side debugging
 
-When debugging client side, it's often helpful to see an outline of a tile along with it's Z/X/Y values. To encode a debug layer into every tile add the query string variable `debug=true` to the URL template being used to request tiles. For example:
+When debugging client side, it's often helpful to see an outline of a tile along with its Z/X/Y values.
 
-```
-http://localhost:8080/maps/mymap/{z}/{x}/{y}.vector.pbf?debug=true
+There is no query parameter for this: a debug layer is not part of any tileset the service advertises, so a tile carrying one would not match the tileset metadata describing it. Configure the `debug` provider's layers explicitly instead, on a map kept for debugging:
+
+```toml
+[[providers]]
+name = "debug"
+type = "debug"
+
+[[maps]]
+name = "mymap_debug"
+  [[maps.layers]]
+  provider_layer = "debug.debug-tile-outline"
+  [[maps.layers]]
+  provider_layer = "debug.debug-tile-center"
 ```
 
-The requested tile will be encoded with a layer that has the `name` value set to `debug` and includes the three following features.
+Those layers have the `name` values `debug-tile-outline` and `debug-tile-center`, and include the three following features.
 
 - `debug_outline` is a line feature that traces the border of the tile
 - `debug_text` is a point feature in the middle of the tile with the following tags:
@@ -477,8 +464,9 @@ except where noted below.
 
 ### What Shigola adds
 
-- **[OGC API - Tiles](docs/ogc-api-tiles.md)** — a standards-compliant tile API alongside the native
-  `/maps/...` routes, verified against the OGC CITE executable test suite.
+- **[OGC API - Tiles](docs/ogc-api-tiles.md)** — a standards-compliant tile API, and the only one
+  this server offers, where Tegola serves tiles from its own `/maps/...` routes. Verified against the
+  OGC CITE executable test suite.
 - **Multiple tile matrix sets** — `WebMercatorQuad`, `WorldCRS84Quad` and `WGS1984Quad`, selectable
   per map with `tile_matrix_sets`, where Tegola serves one implicit scheme.
 - **[Layered cache](#layered-cache)** — `type = "multi"`: an ordered chain of cache backends with

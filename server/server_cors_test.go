@@ -30,6 +30,12 @@ func CORSTest(tc CORSTestCase) func(*testing.T) {
 		}
 		server.Port = tc.port
 		server.URIPrefix = "/"
+		// Configured headers override the CORS defaults this asserts, and
+		// server.Headers is a package variable that TestMiddlewareHeaders leaves
+		// set. This used to pass only because the CORS cases lived in files the
+		// compiler ordered ahead of that test; they now live in
+		// native_routes_removed_test.go, which it orders after.
+		server.Headers = nil
 
 		// setup a new router. this handles parsing our URL wildcards (i.e. :map_name, :z, :x, :y)
 		router := server.NewRouter(nil)
@@ -59,5 +65,20 @@ func CORSTest(tc CORSTestCase) func(*testing.T) {
 			t.Errorf("wrong header for Access-Control-Allow-Methods. expected %v got %v", []string{"GET", "OPTIONS"}, headers["Access-Control-Allow-Methods"])
 			return
 		}
+	}
+}
+
+// TestCORS covers the preflight the OPTIONS handler answers for every registered
+// route. The headers are the router's, not any handler's, so a sample of the
+// surface exercises the same code.
+func TestCORS(t *testing.T) {
+	tests := map[string]CORSTestCase{
+		"tile":         {uri: ogcTileURI},
+		"landing page": {uri: "/"},
+		"collections":  {uri: "/collections"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, CORSTest(tc))
 	}
 }
