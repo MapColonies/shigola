@@ -53,7 +53,7 @@ Schemes are configured per map, not per layer. A map's layer-collections offer e
 their map does.
 
 A map's tileset metadata is served per scheme, at
-`/collections/{map}/tiles/{tileMatrixSetId}`. Asking for it as TileJSON (`?f=tilejson`) adds
+`/collections/{collectionId}/tiles/{tileMatrixSetId}`. Asking for it as TileJSON (`?f=tilejson`) adds
 Shigola's `crs` and `tileMatrixSetId` extension members, since TileJSON itself assumes WebMercator
 and defines neither.
 
