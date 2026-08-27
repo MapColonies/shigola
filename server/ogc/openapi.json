@@ -174,7 +174,7 @@
       "get": {
         "tags": ["Tiles"],
         "summary": "Fetch one vector tile",
-        "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from Shigola's native /maps/ routes, which are z/x/y.",
+        "description": "The path is {tileMatrix}/{tileRow}/{tileCol} — zoom, row, then column. Note that this is transposed from the z/x/y order of the /maps/ routes this replaced.",
         "operationId": ".collection.vector.getTile",
         "parameters": [
           { "$ref": "#/components/parameters/collectionId" },

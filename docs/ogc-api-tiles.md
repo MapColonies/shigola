@@ -1,7 +1,8 @@
 # OGC API - Tiles
 
 shigola serves [OGC API - Tiles](https://ogcapi.ogc.org/tiles/) for vector (Mapbox Vector Tile)
-data, alongside its native `/maps/...` routes.
+data. It is the only tile surface: the native `/maps/...` routes it was once additive to have been
+removed.
 
 ## Upgrading — two breaking changes
 
@@ -45,7 +46,7 @@ before:
 [[maps]]
   name = "parks"
   # Omit for every scheme this build serves. The first entry is the map's
-  # default: the scheme its native /maps/... routes serve.
+  # default: WebMercatorQuad.
   tile_matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"]
 ```
 
@@ -138,11 +139,12 @@ usable collection id.
 ### Tile paths are z/y/x
 
 OGC orders a tile path `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then **column**. This is
-transposed from shigola's native `/maps/{map}/{z}/{x}/{y}`, which is zoom, column, row.
+transposed from the `z/x/y` order of the removed `/maps/{map}/{z}/{x}/{y}` routes, which is the one
+thing to get right when moving a client across:
 
 ```
-/maps/parks/3/5/2                                  z=3 x=5 y=2
-/collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5   — the same tile
+was    /maps/parks/3/5/2                                  z=3 x=5 y=2
+now    /collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5   — the same tile
 ```
 
 Rows and columns are validated separately, so a transposed request is rejected rather than served
@@ -167,22 +169,24 @@ the representation, and for this resource that representation is an OpenAPI 3.0 
 OGC requires carry the specific media type.
 
 `mvt` is canonical: it is what every link and template this service emits says, and it is the name
-in the OGC conformance class. `pbf` is accepted because that is what the same tile is called by
-shigola's native routes, which serve it at a `.pbf` extension, and by the `format` member of the
-TileJSON above — being refused for using our own word for it would be surprising. Matching ignores
+in the OGC conformance class. `pbf` is accepted because that is what the removed `/maps/...` routes
+called the same tile, serving it at a `.pbf` extension, and it is what the `format` member of the
+TileJSON above says — being refused for using our own word for it would be surprising. Matching ignores
 case. The alias resolves to MVT before a resource's own formats are consulted, so `?f=pbf` on a
 JSON-only resource is still a 400.
 
 ## Caching
 
-OGC tile requests use the same cache keys as the native routes, so a tile seeded through
-`shigola cache seed` is served by both, and neither generates it twice. The key is
+Tile requests use the same cache keys `shigola cache seed` writes, so a seeded tile is served rather
+than generated a second time. The key is
 `{tileMatrixSetId}/{map}/{layer}/{z}/{x}/{y}` — it does not include the query string, so every
 spelling of `?f=` shares one entry rather than storing the same bytes twice.
 
 A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
-it, and a shigola map can declare query parameters that change what a tile contains. The native
-routes take the same position more bluntly, skipping the cache for any query string at all.
+it. Nothing on this surface passes query parameters through to a provider — `[[maps.params]]` is
+still configurable but unread, since the route that consumed it was the removed per-layer tile route
+— so no such request can reach a different rendering. Serving it uncached is what keeps that true if
+it ever changes: tiles must not already be pooled under a key that ignores a parameter.
 
 `cache seed` and `cache purge` take `--tile-matrix-set`. One run covers one scheme: it enumerates a
 single tile pyramid, so a run cannot cover two schemes at once.

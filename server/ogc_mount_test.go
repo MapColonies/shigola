@@ -68,20 +68,19 @@ func TestOGCMount(t *testing.T) {
 		}
 	})
 
-	// The capabilities endpoints this used to check are gone (MAPCO-11483); a
-	// native tile route is what is left to show that mounting the OGC surface at
-	// the root did not displace the native surface. TestCapabilitiesRemoved
-	// covers the other side of that.
-	t.Run("the native routes are untouched", func(t *testing.T) {
-		uri := "/maps/" + testMapName + "/4/2/3.pbf"
-
-		w, _, err := doRequest(t, a, http.MethodGet, uri, nil)
+	// There is no longer a native surface for the mount to displace: the
+	// capabilities, style and tile routes it once shared the router with are all
+	// gone (MAPCO-11483, MAPCO-11485, MAPCO-11484). What is left to check is that
+	// the surface taking the root still serves a tile from it, which is the whole
+	// point of taking the root at all.
+	t.Run("a tile is served under the mounted surface", func(t *testing.T) {
+		w, _, err := doRequest(t, a, http.MethodGet, ogcTileURI, nil)
 		if err != nil {
 			t.Fatalf("request: %v", err)
 		}
 
 		if w.Code != http.StatusOK {
-			t.Errorf("%v status = %d, want 200", uri, w.Code)
+			t.Errorf("%v status = %d, want 200", ogcTileURI, w.Code)
 		}
 	})
 }

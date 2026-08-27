@@ -30,6 +30,12 @@ func CORSTest(tc CORSTestCase) func(*testing.T) {
 		}
 		server.Port = tc.port
 		server.URIPrefix = "/"
+		// Configured headers override the CORS defaults this asserts, and
+		// server.Headers is a package variable that TestMiddlewareHeaders leaves
+		// set. This used to pass only because the CORS cases lived in files the
+		// compiler ordered ahead of that test; they now live in
+		// native_routes_removed_test.go, which it orders after.
+		server.Headers = nil
 
 		// setup a new router. this handles parsing our URL wildcards (i.e. :map_name, :z, :x, :y)
 		router := server.NewRouter(nil)

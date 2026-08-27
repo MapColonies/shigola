@@ -316,9 +316,15 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Not "caching is disabled for these maps", which is what this said while the
+	// native per-layer tile route read configured parameters and its cache
+	// middleware skipped any request carrying a query string. That route is gone
+	// (MAPCO-11484) and nothing replaced its parameter handling, so the
+	// parameters are simply not read. The old wording would tell an operator
+	// their parameters work and merely cost them the cache.
 	if len(mapsWithCustomParams) > 0 {
 		log.Infof(
-			"Caching is disabled for these maps, since they have configured custom parameters: %s",
+			"Configured custom parameters are not read by any route and have no effect on these maps: %s",
 			strings.Join(mapsWithCustomParams, ", "),
 		)
 	}

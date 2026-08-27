@@ -58,7 +58,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 
 	tests := map[string]tcase{
 		"default headers GET": {
-			uri:           "/maps/test-map/10/2/3.pbf",
+			uri:           "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod:    http.MethodGet,
 			customHeaders: map[string]string{},
 			expectedResponseHeaders: map[string]string{
@@ -67,7 +67,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 			},
 		},
 		"user defined headers GET": {
-			uri:        "/maps/test-map/10/2/3.pbf",
+			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodGet,
 			customHeaders: map[string]string{
 				"Test-Header": "tegola",
@@ -79,7 +79,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 			},
 		},
 		"user defined cors override GET": {
-			uri:        "/maps/test-map/10/2/3.pbf",
+			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodGet,
 			customHeaders: map[string]string{
 				"Access-Control-Allow-Origin":  "tegola.io",
@@ -91,7 +91,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 			},
 		},
 		"default headers OPTIONS": {
-			uri:           "/maps/test-map/10/2/3.pbf",
+			uri:           "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod:    http.MethodOptions,
 			customHeaders: map[string]string{},
 			expectedResponseHeaders: map[string]string{
@@ -100,7 +100,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 			},
 		},
 		"user defined headers OPTIONS": {
-			uri:        "/maps/test-map/10/2/3.pbf",
+			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodOptions,
 			customHeaders: map[string]string{
 				"Test-Header": "tegola",
@@ -112,7 +112,7 @@ func TestMiddlewareHeaders(t *testing.T) {
 			},
 		},
 		"user defined cors override OPTIONS": {
-			uri:        "/maps/test-map/10/2/3.pbf",
+			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodOptions,
 			customHeaders: map[string]string{
 				"Access-Control-Allow-Origin":  "tegola.io",

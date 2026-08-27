@@ -77,7 +77,7 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 
 	tests := map[string]tcase{
 		"Accept-Encoding: gzip": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "gzip",
 			},
@@ -86,7 +86,7 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 			},
 		},
 		"Accept-Encoding: foo, gzip": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "foo, gzip",
 			},
@@ -95,14 +95,14 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 			},
 		},
 		"Accept-Encoding: gzip;q=0": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "gzip;q=0",
 			},
 			expectedResponseHeaders: map[string]string{},
 		},
 		"Accept-Encoding: *": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "*",
 			},
@@ -111,7 +111,7 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 			},
 		},
 		"Accept-Encoding: foo, *": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "foo, *",
 			},
@@ -120,14 +120,14 @@ func TestMiddlewareGzipHandler(t *testing.T) {
 			},
 		},
 		"Accept-Encoding: *;q=0": {
-			uri: "/maps/test-map/10/2/3.pbf",
+			uri: "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders: map[string]string{
 				"Accept-Encoding": "*;q=0",
 			},
 			expectedResponseHeaders: map[string]string{},
 		},
 		"Accept-Encoding missing": {
-			uri:                     "/maps/test-map/10/2/3.pbf",
+			uri:                     "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			requestHeaders:          map[string]string{},
 			expectedResponseHeaders: map[string]string{},
 		},

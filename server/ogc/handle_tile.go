@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dimfeld/httptreemux"
 	"github.com/go-spatial/geom/slippy"
@@ -68,8 +69,8 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The same key the native routes use, so a tile seeded or served through
-	// /maps/... is served here too rather than generated a second time.
+	// The same key `shigola cache seed` writes, so a seeded tile is served
+	// rather than generated a second time.
 	//
 	// Only for a request the key can actually describe: see cacheable.
 	cacher := s.cfg.Atlas.GetCache()
@@ -100,13 +101,53 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 
 	if cacher != nil {
 		w.Header().Set("Shigola-Cache", "MISS")
-		if err := cacher.Set(r.Context(), &key, body); err != nil {
-			logf("ogc: writing to cache: %v", err)
-		}
 	}
 
 	writeTile(w, body)
+
+	if cacher != nil {
+		cacheAfterResponse(w, r, cacher, &key, body)
+	}
 }
+
+// cacheAfterResponse writes a tile to the cache once the client has it.
+//
+// The order matters, and so does the flush. net/http buffers the response, so a
+// tile small enough to sit in that buffer does not leave the process until the
+// handler returns -- which means a cache write on the way out delays the client
+// by however long the slowest tier takes, even though nothing the client asked
+// for depends on it.
+//
+// This was the native tile-cache middleware's job until MAPCO-11484 deleted it,
+// and it moves here with the caching itself. Every registered cache writes
+// through a bounded pool that returns immediately, so in a normal deployment
+// the write is already off the response path; doing it in this order is what
+// makes that a property of this handler rather than of how the cache happened to
+// be assembled.
+func cacheAfterResponse(w http.ResponseWriter, r *http.Request, cacher cache.Interface, key *cache.Key, body []byte) {
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	} else {
+		// Fires once per process: a response writer that cannot be flushed is a
+		// property of the assembled middleware stack, not of one request, so a
+		// line per request would say nothing extra.
+		warnUnflushable.Do(func() {
+			logf("ogc: %T is not an http.Flusher, so tile bytes wait for the handler to return", w)
+		})
+	}
+
+	// A canceled request has no client left to serve it, and its context is the
+	// one the write would use.
+	if r.Context().Err() != nil {
+		return
+	}
+
+	if err := cacher.Set(r.Context(), key, body); err != nil {
+		logf("ogc: writing to cache: %v", err)
+	}
+}
+
+var warnUnflushable sync.Once
 
 // cacheable reports whether a request's tile may be read from or written to the
 // cache.
@@ -120,13 +161,15 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 // "f" is excluded because it is this surface's own format selector, and every
 // value it accepts names the same media type and yields the same bytes.
 //
-// The native routes take the same position more bluntly: their middleware skips
-// the cache for any query string at all, because a tegola map can declare query
-// parameters that change what a tile contains (see atlas.SeedMapTile, which
-// refuses to seed such a map for the same reason). This surface passes no
-// parameters to Encode today, so no such request can reach a different
-// rendering — but if that ever changes, tiles must not already be pooled under a
-// key that ignores it.
+// The removed native routes took the same position more bluntly: their
+// middleware skipped the cache for any query string at all, because a shigola
+// map can declare query parameters that change what a tile contains (see
+// atlas.SeedMapTile, which refuses to seed such a map for the same reason).
+// Nothing reads those parameters now -- the route that did went with the
+// middleware -- and this surface passes none to Encode, so no request can reach
+// a different rendering. Serving a parameterised request uncached is what keeps
+// that safe if it ever changes: tiles must not already be pooled under a key
+// that ignores it.
 func cacheable(r *http.Request) bool {
 	for name := range r.URL.Query() {
 		if name != "f" {

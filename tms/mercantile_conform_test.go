@@ -11,8 +11,8 @@ package tms
 // read out of the bundled OGC definition. Two unrelated derivations agreeing to
 // within a micrometre is the actual evidence of conformance.
 //
-// Getting this wrong is what a WebMercator regression looks like: existing
-// /maps/... URLs would silently shift.
+// Getting this wrong is what a WebMercator regression looks like: existing tile
+// URLs would silently shift, and so would every cache key under them.
 
 import (
 	"math"
