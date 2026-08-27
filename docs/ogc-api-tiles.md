@@ -104,6 +104,25 @@ rather than in it. Neither member appears when the binary was built without a ve
 
 The removed `/capabilities` endpoint used to be the only place this was reported.
 
+### No style document
+
+Shigola serves no style document. The `/maps/{map}/style.json` endpoint that generated a Mapbox GL
+style is gone (MAPCO-11485), and nothing replaces it: styling is a separate specification — OGC API -
+Styles — which this server does not implement. A client brings its own style and points its vector
+source at a tileset's TileJSON:
+
+```json
+"sources": {
+  "parks": {
+    "type": "vector",
+    "url": "http://localhost:8080/collections/parks/tiles/WebMercatorQuad?f=tilejson"
+  }
+}
+```
+
+This is a deliberate omission, not a gap: a generated style guessed colours from layer names, which
+is not something a tile server is better placed to decide than the client rendering it.
+
 ### Collections
 
 Every map is a collection, and so is every layer of every map:

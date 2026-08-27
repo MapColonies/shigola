@@ -88,10 +88,6 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 	group.UsingContext().
 		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/:layer_name/:z/:x/:y", o, HeadersHandler(GZipHandler(TileCacheHandler(a, hMapLayerZXY)))))
 
-	// map style
-	group.UsingContext().
-		Handler(observability.InstrumentAPIHandler(http.MethodGet, "/maps/:map_name/style.json", o, HeadersHandler(HandleMapStyle{})))
-
 	// OGC API - Tiles surface. Mounted with the same middleware as the native
 	// routes so that headers, CORS and instrumentation behave identically.
 	// It takes over "/" for the landing page (ADR-0003), which it can now do

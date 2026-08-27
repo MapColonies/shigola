@@ -96,12 +96,6 @@ Return vector tiles for a map layer. The URI supports the same variables as the 
 
 - `:layer_name` is the name of the map layer as defined in the `config.toml` file.
 
-```
-/maps/:map_name/style.json
-```
-
-Return an auto generated [Mapbox GL Style](https://www.mapbox.com/mapbox-gl-js/style-spec/) for the configured map.
-
 ## Configuration
 
 The shigola config file uses the [TOML](https://github.com/toml-lang/toml) format. The following example shows how to configure a `mvt_postgis` data provider. The `mvt_postgis` provider will leverage PostGIS's `ST_AsMVT()` function for the encoding of the vector tile.

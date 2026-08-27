@@ -25,7 +25,6 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/theckman/goconstraint v1.10.1-0.20180216224824-e867bde6e4e1
-	gopkg.in/go-playground/colors.v1 v1.0.2-0.20150924111726-b53ecfb39623
 )
 
 require (
