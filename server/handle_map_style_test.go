@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MapColonies/shigola/mapbox/style"
+	providerDebug "github.com/MapColonies/shigola/provider/debug"
 	"github.com/MapColonies/shigola/server"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/go-test/deep"
@@ -167,6 +168,50 @@ func TestHandleMapStyle(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+func TestHandleMapStyleDebug(t *testing.T) {
+	server.HostName = &url.URL{Host: serverHostName}
+	server.URIPrefix = "/"
+
+	resp, _, err := doRequest(t, nil, http.MethodGet, "/maps/"+testMapName+"/style.json?debug=true", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	if resp.Code != http.StatusOK {
+		t.Fatalf("handler returned status %d, want %d", resp.Code, http.StatusOK)
+	}
+
+	var output style.Root
+	if err := json.NewDecoder(resp.Body).Decode(&output); err != nil {
+		t.Fatalf("unable to unmarshal JSON response body: %s", err)
+	}
+
+	source, ok := output.Sources[testMapName]
+	if !ok {
+		t.Fatalf("style has no source for %q", testMapName)
+	}
+	if source.URL != "" {
+		t.Errorf("debug style source URL = %q, want an inline tile template", source.URL)
+	}
+	if diff := deep.Equal(source.Tiles, []string{
+		"http://" + serverHostName + "/maps/" + testMapName + "/{z}/{x}/{y}.pbf?debug=true",
+	}); diff != nil {
+		t.Errorf("debug style tiles differ: %s", diff)
+	}
+
+	layerIDs := make([]string, 0, len(output.Layers))
+	for _, layer := range output.Layers {
+		layerIDs = append(layerIDs, layer.ID)
+	}
+	if diff := deep.Equal(layerIDs, []string{
+		testLayer1.MVTName(),
+		testLayer2.MVTName(),
+		providerDebug.LayerDebugTileOutline,
+		providerDebug.LayerDebugTileCenter,
+	}); diff != nil {
+		t.Errorf("debug style layer IDs differ: %s", diff)
 	}
 }
 
