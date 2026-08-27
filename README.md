@@ -87,7 +87,7 @@ Return a vector tile. Every route this server serves belongs to the OGC API - Ti
 - `:collection_id` is a map name from the `config.toml` file, or `map:layer` for a single layer.
 - `:tile_matrix_set_id` is the tiling scheme, e.g. `WebMercatorQuad`.
 - `:tile_matrix` is the zoom level, and `:tile_row`/`:tile_col` are the tile's **row then column** —
-  transposed from the `z/x/y` order the removed `/maps/...` routes used.
+  worth checking against a client that assumes the `z/x/y` order most tile URLs use.
 
 ## Configuration
 
@@ -125,11 +125,9 @@ name = "zoning"                           # the collection id: /collections/zoni
   min_zoom = 10                           # minimum zoom level to include this layer
   max_zoom = 16                           # maximum zoom level to include this layer
 
-  # NOT READ BY ANY ROUTE. Query parameters were passed to provider queries by
-  # the native /maps/:map_name/:layer_name/:z/:x/:y route, which has been removed
-  # (MAPCO-11484); the OGC tile route passes none. The keys still validate, so a
-  # config carrying them keeps loading, and the server logs that they have no
-  # effect.
+  # NOT READ BY ANY ROUTE. No route passes query parameters through to a
+  # provider query. The keys still validate, so a config carrying them keeps
+  # loading, and the server logs that they have no effect.
   [[maps.params]]
   name          = "param"         # name used in the URL
   token         = "!PARAM!"       # token to replace in providers.layers.sql query
@@ -393,9 +391,7 @@ The following environment variables can be used to control various runtime optio
 
 When debugging client side, it's often helpful to see an outline of a tile along with its Z/X/Y values.
 
-The `debug=true` query parameter that used to add those layers to any tile is gone: it was honoured by the native `/maps/...` tile route, which has been removed (MAPCO-11484), and the OGC tile route has no equivalent — a debug layer is not part of any tileset the service advertises, so a tile carrying one would not match the tileset metadata describing it.
-
-The `debug` provider itself is still registrable, so the same layers can be configured explicitly on a map used for debugging:
+There is no query parameter for this: a debug layer is not part of any tileset the service advertises, so a tile carrying one would not match the tileset metadata describing it. Configure the `debug` provider's layers explicitly instead, on a map kept for debugging:
 
 ```toml
 [[providers]]
@@ -468,8 +464,8 @@ except where noted below.
 
 ### What Shigola adds
 
-- **[OGC API - Tiles](docs/ogc-api-tiles.md)** — a standards-compliant tile API, and the only tile
-  API: it replaced Tegola's `/maps/...` routes rather than sitting beside them. Verified against the
+- **[OGC API - Tiles](docs/ogc-api-tiles.md)** — a standards-compliant tile API, and the only one
+  this server offers, where Tegola serves tiles from its own `/maps/...` routes. Verified against the
   OGC CITE executable test suite.
 - **Multiple tile matrix sets** — `WebMercatorQuad`, `WorldCRS84Quad` and `WGS1984Quad`, selectable
   per map with `tile_matrix_sets`, where Tegola serves one implicit scheme.

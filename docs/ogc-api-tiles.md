@@ -1,8 +1,7 @@
 # OGC API - Tiles
 
 shigola serves [OGC API - Tiles](https://ogcapi.ogc.org/tiles/) for vector (Mapbox Vector Tile)
-data. It is the only tile surface: the native `/maps/...` routes it was once additive to have been
-removed.
+data. It is the only tile surface shigola serves.
 
 ## Upgrading — two breaking changes
 
@@ -103,14 +102,11 @@ OpenAPI's `info.version` is the version of the *API* — fixed by the specificat
 implements, and unmoved by a rebuild — so the build is reported alongside it as an `x-` extension
 rather than in it. Neither member appears when the binary was built without a version stamped in.
 
-The removed `/capabilities` endpoint used to be the only place this was reported.
-
 ### No style document
 
-Shigola serves no style document. The `/maps/{map}/style.json` endpoint that generated a Mapbox GL
-style is gone (MAPCO-11485), and nothing replaces it: styling is a separate specification — OGC API -
-Styles — which this server does not implement. A client brings its own style and points its vector
-source at a tileset's TileJSON:
+Shigola serves no style document. Styling is a separate specification — OGC API - Styles — which this
+server does not implement. A client brings its own style and points its vector source at a tileset's
+TileJSON:
 
 ```json
 "sources": {
@@ -121,8 +117,8 @@ source at a tileset's TileJSON:
 }
 ```
 
-This is a deliberate omission, not a gap: a generated style guessed colours from layer names, which
-is not something a tile server is better placed to decide than the client rendering it.
+This is a deliberate omission, not a gap: guessing colours from layer names is not something a tile
+server is better placed to decide than the client rendering the tiles.
 
 ### Collections
 
@@ -139,12 +135,10 @@ usable collection id.
 ### Tile paths are z/y/x
 
 OGC orders a tile path `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then **column**. This is
-transposed from the `z/x/y` order of the removed `/maps/{map}/{z}/{x}/{y}` routes, which is the one
-thing to get right when moving a client across:
+worth checking against a client that assumes the `z/x/y` order most tile URLs use:
 
 ```
-was    /maps/parks/3/5/2                                  z=3 x=5 y=2
-now    /collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5   — the same tile
+/collections/parks/tiles/WebMercatorQuad/3/2/5      z=3 y=2 x=5
 ```
 
 Rows and columns are validated separately, so a transposed request is rejected rather than served
@@ -169,9 +163,9 @@ the representation, and for this resource that representation is an OpenAPI 3.0 
 OGC requires carry the specific media type.
 
 `mvt` is canonical: it is what every link and template this service emits says, and it is the name
-in the OGC conformance class. `pbf` is accepted because that is what the removed `/maps/...` routes
-called the same tile, serving it at a `.pbf` extension, and it is what the `format` member of the
-TileJSON above says — being refused for using our own word for it would be surprising. Matching ignores
+in the OGC conformance class. `pbf` is accepted because it is the name the same tile carries in the
+`format` member of the TileJSON above, and the extension vector tiles are commonly served at — being
+refused for using that word would be surprising. Matching ignores
 case. The alias resolves to MVT before a resource's own formats are consulted, so `?f=pbf` on a
 JSON-only resource is still a 400.
 
@@ -184,9 +178,9 @@ spelling of `?f=` shares one entry rather than storing the same bytes twice.
 
 A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
 it. Nothing on this surface passes query parameters through to a provider — `[[maps.params]]` is
-still configurable but unread, since the route that consumed it was the removed per-layer tile route
-— so no such request can reach a different rendering. Serving it uncached is what keeps that true if
-it ever changes: tiles must not already be pooled under a key that ignores a parameter.
+configurable but unread — so no such request can reach a different rendering. Serving it uncached is
+what keeps that true if it ever changes: tiles must not already be pooled under a key that ignores a
+parameter.
 
 `cache seed` and `cache purge` take `--tile-matrix-set`. One run covers one scheme: it enumerates a
 single tile pyramid, so a run cannot cover two schemes at once.
