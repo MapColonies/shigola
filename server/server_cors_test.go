@@ -67,3 +67,18 @@ func CORSTest(tc CORSTestCase) func(*testing.T) {
 		}
 	}
 }
+
+// TestCORS covers the preflight the OPTIONS handler answers for every registered
+// route. The headers are the router's, not any handler's, so a sample of the
+// surface exercises the same code.
+func TestCORS(t *testing.T) {
+	tests := map[string]CORSTestCase{
+		"tile":         {uri: ogcTileURI},
+		"landing page": {uri: "/"},
+		"collections":  {uri: "/collections"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, CORSTest(tc))
+	}
+}

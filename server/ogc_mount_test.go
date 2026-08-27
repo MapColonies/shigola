@@ -14,8 +14,9 @@ import (
 //
 // ADR-0003 originally recorded this as a trade: the landing page took the root
 // and displaced the embedded viewer to /viewer. The viewer is gone, so what is
-// left of that decision is only the first half -- and the /viewer path it was
-// moved to must now be served by nothing at all.
+// left of that decision is only the first half. That /viewer is now served by
+// nothing is one instance of TestRouterSurface's rule rather than a fact about
+// this mount, and is asserted there.
 func TestOGCMount(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
 	server.URIPrefix = "/"
@@ -49,22 +50,6 @@ func TestOGCMount(t *testing.T) {
 
 		if len(doc.Links) == 0 {
 			t.Error("landing page has no links")
-		}
-	})
-
-	// Both paths, because the viewer answered on both: /viewer redirected to
-	// /viewer/, and the catch-all under it served the embedded assets. A removal
-	// that left either one registered would still be serving a viewer.
-	t.Run("no viewer route is registered", func(t *testing.T) {
-		for _, path := range []string{"/viewer", "/viewer/", "/viewer/index.html"} {
-			w, _, err := doRequest(t, a, http.MethodGet, path, nil)
-			if err != nil {
-				t.Fatalf("request %s: %v", path, err)
-			}
-
-			if w.Code != http.StatusNotFound {
-				t.Errorf("GET %s status = %d, want 404", path, w.Code)
-			}
 		}
 	})
 
