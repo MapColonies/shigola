@@ -55,11 +55,10 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if we have a debug param add it to our URLs
-	debugQuery := url.Values{}
-	if r.URL.Query().Get(QueryKeyDebug) == "true" {
-		debugQuery.Set(QueryKeyDebug, "true")
-
+	// a debug style carries the debug layers, and sources them from a URL that
+	// serves them -- see below
+	debug := r.URL.Query().Get(QueryKeyDebug) == "true"
+	if debug {
 		// update our map to include the debug layers
 		m = m.AddDebugLayers()
 	}
@@ -70,28 +69,35 @@ func (req HandleMapStyle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the map's default tiling scheme -- the one the capabilities document
 	// described.
 	//
-	tileJSONQuery := url.Values{"f": []string{"tilejson"}}
-	mapSource := style.Source{
-		Type: style.SourceTypeVector,
-		URL: (&url.URL{
-			Scheme: scheme(r),
-			Host:   hostName(r).Host,
-			Path: path.Join(
-				URIPrefix, "collections", req.mapName, "tiles", m.TileGrid().ID(),
-			),
-			RawQuery: tileJSONQuery.Encode(),
-		}).String(),
-	}
-
-	// The OGC surface does not expose native debug layers. Preserve the debug
-	// style's existing behavior with an inline template for the native tile route.
-	if debugQuery.Get(QueryKeyDebug) == "true" {
-		mapSource.URL = ""
-		mapSource.Tiles = []string{fmt.Sprintf("%s://%s%s?%s",
-			scheme(r), hostName(r).Host,
-			path.Join(URIPrefix, "maps", req.mapName, "{z}", "{x}", "{y}.pbf"),
-			debugQuery.Encode(),
-		)}
+	// A debug style is the exception. The OGC surface exposes no debug layers, so
+	// its TileJSON would describe tiles without the layers this style names. Such
+	// a style keeps sourcing the native tile route through an inline template,
+	// which is the behaviour it had while the capabilities document was its
+	// source. That template is built with fmt rather than url.URL because
+	// url.URL escapes the {z}/{x}/{y} placeholders it has to carry literally,
+	// emitting them as %7Bz%7D.
+	var mapSource style.Source
+	if debug {
+		mapSource = style.Source{
+			Type: style.SourceTypeVector,
+			Tiles: []string{fmt.Sprintf("%s://%s%s?%s",
+				scheme(r), hostName(r).Host,
+				path.Join(URIPrefix, "maps", req.mapName, "{z}", "{x}", "{y}.pbf"),
+				url.Values{QueryKeyDebug: []string{"true"}}.Encode(),
+			)},
+		}
+	} else {
+		mapSource = style.Source{
+			Type: style.SourceTypeVector,
+			URL: (&url.URL{
+				Scheme: scheme(r),
+				Host:   hostName(r).Host,
+				Path: path.Join(
+					URIPrefix, "collections", req.mapName, "tiles", m.TileGrid().ID(),
+				),
+				RawQuery: url.Values{"f": []string{"tilejson"}}.Encode(),
+			}).String(),
+		}
 	}
 
 	mapboxStyle := style.Root{
