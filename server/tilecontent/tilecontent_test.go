@@ -1,4 +1,4 @@
-package server_test
+package tilecontent_test
 
 import (
 	"fmt"

@@ -122,7 +122,7 @@ For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://git
 
 ### Tile-content checks
 
-`RUN_DATA_TESTS=yes` runs the black-box tile-content checks in `server/`. They stand the server up on
+`RUN_DATA_TESTS=yes` runs the black-box tile-content checks in `server/tilecontent/`. They stand the server up on
 a real listener, ask it for tiles over HTTP, and assert what comes back down to exact tile-space
 coordinates — the one thing no other check here does. `TestMVTProviders` stops at the provider, and
 the OGC CITE suite checks conformance rather than content: its runner notes that it passes against an
@@ -139,10 +139,13 @@ docker wait migration        # must print 0 before going on
 RUN_DATA_TESTS=yes \
   PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
   PGSSLMODE=disable \
-  go test -mod vendor ./server/
+  go test -mod vendor ./server/tilecontent/
 ```
 
-The expected tiles are pinned two ways at once. Golden files under `server/testdata/golden/` hold the
+They live in a package of their own so CI can name the whole set without naming the tests in it: the
+job runs this package, so a check added here is covered the day it lands.
+
+The expected tiles are pinned two ways at once. Golden files under `server/tilecontent/testdata/golden/` hold the
 whole decoded tile and catch changes nobody thought to assert; `-update-golden` rewrites them. A
 second set of assertions is written literally in the test and does **not** move when a golden is
 rewritten, so a golden regenerated in error still fails.

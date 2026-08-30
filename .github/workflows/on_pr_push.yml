@@ -160,9 +160,14 @@ jobs:
             exit 1
           fi
 
-      # Only the tile-content checks. RUN_DATA_TESTS gates them and nothing else
-      # sets it, so they run here and nowhere else -- which is what makes this
-      # job's name mean something.
+      # The whole package, not a list of test names. Every gated check lives in
+      # server/tilecontent, so one added there is covered the day it lands --
+      # where a `-run` pattern silently stops covering whatever nobody
+      # remembered to add to it, and reports ok while matching nothing.
+      #
+      # RUN_DATA_TESTS gates those checks and nothing else sets it, so they run
+      # here and nowhere else, which is what makes this job's name mean
+      # something.
       - name: Check tile contents
         env:
           RUN_DATA_TESTS: yes
@@ -171,7 +176,7 @@ jobs:
           PGSSLKEY: ''
           PGSSLCERT: ''
           PGSSLROOTCERT: ''
-        run: go test -mod vendor -race -run TestTileContent ./server/
+        run: go test -mod vendor -race ./server/tilecontent/
 
       - name: Tear down test environment
         if: always()
