@@ -1,0 +1,4 @@
+layer "edges" extent=4096 keys=[name]
+  id=1 POINT tags={name=string("origin")} [(2048,2048)]
+  id=2 POINT tags={name=string("polar")} [(2048,64)]
+  id=4 POINT tags={name=string("corner")} [(4096,2048)]

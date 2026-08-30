@@ -120,6 +120,72 @@ jobs:
         if: always()
         run: docker compose down
 
+  data:
+    name: Tile contents end to end
+    runs-on: ubuntu-22.04
+
+    # Its own job rather than a step in `test`, because the point is the name.
+    # A failure here means the bytes a client receives changed, and that should
+    # say so in the checks list rather than being one line inside a job that
+    # fails for a hundred other reasons.
+    #
+    # Unfiltered on purpose. It runs on documentation-only pull requests too and
+    # costs a second fixture spin-up each time. A path filter is a list that
+    # drifts: it stops covering a change the day someone adds a package the list
+    # does not name, and it fails by silently not running, which is the failure
+    # mode a check like this exists to rule out.
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      # Same gate as the test job, and for the same reason: `up -d` returns when
+      # the containers start, not when the fixture is loaded, so without waiting
+      # the checks run against a half-restored database. migration.sh runs under
+      # `set -eo pipefail`, so a failed restore arrives as a non-zero status
+      # rather than as an empty database these assertions then blame on the
+      # server.
+      - name: Provision the PostGIS fixture
+        run: |
+          docker compose up -d
+          status=$(docker wait migration)
+          docker logs migration
+          if [ "$status" != "0" ]; then
+            echo "::error::fixture migration failed with exit status $status"
+            exit 1
+          fi
+
+      # The whole package, not a list of test names. Every gated check lives in
+      # server/tilecontent, so one added there is covered the day it lands --
+      # where a `-run` pattern silently stops covering whatever nobody
+      # remembered to add to it, and reports ok while matching nothing.
+      #
+      # RUN_DATA_TESTS gates those checks and nothing else sets it, so they run
+      # here and nowhere else, which is what makes this job's name mean
+      # something.
+      - name: Check tile contents
+        env:
+          RUN_DATA_TESTS: yes
+          PGURI: postgres://postgres:postgres@localhost:5432/shigola
+          PGSSLMODE: disable
+          PGSSLKEY: ''
+          PGSSLCERT: ''
+          PGSSLROOTCERT: ''
+        # -v so the log names every check and every tile it fetched. Without
+        # it a passing run prints one "ok" line, which cannot tell a suite that
+        # verified twenty things apart from one that silently verified none --
+        # the exact failure this job exists to rule out.
+        run: go test -mod vendor -race -v ./server/tilecontent/
+
+      - name: Tear down test environment
+        if: always()
+        run: docker compose down
+
   govulncheck:
     name: Run govulncheck
     runs-on: ubuntu-22.04

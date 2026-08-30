@@ -120,6 +120,56 @@ For more information about this work flow, please refer to this [great explanati
 
 For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://github.com/go-spatial/tegola/blob/master/geom/cmp/cmp_test.go).
 
+### Tile-content checks
+
+`RUN_DATA_TESTS=yes` runs the black-box tile-content checks in `server/tilecontent/`. They stand the server up on
+a real listener, ask it for tiles over HTTP, and assert what comes back down to exact tile-space
+coordinates — the one thing no other check here does. `TestMVTProviders` stops at the provider, and
+the OGC CITE suite checks conformance rather than content: its runner notes that it passes against an
+empty tile.
+
+They have their own gate rather than riding on `RUN_POSTGIS_TESTS` so that exactly one CI job runs
+them, and a failure names itself instead of being one line inside a job that fails for many reasons.
+They need the same fixture stack as everything else:
+
+```bash
+docker compose up -d
+docker wait migration        # must print 0 before going on
+
+RUN_DATA_TESTS=yes \
+  PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGSSLMODE=disable \
+  go test -mod vendor ./server/tilecontent/
+```
+
+They live in a package of their own so CI can name the whole set without naming the tests in it: the
+job runs this package, so a check added here is covered the day it lands.
+
+The expected tiles are pinned two ways at once. Golden files under `server/tilecontent/testdata/golden/` hold the
+whole decoded tile and catch changes nobody thought to assert; `-update-golden` rewrites them. A
+second set of assertions is written literally in the test and does **not** move when a golden is
+rewritten, so a golden regenerated in error still fails.
+
+That split is the only thing keeping the goldens honest, and it works because they are small — 45
+lines across six files, over two fixtures of four and eleven features. Read the diff when you
+regenerate one. If a golden ever grows past what a reviewer will actually read, it has stopped being
+an assertion: the Athens fixture next door would put 633 features and about 4300 coordinate pairs in
+a single one.
+
+Two fixtures, because they answer different questions. `postgis-scheme-edges.sql` is four points
+placed where a 4326 layer is exact in *both* tiling schemes — on a tile edge or the equator — which
+is what the poles, the antimeridian and the tile-corner cases need.
+`postgis-tile-content.sql` is four layers and eleven features around one WorldCRS84Quad tile, with
+one column of each MVT value type, a null attribute, a road clipped at the tile edge, simple and
+holed polygons, a feature outside the tile and a layer outside it entirely.
+
+Two things about that second fixture are worth knowing before you add to it. `ST_AsMVTGeom`'s buffer
+defaults to **256**, not 0, so geometry legitimately runs past the extent — but that buffer decides
+*clipping*, not *selection*: which rows reach it at all is settled earlier by the layer SQL's
+`WHERE geom && !BBOX!` against the unbuffered envelope. And the tile's column is larger than the
+scheme's row count on purpose: reading the path's row and column the wrong way round then asks for a
+row that does not exist, which is a rejection rather than a plausible-looking tile.
+
 ### Coverage floor
 
 CI fails a build whose total statement coverage falls below the floor recorded in
@@ -177,4 +227,3 @@ go run -mod vendor ./ci/coverage -write
 Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
 explicit edit you justify in the pull request, not a side effect of running `-write` on a machine
 with fewer services running.
-
