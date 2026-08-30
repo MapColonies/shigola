@@ -84,6 +84,7 @@ the transform into tile coordinates has to happen in the query.
 name = "landuse"
 # this table uses "geom" for the geometry_fieldname and "gid" for the
 # id_fieldname so they don't need to be configured
+geometry_type = "multipolygon"
 sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
 ```
 
@@ -93,7 +94,7 @@ sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom
 -   `geometry_fieldname` (string): [Optional] the name of the filed which contains the geometry for the feature. defaults to `geom`.
 -   `id_fieldname` (string): [Optional] the name of the feature id field. defaults to `gid`.
 -   `srid` (int): [Optional] the SRID of the layer. Supports `3857` (WebMercator) or `4326` (WGS84).
--   `geometry_type` (string): [Optional] the layer geometry type. If not set, the table will be inspected at startup to try and infer the gemetry type. Valid values are: `Point`, `LineString`, `Polygon`, `MultiPoint`, `MultiLineString`, `MultiPolygon`, `GeometryCollection`.
+-   `geometry_type` (string): [Required in practice] the layer geometry type. Valid values are: `Point`, `LineString`, `Polygon`, `MultiPoint`, `MultiLineString`, `MultiPolygon`, `GeometryCollection`. If it is not set, the layer's SQL is run at startup to infer the type — and a query ending in `ST_AsMVTGeom` returns tile-space geometry that cannot be typed, so the provider fails to start with `returned unsupported geometry type`. Declare it.
 -   `sql` (string): [Required] custom SQL to use use. Supports the following tokens:
     -   `!BBOX!` - [Required] will be replaced with the bounding box of the tile before the query is sent to the database. `!bbox!` and`!BOX!` are supported as well for compatibilitiy with queries from Mapnik and MapServer styles.
     -   `!ZOOM!` - [Optional] will be replaced with the "Z" (zoom) value of the requested tile.
@@ -108,9 +109,13 @@ sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom
     -   `!GEOM_TYPE!` - [Optional] the geom type field name
 
 A `tablename` may be given instead of `sql`, in which case shigola builds the
-query itself. It builds a whole-table select with no `ST_AsMVTGeom` and no
-bounding-box filter, which is not what an MVT layer wants; the removed standard
-type is what that path was shaped for. Write the `sql`.
+query itself — a whole-table select with no `ST_AsMVTGeom` and no bounding-box
+filter, which is not what an MVT layer wants. The removed standard type is what
+that path was shaped for.
+
+It does not quietly serve bad tiles: the generated query selects the geometry
+unwrapped, startup inference cannot type raw PostGIS geometry either, and the
+provider refuses to start. Write the `sql`.
 
 #### Example mvt_postgis and map config
 
@@ -122,6 +127,7 @@ uri = "postgres://postgres:postgres@localhost:5432/shigola"
 
   [[providers.layers]]
   name = "landuse"
+  geometry_type = "multipolygon"
   sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
 
 [[maps]]
@@ -153,6 +159,7 @@ srid = 4326 # setting the srid on the provider to 4326 will cause the !BBOX! val
   name = "landuse"
   # the !BBOX! token used in the WHERE clause is not reprojected so it can match 4326 data
   # the matched data AND the !BBOX! are then reporojected to 3857 prior to being passed to ST_AsMVTGeom
+  geometry_type = "multipolygon"
   sql = "SELECT ST_AsMVTGeom(ST_Transform(geom, 3857),ST_Transform(!BBOX!,3857)) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
 
 [[maps]]

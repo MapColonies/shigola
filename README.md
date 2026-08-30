@@ -109,7 +109,10 @@ uri = "postgresql://shigola:<password>@localhost:5432/shigola?ssl_mode=prefer" #
   name = "landuse"
   # MVT data provider must use SQL statements
   # this table uses "geom" for the geometry_fieldname and "gid" for the id_fieldname so they don't need to be configured
-  # Wrapping the geom with ST_AsMVTGeom is required.
+  # Wrapping the geom with ST_AsMVTGeom is required, and so is declaring
+  # geometry_type: the startup inference that would otherwise guess it reads the
+  # layer's SQL back, and cannot type what ST_AsMVTGeom returns.
+  geometry_type = "multipolygon"
   sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
   # If you want to use the configurable parameters defined in maps.params make sure to include the token in the SQL statement
   sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX! !PARAM!"
