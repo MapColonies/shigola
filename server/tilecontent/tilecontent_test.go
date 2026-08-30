@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola/atlas"
@@ -152,7 +153,42 @@ func fetchTile(t *testing.T, srv *httptest.Server, scheme string, tileMatrix, ti
 		t.Fatalf("reading %v: %v", uri, err)
 	}
 
-	return mvttest.Decode(t, body)
+	tile := mvttest.Decode(t, body)
+
+	// What came back, before anything is asserted about it. A check that
+	// reports only its own verdict cannot tell "the tile held what I expected"
+	// apart from "the tile held nothing and I expected nothing", and the second
+	// is how a fixture that quietly stopped loading looks.
+	t.Logf("GET %v -> 200 %s, %d bytes gzipped, holding %s",
+		uri, resp.Header.Get("Content-Type"), len(body), describe(tile))
+
+	return tile
+}
+
+// describe renders a tile's contents on one line, for the log.
+func describe(tile mvttest.Tile) string {
+	layer, ok := tile.Layer(fixtureLayer)
+	if !ok {
+		return "no " + fixtureLayer + " layer"
+	}
+	if len(layer.Features) == 0 {
+		return "an empty " + fixtureLayer + " layer"
+	}
+
+	parts := make([]string, 0, len(layer.Features))
+	for _, f := range layer.Features {
+		name := f.Tags["name"]
+		if name == "" {
+			name = "unnamed"
+		}
+		where := "no geometry"
+		if len(f.Geom) > 0 {
+			where = fmt.Sprintf("(%d,%d)", f.Geom[0].X, f.Geom[0].Y)
+		}
+		parts = append(parts, fmt.Sprintf("%s#%d%s", name, f.ID, where))
+	}
+
+	return fmt.Sprintf("%d features: %s", len(layer.Features), strings.Join(parts, " "))
 }
 
 // featureAt asserts that the layer holds exactly one feature with the given
@@ -186,19 +222,32 @@ func featureAt(t *testing.T, tile mvttest.Tile, name string, x, y int32) {
 			t.Errorf("feature %q has %v outside the 0..%d tile grid", name, op, extent)
 		}
 	}
+
+	if !t.Failed() {
+		t.Logf("  ok  %-13s id=%d at (%d,%d)", name, f.ID, x, y)
+	}
 }
 
-// featureAbsent asserts the named feature is not in the tile at all.
+// featureAbsent asserts the named feature is not in this tile.
+//
+// Only this tile: whether the scheme can reach the feature at all is a
+// different claim, and the caller makes it by asking for every tile that could
+// hold it. Saying more than that here would put a conclusion in the log that
+// the assertion did not reach.
 func featureAbsent(t *testing.T, tile mvttest.Tile, name string) {
 	t.Helper()
 
 	layer, ok := tile.Layer(fixtureLayer)
 	if !ok {
+		t.Logf("  ok  %-13s absent from this tile, which holds no %v layer at all", name, fixtureLayer)
 		return // no layer at all is the strongest form of absent
 	}
 	if _, ok := layer.FeatureByTag("name", name); ok {
 		t.Errorf("feature %q is present, want it absent; the layer holds %v", name, renderNames(layer))
+		return
 	}
+
+	t.Logf("  ok  %-13s absent from this tile", name)
 }
 
 func renderNames(l mvttest.Layer) []string {

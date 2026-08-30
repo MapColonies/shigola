@@ -176,7 +176,11 @@ jobs:
           PGSSLKEY: ''
           PGSSLCERT: ''
           PGSSLROOTCERT: ''
-        run: go test -mod vendor -race ./server/tilecontent/
+        # -v so the log names every check and every tile it fetched. Without
+        # it a passing run prints one "ok" line, which cannot tell a suite that
+        # verified twenty things apart from one that silently verified none --
+        # the exact failure this job exists to rule out.
+        run: go test -mod vendor -race -v ./server/tilecontent/
 
       - name: Tear down test environment
         if: always()

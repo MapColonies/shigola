@@ -339,5 +339,11 @@ func AssertGolden(t *testing.T, path, got string) {
 
 	if got != string(want) {
 		t.Errorf("%v does not match what was served.\n--- golden ---\n%s\n--- served ---\n%s", path, want, got)
+		return
 	}
+
+	// Logged rather than silent, so a CI run says which goldens it actually
+	// compared. A golden that stopped being checked -- renamed, or its test no
+	// longer reached -- otherwise looks exactly like one that passed.
+	t.Logf("golden ok: %v (%d lines)", path, strings.Count(got, "\n"))
 }
