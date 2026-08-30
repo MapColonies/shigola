@@ -64,7 +64,7 @@ type Config struct {
 	// 1. name -- this is the name that is referenced in
 	// the maps section
 	// 2. type -- this is the name the provider modules register
-	// themselves under. (e.g. postgis, gpkg, mvt_postgis )
+	// themselves under. (e.g. postgis, mvt_postgis )
 	// Note: Use the type to figure out if the provider is a mvt or std provider
 	Providers []env.Dict     `toml:"providers"`
 	Maps      []provider.Map `toml:"maps"`

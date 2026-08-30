@@ -12,6 +12,7 @@ import (
 var removedProviderTypes = []string{
 	"hana",     // MAPCO-11487
 	"mvt_hana", // MAPCO-11487
+	"gpkg",     // MAPCO-11488
 }
 
 // TestRemovedProviderTypes is what makes a provider removal stick.

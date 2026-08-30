@@ -159,7 +159,7 @@ The fixture holds two groups of tables:
 | Tables | Where they come from |
 |:---|:---|
 | `hstore_test`, `ne_10m_land_scale_rank`, `null_geom_test`, `osm_buildings_test`, `three_d_test`, and the `as_numeric`/`tilebbox` functions | Inherited from upstream Tegola. No higher-level source exists, so they are carried forward from the previous dump on each regeneration. |
-| `land_polygons`, `roads_lines`, `places_points` | Converted from the Athens OSM extract at `provider/gpkg/testdata/athens-osm-20170921.gpkg` — the three layers `.github/cite/config.toml` serves through `mvt_postgis`. This is now the OGC conformance suite's only data source, so a fixture that fails to restore takes the conformance run with it. |
+| `land_polygons`, `roads_lines`, `places_points` | Converted from the Athens OSM extract at `testdata/postgis/athens-osm-20170921.gpkg` — the three layers `.github/cite/config.toml` serves through `mvt_postgis`. This is now the OGC conformance suite's only data source, so a fixture that fails to restore takes the conformance run with it. |
 
 `test_tags_table` and `test_warning_log()` are not in the dump; they are applied
 afterwards from the `testdata/postgis/postgis-*.sql` files.

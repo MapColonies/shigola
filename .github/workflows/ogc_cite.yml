@@ -57,7 +57,8 @@ jobs:
       # The suite's data is the Athens OSM extract in the PostGIS fixture; it used
       # to be a GeoPackage checked into the tree, which needed no provisioning and
       # made this workflow's evidence an invisible dependency of the GeoPackage
-      # provider.
+      # provider. That provider is gone (MAPCO-11488); the dependency was moved
+      # here first, deliberately, so the evidence outlived it.
       #
       # `up -d` returns as soon as the containers start, not when the fixture is
       # loaded, so the suite could otherwise begin against a half-restored
@@ -74,22 +75,14 @@ jobs:
             exit 1
           fi
 
-      # The data reaches shigola over pgx now, so this binary has no reason to be
-      # able to open a GeoPackage, and being unable to is what makes "conformance
-      # passes with no GeoPackage present" a fact about the build rather than
-      # about the config.
-      #
-      # CGO_ENABLED=0 is already sufficient for that: the init() that registers
-      # the provider lives in provider/gpkg/gpkg_register.go, behind
-      # `//go:build cgo`, so without cgo the `gpkg` type is simply unknown and
-      # config.Validate rejects it at startup. -tags noGpkgProvider is belt and
-      # braces, and it is the one of the two that survives someone needing cgo
-      # back for an unrelated reason. It is also the build MAPCO-11488 will make
-      # the default.
+      # No build flags: there is no GeoPackage provider to exclude any more, and
+      # nothing left in the tree that cgo changes, so this is the ordinary
+      # build. "Conformance passes with no GeoPackage present" is now a fact
+      # about every shigola binary rather than about this one -- which is what
+      # deleting the provider bought, and why the flags that used to stand in
+      # for it are not worth keeping as decoration.
       - name: Build shigola
-        env:
-          CGO_ENABLED: 0
-        run: go build -mod vendor -tags noGpkgProvider -o "${{ runner.temp }}/shigola" ./cmd/shigola
+        run: go build -mod vendor -o "${{ runner.temp }}/shigola" ./cmd/shigola
 
       # Pulled before shigola starts so the ~1 GB download is not counted against
       # the readiness timeouts in run.sh.

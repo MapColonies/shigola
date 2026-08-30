@@ -4,7 +4,7 @@
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/MapColonies/shigola)
 [![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](LICENSE.md)
 
-Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) with support for [PostGIS](https://postgis.net/) and [GeoPackage](https://www.geopackage.org/) data providers.
+Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) from [PostGIS](https://postgis.net/).
 
 > ### Shigola is a fork of Tegola
 >
@@ -27,7 +27,7 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 
 - Native geometry processing (simplification, clipping, make valid, intersection, contains, scaling, translation)
 - [Mapbox Vector Tile v2 specification](https://github.com/mapbox/vector-tile-spec) compliant.
-- Support for [PostGIS](provider/postgis) and [GeoPackage](provider/gpkg) data providers. Extensible design to support additional data providers.
+- [PostGIS](provider/postgis) data provider, with the MVT encoding done in the database by `ST_AsMVT`. Extensible design to support additional data providers.
 - Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob).
 - [Layered caching](#layered-cache): an ordered chain of cache backends with read-through promotion, per-tier read deadlines and non-blocking writes.
 - Cache seeding and invalidation via individual tiles (ZXY), lat / lon bounds and ZXY tile list.
@@ -433,14 +433,13 @@ The following build flags can be used to turn off certain features of shigola:
 - `noRedisCache` - turn off the Redis cache back end.
 - `noGCSCache` - turn off the Google Cloud Storage cache back end.
 - `noPostgisProvider` - turn off the PostGIS data provider.
-- `noGpkgProvider` - turn off the GeoPackage data provider. Note, GeoPackage uses CGO and will be turned off if the environment variable `CGO_ENABLED=0` is set prior to building.
 - `pprof` - enable [Go profiler](https://golang.org/pkg/net/http/pprof/). Start profile server by setting the environment `SHIGOLA_HTTP_PPROF_BIND` environment (e.g. `SHIGOLA_HTTP_PPROF_BIND=localhost:6060`).
 - `noPrometheusObserver` - turn off support for the Prometheus metric end point.
 
-Example of using the build flags to turn off the Redis cache back end and the GeoPackage provider.
+Example of using the build flags to turn off the Redis cache back end and the S3 cache back end.
 
 ```bash
-go build -tags 'noRedisCache noGpkgProvider'
+go build -tags 'noRedisCache noS3Cache'
 ```
 
 **Setting Version Information** The following flags can be used to set version information:

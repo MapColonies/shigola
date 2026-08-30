@@ -164,11 +164,12 @@ func TestMVTProviders(t *testing.T) {
 			layerNames: []string{"land"},
 			tile:       provider.NewTile(0, 0, 0, 16, 4326),
 		},
-		// The Athens OSM extract, reached through ST_AsMVT rather than through
-		// the GeoPackage provider that has historically been its only home. The
-		// three layers and their id_fieldname are the ones .github/cite/config.toml
-		// serves, so this covers the same ground the OGC conformance suite does
-		// without needing TeamEngine to run.
+		// The Athens OSM extract, reached through ST_AsMVT. It used to be
+		// served out of a GeoPackage, which was its only home until this
+		// fixture existed; that provider is gone now, and this is the path
+		// that replaced it. The three layers and their id_fieldname are the
+		// ones .github/cite/config.toml serves, so this covers the same ground
+		// the OGC conformance suite does without needing TeamEngine to run.
 		//
 		// The tile is the one .github/workflows/ogc_cite.yml passes to run.sh for
 		// WebMercatorQuad, deliberately: a tile chosen independently could drift
