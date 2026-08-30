@@ -1,0 +1,4 @@
+layer "edges" extent=4096 keys=[name]
+  id=1 tags={name=origin} MoveTo(1024,2048)
+  id=3 tags={name=antimeridian} MoveTo(4088,2048)
+  id=4 tags={name=corner} MoveTo(2048,2048)

@@ -120,6 +120,38 @@ For more information about this work flow, please refer to this [great explanati
 
 For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://github.com/go-spatial/tegola/blob/master/geom/cmp/cmp_test.go).
 
+### Tile-content checks
+
+`RUN_DATA_TESTS=yes` runs the black-box tile-content checks in `server/`. They stand the server up on
+a real listener, ask it for tiles over HTTP, and assert what comes back down to exact tile-space
+coordinates — the one thing no other check here does. `TestMVTProviders` stops at the provider, and
+the OGC CITE suite checks conformance rather than content: its runner notes that it passes against an
+empty tile.
+
+They have their own gate rather than riding on `RUN_POSTGIS_TESTS` so that exactly one CI job runs
+them, and a failure names itself instead of being one line inside a job that fails for many reasons.
+They need the same fixture stack as everything else:
+
+```bash
+docker compose up -d
+docker wait migration        # must print 0 before going on
+
+RUN_DATA_TESTS=yes \
+  PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
+  PGSSLMODE=disable \
+  go test -mod vendor ./server/
+```
+
+The expected tiles are pinned two ways at once. Golden files under `server/testdata/golden/` hold the
+whole decoded tile and catch changes nobody thought to assert; `-update-golden` rewrites them. A
+second set of assertions is written literally in the test and does **not** move when a golden is
+rewritten, so a golden regenerated in error still fails.
+
+That split is the only thing keeping the goldens honest, and it works because they are small — a
+dozen lines over a four-point fixture. Read the diff when you regenerate one. If a golden ever grows
+past what a reviewer will actually read, it has stopped being an assertion: the Athens fixture next
+door would put 633 features and about 4300 coordinate pairs in a single one.
+
 ### Coverage floor
 
 CI fails a build whose total statement coverage falls below the floor recorded in
