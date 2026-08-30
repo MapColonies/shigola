@@ -1,7 +1,6 @@
 package postgis_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola/internal/ttools"
@@ -217,65 +216,31 @@ func TestTLSConfig(t *testing.T) {
 func TestNewMVTTileProvider(t *testing.T) {
 	ttools.ShouldSkip(t, postgis.TESTENV)
 
-	type tcase struct {
-		postgis.TCConfig
-		// wantErr is a fragment of the error the config should be rejected
-		// with; empty means the provider must be constructed.
-		wantErr string
-	}
-
-	fn := func(tc tcase) func(t *testing.T) {
+	fn := func(tc postgis.TCConfig) func(t *testing.T) {
 		return func(t *testing.T) {
 			config := tc.Config(postgis.DefaultEnvConfig)
 			config[postgis.ConfigKeyName] = "provider_name"
 
-			_, err := postgis.NewMVTTileProvider(config, nil)
-
-			if tc.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("err = %v, want one containing %q", err, tc.wantErr)
-				}
-				return
-			}
-
-			if err != nil {
+			if _, err := postgis.NewMVTTileProvider(config, nil); err != nil {
 				t.Errorf("unable to create a new provider. err: %v", err)
 			}
 		}
 	}
 
-	tests := map[string]tcase{
+	tests := map[string]postgis.TCConfig{
 		// geometry_type is declared rather than inferred, and has to be:
 		// startup inference reads the layer's SQL back, and a query ending in
 		// ST_AsMVTGeom returns tile-space geometry it cannot type. See the same
-		// note in .github/cite/config.toml.
+		// note in .github/cite/config.toml, and TestTablenameIsNotAnMVTLayer for
+		// what happens without it.
 		"sql, with the geometry wrapped in ST_AsMVTGeom": {
-			TCConfig: postgis.TCConfig{
-				LayerConfig: []map[string]interface{}{
-					{
-						postgis.ConfigKeyLayerName: "land",
-						postgis.ConfigKeyGeomType:  "multipolygon",
-						postgis.ConfigKeySQL:       "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM ne_10m_land_scale_rank WHERE geom && !BBOX!",
-					},
+			LayerConfig: []map[string]interface{}{
+				{
+					postgis.ConfigKeyLayerName: "land",
+					postgis.ConfigKeyGeomType:  "multipolygon",
+					postgis.ConfigKeySQL:       "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM ne_10m_land_scale_rank WHERE geom && !BBOX!",
 				},
 			},
-		},
-		// tablename is a leftover of the removed standard type. It is still
-		// accepted -- genSQL builds a query from it -- but the query it builds
-		// selects the geometry unwrapped, and the geometry-type inspection this
-		// provider does at startup cannot read raw PostGIS geometry back. So the
-		// trap closes at startup rather than at request time, which is the good
-		// direction, and this pins that.
-		"tablename, which the MVT type cannot use": {
-			TCConfig: postgis.TCConfig{
-				LayerConfig: []map[string]interface{}{
-					{
-						postgis.ConfigKeyLayerName: "land",
-						postgis.ConfigKeyTablename: "ne_10m_land_scale_rank",
-					},
-				},
-			},
-			wantErr: "error fetching geometry type for layer (land)",
 		},
 	}
 

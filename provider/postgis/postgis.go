@@ -779,7 +779,20 @@ func (p Provider) setLayerGeomType(l *Layer, geomType string) error {
 func (p Provider) inspectLayerGeomType(pname string, l *Layer, maps []provider.Map) error {
 	var err error
 
-	// we want to know the geom type instead of returning the geom data so we modify the SQL
+	// We want the geom type rather than the geom data, so the SQL is rewritten
+	// to ask for it.
+	//
+	// The ST_AsBinary substitution outlives the standard provider type
+	// (MAPCO-11490) on purpose: genSQL no longer emits ST_AsBinary, but a
+	// hand-written `sql` layer may still wrap its geometry that way, and this is
+	// what lets the type be inferred for one. TestLayerGeomType covers it.
+	//
+	// An ST_AsMVTGeom layer is wrapped rather than substituted, because its
+	// geometry is already in tile space by the time the outer query sees it.
+	// ST_GeometryType of that is the type of the clipped result, which is
+	// commonly NULL at the zoom this inspection uses -- which is why declaring
+	// geometry_type is not really optional here. See provider/postgis/README.md.
+	//
 	// TODO (arolek): this strategy wont work if remove the requirement of wrapping ST_AsBinary(geom) in the SQL statements.
 	//
 	// https://github.com/go-spatial/tegola/issues/180

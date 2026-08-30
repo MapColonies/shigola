@@ -5,9 +5,11 @@ import (
 	"context"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/mvttest"
 	"github.com/MapColonies/shigola/internal/ttools"
@@ -111,9 +113,9 @@ func TestMVTProviders(t *testing.T) {
 
 	type tcase struct {
 		TCConfig
-		layerNames []string
-		err        string
-		tile       provider.Tile
+		layers []mvtLayer
+		err    string
+		tile   provider.Tile
 	}
 	fn := func(tc tcase) func(t *testing.T) {
 		return func(t *testing.T) {
@@ -131,12 +133,12 @@ func TestMVTProviders(t *testing.T) {
 				t.Errorf("NewMVTTileProvider unexpected error: %v", err)
 				return
 			}
-			layers := make([]provider.Layer, len(tc.layerNames))
+			layers := make([]provider.Layer, len(tc.layers))
 
-			for i := range tc.layerNames {
+			for i := range tc.layers {
 				layers[i] = provider.Layer{
-					Name:    tc.layerNames[i],
-					MVTName: tc.layerNames[i],
+					Name:    tc.layers[i].name,
+					MVTName: tc.layers[i].name,
 				}
 			}
 			mvtTile, err := prvd.MVTForLayers(context.Background(), tc.tile, nil, layers)
@@ -144,7 +146,7 @@ func TestMVTProviders(t *testing.T) {
 				t.Errorf("NewProvider unexpected error: %v", err)
 				return
 			}
-			assertMVTForLayers(t, mvtTile, tc.layerNames)
+			assertMVTForLayers(t, mvtTile, tc.layers)
 		}
 	}
 	tests := map[string]tcase{
@@ -161,8 +163,10 @@ func TestMVTProviders(t *testing.T) {
 					},
 				},
 			},
-			layerNames: []string{"land"},
-			tile:       provider.NewTile(0, 0, 0, 16, 4326),
+			// scalerank is the one column selected past the geometry and the
+			// id, so it is the whole of what tag encoding has to get right here.
+			layers: []mvtLayer{{name: "land", tagKeys: []string{"scalerank"}}},
+			tile:   provider.NewTile(0, 0, 0, 16, 4326),
 		},
 		// The Athens OSM extract, reached through ST_AsMVT. It used to be
 		// served out of a GeoPackage, which was its only home until this
@@ -181,9 +185,16 @@ func TestMVTProviders(t *testing.T) {
 		// the interesting case: !BBOX! has to arrive already transformed into the
 		// layer's SRID, not the tile's.
 		"athens, on the tile the conformance suite runs": {
-			TCConfig:   TCConfig{LayerConfig: athensCiteLayers()},
-			layerNames: []string{"land", "roads", "places"},
-			tile:       provider.NewTile(14, 9271, 6324, 16, 3857),
+			TCConfig: TCConfig{LayerConfig: athensCiteLayers()},
+			layers: []mvtLayer{
+				// land selects nothing past geom and fid, so it has no tags at
+				// all -- and that is worth pinning too: a layer that grew one
+				// would mean the fixture or the SQL had changed.
+				{name: "land"},
+				{name: "roads", tagKeys: []string{"highway"}},
+				{name: "places", tagKeys: []string{"place", "is_in"}},
+			},
+			tile: provider.NewTile(14, 9271, 6324, 16, 3857),
 		},
 		// The other half of the pair above. The conformance config serves one map
 		// on both schemes, so a provider that could only answer for one of them
@@ -200,9 +211,16 @@ func TestMVTProviders(t *testing.T) {
 		// assertMVTForLayers only sees a layer ST_AsMVT emitted, and ST_AsMVT
 		// emits nothing at all for a layer with no rows.
 		"athens, on the WorldCRS84Quad tile the conformance suite runs": {
-			TCConfig:   TCConfig{LayerConfig: athensCiteLayers()},
-			layerNames: []string{"land", "roads", "places"},
-			tile:       provider.NewTile(14, 18542, 4740, 16, 4326),
+			TCConfig: TCConfig{LayerConfig: athensCiteLayers()},
+			layers: []mvtLayer{
+				// land selects nothing past geom and fid, so it has no tags at
+				// all -- and that is worth pinning too: a layer that grew one
+				// would mean the fixture or the SQL had changed.
+				{name: "land"},
+				{name: "roads", tagKeys: []string{"highway"}},
+				{name: "places", tagKeys: []string{"place", "is_in"}},
+			},
+			tile: provider.NewTile(14, 18542, 4740, 16, 4326),
 		},
 	}
 	for name, tc := range tests {
@@ -210,33 +228,82 @@ func TestMVTProviders(t *testing.T) {
 	}
 }
 
-// assertMVTForLayers checks a tile against the layers its config asked for.
+// mvtLayer is what one decoded layer of a tile is checked against.
+type mvtLayer struct {
+	name string
+	// tagKeys are the columns the layer's SQL selects alongside the geometry
+	// and the id. They are checked against the layer's key dictionary rather
+	// than against each feature, because ST_AsMVT omits a tag whose value is
+	// NULL -- a column that is genuinely null for some rows is in the layer
+	// and absent from those features.
+	tagKeys []string
+}
+
+// assertMVTForLayers decodes a tile and checks it against what the layers'
+// config said it should hold.
 //
-// Decoding goes through internal/mvttest (MAPCO-11546), which is also what the
-// server-side tile-content checks use. One decoder in the tree, so a tile is
-// described the same way wherever it is inspected -- and the specification's
-// delta-encoded geometry is resolved in one place rather than in each caller.
-//
-// Layers are matched by name rather than by position. The specification does
-// not order layers within a tile, so reading them positionally pins something
-// ST_AsMVT is free to change.
-func assertMVTForLayers(t *testing.T, data []byte, expectedLayerNames []string) {
+// It checks ids and tags, not just layer names, and the reason is recorded on
+// MAPCO-11490: this helper replaced byte-length assertions, which distinguished
+// id and field encoding implicitly -- a tile with the ids dropped was a
+// different length -- and a names-and-non-empty check does not. With the
+// standard provider gone this is the only path there is, so thin cover here is
+// thin cover for the provider.
+func assertMVTForLayers(t *testing.T, data []byte, want []mvtLayer) {
 	t.Helper()
 
+	// Decoding goes through internal/mvttest (MAPCO-11546), which is also what
+	// the server-side tile-content checks use. One decoder in the tree means the
+	// specification's delta-encoded geometry is resolved in one place rather
+	// than independently by each caller.
 	tile := mvttest.DecodeRaw(t, data)
 
-	if len(tile.Layers) != len(expectedLayerNames) {
-		t.Fatalf("layer count = %d, want %d", len(tile.Layers), len(expectedLayerNames))
+	if len(tile.Layers) != len(want) {
+		t.Fatalf("layer count = %d, want %d", len(tile.Layers), len(want))
 	}
 
-	for _, name := range expectedLayerNames {
-		layer, ok := tile.Layer(name)
+	for _, w := range want {
+		// By name rather than position: the MVT specification does not order
+		// layers within a tile, so asserting order would pin something ST_AsMVT
+		// is free to change.
+		layer, ok := tile.Layer(w.name)
 		if !ok {
-			t.Errorf("layer %q is missing; the tile holds %v", name, tile.LayerNames())
+			t.Errorf("layer %q is missing; got %v", w.name, tile.LayerNames())
 			continue
 		}
+
 		if len(layer.Features) == 0 {
-			t.Errorf("layer %q has no features", name)
+			t.Errorf("layer %q has no features", w.name)
+			continue
+		}
+
+		// The layer config names an id_fieldname, so every feature should carry
+		// the row's id. A nil id is the symptom of that column not reaching
+		// ST_AsMVT's feature_id_name argument.
+		for i, f := range layer.Features {
+			if !f.HasID || f.ID == 0 {
+				t.Errorf("layer %q feature %d has id %d (present=%t), want the row's id_fieldname value", w.name, i, f.ID, f.HasID)
+				break
+			}
+		}
+
+		for _, key := range w.tagKeys {
+			if !slices.Contains(layer.Keys, key) {
+				t.Errorf("layer %q keys = %v, want them to include %q", w.name, layer.Keys, key)
+			}
+		}
+
+		// A key dictionary proves nothing if no feature references it.
+		if len(w.tagKeys) > 0 {
+			tagged := false
+			for _, f := range layer.Features {
+				if len(f.Tags) > 0 {
+					tagged = true
+					break
+				}
+			}
+			if !tagged {
+				t.Errorf("layer %q declares keys %v, but no feature carries a tag", w.name, layer.Keys)
+			}
 		}
 	}
 }
@@ -558,4 +625,73 @@ func TestPGXOnNotice(t *testing.T) {
 			noticeBuffer.String(),
 		)
 	}
+}
+
+// TestTablenameIsNotAnMVTLayer pins the trap `tablename` became when the
+// standard provider type was removed (MAPCO-11490).
+//
+// `tablename` is what that type was shaped for: shigola generated the query
+// from it. The generator survived the removal because the same function serves
+// both, so the key is still parsed -- and what it now generates is a
+// whole-table select with no ST_AsMVTGeom and no bounding-box filter, which
+// ST_AsMVT cannot make a correct tile out of.
+//
+// Which of the two halves below a config gets is decided by something
+// unrelated: whether it declared geometry_type. Documenting only the half that
+// fails loudly would be the more comfortable claim and the wrong one, so both
+// are pinned here.
+func TestTablenameIsNotAnMVTLayer(t *testing.T) {
+	ttools.ShouldSkip(t, TESTENV)
+
+	layer := func(extra map[string]any) TCConfig {
+		l := map[string]any{
+			ConfigKeyLayerName: "land",
+			ConfigKeyTablename: "ne_10m_land_scale_rank",
+		}
+		for k, v := range extra {
+			l[k] = v
+		}
+		return TCConfig{LayerConfig: []map[string]any{l}}
+	}
+
+	// Without geometry_type the trap closes at startup, because inferring the
+	// type means reading the generated SQL back and it returns raw PostGIS
+	// geometry rather than something typeable.
+	t.Run("without geometry_type it fails to start", func(t *testing.T) {
+		cfg := layer(nil).Config(DefaultEnvConfig)
+		cfg[ConfigKeyName] = "provider_name"
+
+		_, err := NewMVTTileProvider(cfg, nil)
+		if err == nil {
+			t.Fatal("NewMVTTileProvider() = nil error, want the layer rejected")
+		}
+		if !strings.Contains(err.Error(), "error fetching geometry type for layer (land)") {
+			t.Errorf("err = %v, want it to name the geometry-type inspection", err)
+		}
+	})
+
+	// With it, nothing inspects anything and the provider starts. This is the
+	// dangerous half: the docs tell every reader to declare geometry_type, so
+	// it is also the likely one.
+	t.Run("with geometry_type it starts and generates a non-MVT query", func(t *testing.T) {
+		cfg := layer(map[string]any{ConfigKeyGeomType: "multipolygon"}).Config(DefaultEnvConfig)
+		cfg[ConfigKeyName] = "provider_name"
+
+		prvd, err := NewMVTTileProvider(cfg, nil)
+		if err != nil {
+			t.Fatalf("NewMVTTileProvider() = %v, want nil", err)
+		}
+
+		l, ok := prvd.(*Provider).Layer("land")
+		if !ok {
+			t.Fatal("layer (land) was not registered")
+		}
+
+		if strings.Contains(strings.ToUpper(l.sql), "ST_ASMVTGEOM") {
+			t.Errorf("generated sql = %q, want it to lack ST_AsMVTGeom -- if it has one, this trap is closed and the docs need updating", l.sql)
+		}
+		if strings.Contains(l.sql, config.BboxToken) {
+			t.Errorf("generated sql = %q, want it to lack %v", l.sql, config.BboxToken)
+		}
+	})
 }

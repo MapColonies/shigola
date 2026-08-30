@@ -108,14 +108,17 @@ sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom
     -   `!GEOM_FIELD!` - [Optional] the geom field name
     -   `!GEOM_TYPE!` - [Optional] the geom type field name
 
-A `tablename` may be given instead of `sql`, in which case shigola builds the
-query itself — a whole-table select with no `ST_AsMVTGeom` and no bounding-box
-filter, which is not what an MVT layer wants. The removed standard type is what
-that path was shaped for.
+A `tablename` may be given instead of `sql`, along with `fields` to choose the
+columns it selects. Both are leftovers of the removed standard type, which is
+what that path was shaped for, and neither is usable here: shigola generates a
+whole-table select with no `ST_AsMVTGeom` and no bounding-box filter, which
+`ST_AsMVT` cannot make a correct tile out of.
 
-It does not quietly serve bad tiles: the generated query selects the geometry
-unwrapped, startup inference cannot type raw PostGIS geometry either, and the
-provider refuses to start. Write the `sql`.
+Which way it fails depends on something unrelated. Without `geometry_type` the
+provider refuses to start, because inferring the type means reading that
+generated query back and it returns raw geometry. **With `geometry_type` — which
+you are told above to always declare — it starts, and serves whole-table tiles.**
+Write the `sql`.
 
 #### Example mvt_postgis and map config
 

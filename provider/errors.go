@@ -12,15 +12,19 @@ var (
 	ErrCanceled    = fmt.Errorf("provider: %v", context.Canceled)
 	ErrUnsupported = errors.New("provider: unsupported")
 	ErrNilInitFunc = errors.New("init function can not be nil")
-	// ErrNilReplacement is returned by RegisterRemoved when no successor is
-	// named. A removed type with nothing to point at is one the
+	// ErrMissingReplacement is returned by RegisterRemoved when no successor
+	// is named. A removed type with nothing to point at is one the
 	// unknown-provider error already handles better.
-	ErrNilReplacement = errors.New("replacement provider type can not be empty")
+	ErrMissingReplacement = errors.New("provider: replacement provider type can not be empty")
 )
 
 // ErrRemovedProvider is returned when a config names a provider type this build
 // has stopped serving and something else took over from it.
 type ErrRemovedProvider struct {
+	// Name is the removed provider type, as ErrUnknownProvider.Name is the
+	// unknown one. config.ErrRemovedProviderType, which reports the same fact
+	// one layer up, names the config entry instead and carries the type
+	// separately -- it has both to hand and this does not.
 	Name        string
 	Replacement string
 }

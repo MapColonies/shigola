@@ -312,14 +312,16 @@ var removedProviders map[string]string
 // knows what replaced it.
 func RegisterRemoved(name, replacement string) error {
 	if replacement == "" {
-		return ErrNilReplacement
+		return ErrMissingReplacement
 	}
 	if removedProviders == nil {
 		removedProviders = make(map[string]string)
 	}
 
+	// Registered and removed are contradictory claims about one name, and the
+	// registration is the one with a working init function behind it.
 	if _, ok := providers[name]; ok {
-		return fmt.Errorf("provider %v is registered, so it has not been removed", name)
+		return ErrProviderAlreadyExists{Name: name}
 	}
 
 	removedProviders[name] = replacement

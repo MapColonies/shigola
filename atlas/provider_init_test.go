@@ -11,6 +11,10 @@ import (
 
 // removedProviderTypes are the provider types this fork used to serve and has
 // deliberately stopped serving. Each entry is a ticket's worth of deletion.
+//
+// This is a longer list than provider.removedProviders, and deliberately so:
+// that one records only the types with a named successor to redirect a config
+// to, while this one is every type that must not come back, successor or not.
 var removedProviderTypes = []string{
 	"hana",     // MAPCO-11487
 	"mvt_hana", // MAPCO-11487

@@ -54,8 +54,8 @@ func TestRegisterRemoved(t *testing.T) {
 	})
 
 	t.Run("a successor is required", func(t *testing.T) {
-		if err := RegisterRemoved("another_removed_test_provider", ""); !errors.Is(err, ErrNilReplacement) {
-			t.Errorf("RegisterRemoved with no replacement = %v, want ErrNilReplacement", err)
+		if err := RegisterRemoved("another_removed_test_provider", ""); !errors.Is(err, ErrMissingReplacement) {
+			t.Errorf("RegisterRemoved with no replacement = %v, want ErrMissingReplacement", err)
 		}
 	})
 }
