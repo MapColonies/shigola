@@ -1,0 +1,40 @@
+# What the image build does not need.
+#
+# The Dockerfile ends with `COPY . /go/src/...`, so without this every build
+# ships the whole working tree to the daemon. The build stage runs `go build`
+# and nothing else -- no tests, no generators -- so anything `go build` ignores
+# is freight.
+#
+# vendor/ is deliberately absent from this list. The build is `-mod vendor` and
+# fails without it.
+
+# By far the largest single thing in the context, and of no use to a build that
+# takes its version, branch and revision as build arguments.
+.git
+.gitignore
+.gitattributes
+
+# go build ignores test files; the fixtures they read are several megabytes.
+**/*_test.go
+**/testdata
+
+# Test-only packages. Nothing the binary links reaches them.
+internal/mvttest
+internal/ttools
+provider/test
+server/testcert
+
+# CI, docs and local development. None of it is compiled.
+.github
+.devcontainer
+.claude
+docs
+ci
+docker-compose.yml
+*.dockerfile
+Dockerfile
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store
