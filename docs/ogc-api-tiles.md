@@ -192,9 +192,18 @@ shigola cache seed --config=config.toml --map=parks --bounds=…
 shigola cache seed --config=config.toml --tile-matrix-set=WorldCRS84Quad --bounds=…
 ```
 
-Without `--map`, a run defaults to WebMercatorQuad. If any targeted map does not support the run's
-scheme, the run fails and names those maps rather than skipping them: seeding a map on the wrong
-pyramid writes tiles no request will ever ask for, and would otherwise report success.
+Omitted, the scheme comes from one of two rules: a run with `--map` takes the **first** entry of that
+map's `tile_matrix_sets`, in the order written, and any other run takes WebMercatorQuad. Nothing
+sorts the list, so swapping two entries changes what the same command seeds; a map that omits the key
+is given every servable scheme with WebMercatorQuad first, so it defaults there too.
+
+Either way the run logs a warning naming the scheme it picked and where the choice came from. The
+wrong scheme is not visibly wrong — a seed fills a cache nothing reads and a purge removes another
+scheme's tiles, both exiting 0 — so the warning is the only thing that surfaces it.
+
+If any targeted map does not support the run's scheme, the run fails and names those maps rather than
+skipping them: seeding a map on the wrong pyramid writes tiles no request will ever ask for, and
+would otherwise report success.
 
 `--bounds` is lng/lat and `--bounds-srid` describes those bounds; neither selects the tiling scheme.
 Note that bounds landing exactly on a tile edge no longer include the tile on the far side.

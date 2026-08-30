@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola/atlas"
@@ -184,26 +186,7 @@ func TestGenerateTilesForBounds(t *testing.T) {
 // rather than being skipped.
 func TestResolveSeedPurgeGrid(t *testing.T) {
 	newMap := func(name string, gridIDs ...string) atlas.Map {
-		m := atlas.NewWebMercatorMap(name)
-		if len(gridIDs) == 0 {
-			// The constructor already lists WebMercatorQuad, and registration
-			// never produces a map listing nothing, so leaving it alone is what
-			// a real map looks like. Emptying the list instead would make this
-			// helper build a map that supports no scheme at all.
-			return m
-		}
-
-		grids := make([]*tms.TileMatrixSet, 0, len(gridIDs))
-		for _, id := range gridIDs {
-			grid, err := tms.Get(id)
-			if err != nil {
-				t.Fatalf("tms.Get(%q): %v", id, err)
-			}
-			grids = append(grids, grid)
-		}
-		m.TileMatrixSets = grids
-
-		return m
+		return newTestMap(t, name, gridIDs...)
 	}
 
 	tests := map[string]struct {
@@ -282,6 +265,105 @@ func TestResolveSeedPurgeGrid(t *testing.T) {
 				t.Errorf("resolveSeedPurgeGrid() = %v, want %v", grid.ID(), tc.expected)
 			}
 		})
+	}
+}
+
+// newTestMap builds a map listing the named schemes, in the order given -- the
+// order is what resolveSeedPurgeGrid reads, so it is never sorted here.
+//
+// Naming none leaves the constructor's WebMercatorQuad in place rather than
+// emptying the list. Registration never produces a map listing nothing, so an
+// empty list would make this helper build something no config can express.
+func newTestMap(t *testing.T, name string, gridIDs ...string) atlas.Map {
+	t.Helper()
+
+	m := atlas.NewWebMercatorMap(name)
+	if len(gridIDs) == 0 {
+		return m
+	}
+
+	grids := make([]*tms.TileMatrixSet, 0, len(gridIDs))
+	for _, id := range gridIDs {
+		grid, err := tms.Get(id)
+		if err != nil {
+			t.Fatalf("tms.Get(%q): %v", id, err)
+		}
+		grids = append(grids, grid)
+	}
+	m.TileMatrixSets = grids
+
+	return m
+}
+
+// TestResolveSeedPurgeGridWarnsWhenDefaulted covers the warning a run gets when
+// it never named a scheme.
+//
+// A run that names none still writes a whole pyramid under one, and the wrong
+// one is not visibly wrong: the run reports success either way. The warning is
+// the only thing between an operator and a seeded cache nothing reads, so it has
+// to name the scheme actually used and say where it came from -- "a default was
+// applied" would leave them to work out which.
+func TestResolveSeedPurgeGridWarnsWhenDefaulted(t *testing.T) {
+	type tcase struct {
+		flag    string
+		mapFlag string
+		maps    []atlas.Map
+		want    []string
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			cacheTileMatrixSet, cacheMap, seedPurgeMaps = tc.flag, tc.mapFlag, tc.maps
+			defer func() { cacheTileMatrixSet, cacheMap, seedPurgeMaps = "", "", nil }()
+
+			var buf bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+			defer slog.SetDefault(previous)
+
+			if _, err := resolveSeedPurgeGrid(); err != nil {
+				t.Fatalf("resolveSeedPurgeGrid() error = %v", err)
+			}
+
+			logged := buf.String()
+
+			if len(tc.want) == 0 {
+				if strings.Contains(logged, "--tile-matrix-set") {
+					t.Errorf("warned about a scheme the run named itself: %v", logged)
+				}
+
+				return
+			}
+
+			for _, want := range tc.want {
+				if !strings.Contains(logged, want) {
+					t.Errorf("warning = %q, want it to mention %q", logged, want)
+				}
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"the flag names one, so nothing to warn about": {
+			flag:    tms.WorldCRS84Quad,
+			mapFlag: "crs84",
+			maps:    []atlas.Map{newTestMap(t, "crs84", tms.WorldCRS84Quad)},
+		},
+		"one map, no flag: names the scheme and the map it came from": {
+			mapFlag: "crs84",
+			maps:    []atlas.Map{newTestMap(t, "crs84", tms.WorldCRS84Quad, tms.WebMercatorQuad)},
+			// The handler escapes the quotes around the map name, so match the
+			// name itself rather than the form the message wrote it in.
+			want: []string{tms.WorldCRS84Quad, "first scheme map", "crs84", "--tile-matrix-set"},
+		},
+		"every map, no flag: names WebMercatorQuad and says it is the default": {
+			maps: []atlas.Map{newTestMap(t, "a"), newTestMap(t, "b")},
+			want: []string{tms.WebMercatorQuad, "not scoped to one map", "--tile-matrix-set"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }
 
