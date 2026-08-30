@@ -83,6 +83,15 @@ var (
 	seedWriteTiers []string
 )
 
+// ErrNoGridResolved is what the two places that must not proceed without the
+// run's scheme — the tile-name check and the tile generator — report when
+// seedPurgeGrid was never set.
+//
+// Both said it in their own words before. One sentinel means a caller can test
+// for the condition, and that the two cannot drift into two different messages
+// for one bug.
+var ErrNoGridResolved = errors.New("cache: no tile matrix set has been resolved for this run")
+
 // resolveCacheTiers turns the --cache-tiers flag into the list of tier names
 // this run may write, or nil for "no restriction".
 //
@@ -193,7 +202,7 @@ func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 		// would defeat the check: in a WorldCRS84Quad run it would validate
 		// against WebMercatorQuad and pass exactly the tiles this exists to
 		// reject.
-		return fmt.Errorf("no tile matrix set has been resolved for this run")
+		return ErrNoGridResolved
 	}
 
 	if err := grid.ValidateTile(int(tile.Z), int64(tile.X), int64(tile.Y)); err != nil {
@@ -211,9 +220,13 @@ func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 // resolveSeedPurgeGrid picks the TileMatrixSet this run enumerates tiles in and
 // writes them under.
 //
-// --tile-matrix-set wins. Without it, a run scoped to one map takes that map's
-// default grid, and a run over every map takes WebMercatorQuad — what tegola
-// seeded before the grid was configurable.
+// --tile-matrix-set wins. Without it, a run scoped to one map takes the first
+// scheme that map lists, and a run over every map takes WebMercatorQuad — what
+// tegola seeded before the grid was configurable.
+//
+// That first entry is this command's convention, not a property of the map: the
+// server reads no default off the list (see atlas.Map.TileMatrixSets), so there
+// is no map-wide "default grid" left for this to inherit.
 //
 // A targeted map that does not support the chosen grid is an error, not a skip.
 // A run enumerates one grid, so seeding such a map would walk indices that mean
@@ -221,11 +234,20 @@ func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 // request will ever ask for.
 func resolveSeedPurgeGrid() (*tms.TileMatrixSet, error) {
 	id := cacheTileMatrixSet
-	switch {
-	case id != "":
-	case cacheMap != "" && len(seedPurgeMaps) == 1:
-		id = seedPurgeMaps[0].TileGrid().ID()
-	default:
+
+	// A run scoped to one map takes the first grid that map lists. The list is
+	// no longer a default the server reads (see atlas.Map.TileMatrixSets), so
+	// this is the CLI's own choice, made here rather than borrowed from an
+	// accessor that used to make it for everyone.
+	if id == "" && cacheMap != "" && len(seedPurgeMaps) == 1 {
+		if grids := seedPurgeMaps[0].TileGrids(); len(grids) > 0 {
+			id = grids[0].ID()
+		}
+	}
+
+	// Every other run — over all maps, or over a map that lists none — takes
+	// WebMercatorQuad, what tegola seeded before the grid was configurable.
+	if id == "" {
 		id = tms.WebMercatorQuad
 	}
 
@@ -409,12 +431,19 @@ func generateTilesForBounds(ctx context.Context, bounds [4]float64, zooms []uint
 		channel: make(chan slippy.Tile),
 	}
 
-	if grid == nil {
-		grid = atlas.DefaultTileGrid()
-	}
-
 	go func() {
 		defer tce.Close()
+
+		if grid == nil {
+			// The command resolves the run's scheme before it gets here, so a
+			// nil means that ordering changed. Defaulting would enumerate
+			// WebMercatorQuad indices and hand them to a worker writing under
+			// whatever grid the run actually named — the run would report
+			// success having seeded tiles no request asks for.
+			tce.setError(ErrNoGridResolved)
+
+			return
+		}
 
 		// west/south/east/north, normalized so that a caller passing the corners
 		// in either order covers the same ground rather than reading as an

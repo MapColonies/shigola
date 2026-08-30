@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/internal/observer"
 	"github.com/MapColonies/shigola/observability"
+	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom/slippy"
 )
 
@@ -116,14 +117,21 @@ func (a *Atlas) AllMaps() []Map {
 	return maps
 }
 
-// SeedMapTile will generate a tile and persist it to the
-// configured cache backend
-func (a *Atlas) SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
+// SeedMapTile will generate a tile in grid and persist it to the configured
+// cache backend, under grid's key.
+//
+// grid is required: one argument feeds both the encode and the key, so the
+// bytes and the name they are filed under cannot come apart.
+func (a *Atlas) SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet, z, x, y uint) error {
 
 	if a == nil {
 		// Use the default Atlas if a, is nil. This way the empty value is
 		// still useful.
-		return defaultAtlas.SeedMapTile(ctx, m, z, x, y)
+		return defaultAtlas.SeedMapTile(ctx, m, grid, z, x, y)
+	}
+
+	if grid == nil {
+		return ErrNilGrid
 	}
 
 	if len(m.Params) > 0 {
@@ -139,13 +147,13 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
 	tile := slippy.Tile{Z: slippy.Zoom(z), X: x, Y: y}
 
 	// encode the tile
-	b, err := m.Encode(ctx, tile, nil)
+	b, err := m.Encode(ctx, grid, tile, nil)
 	if err != nil {
 		return err
 	}
 
 	// cache key
-	key, err := cache.NewKey(m.TileGrid(), m.Name, "", z, x, y)
+	key, err := cache.NewKey(grid, m.Name, "", z, x, y)
 	if err != nil {
 		return err
 	}
@@ -153,12 +161,24 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
 	return a.cacher.Set(ctx, &key, b)
 }
 
-// PurgeMapTile will purge a map tile from the configured cache backend
-func (a *Atlas) PurgeMapTile(ctx context.Context, m Map, tile *shigola.Tile) error {
+// PurgeMapTile will purge a map tile, cut in grid, from the configured cache
+// backend.
+//
+// grid is required, and must be the one the tile was seeded in: it is the first
+// segment of the key, so purging with the wrong one removes another scheme's
+// tile and leaves the intended one in place.
+func (a *Atlas) PurgeMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet, tile *shigola.Tile) error {
 	if a == nil {
 		// Use the default Atlas if a, is nil. This way the empty value is
 		// still useful.
-		return defaultAtlas.PurgeMapTile(ctx, m, tile)
+		return defaultAtlas.PurgeMapTile(ctx, m, grid, tile)
+	}
+
+	// Checked here rather than left to cache.NewKey, which reports its own
+	// cache.ErrNilGrid: one mistake should not have two names depending on
+	// which of these three seams the caller reached for.
+	if grid == nil {
+		return ErrNilGrid
 	}
 
 	if len(m.Params) > 0 {
@@ -170,7 +190,7 @@ func (a *Atlas) PurgeMapTile(ctx context.Context, m Map, tile *shigola.Tile) err
 	}
 
 	// cache key
-	key, err := cache.NewKey(m.TileGrid(), m.Name, "", tile.Z, tile.X, tile.Y)
+	key, err := cache.NewKey(grid, m.Name, "", tile.Z, tile.X, tile.Y)
 	if err != nil {
 		return err
 	}
@@ -410,14 +430,14 @@ func SetCache(c cache.Interface) {
 
 // SeedMapTile will generate a tile and persist it to the
 // configured cache backend for the defaultAtlas
-func SeedMapTile(ctx context.Context, m Map, z, x, y uint) error {
-	return defaultAtlas.SeedMapTile(ctx, m, z, x, y)
+func SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet, z, x, y uint) error {
+	return defaultAtlas.SeedMapTile(ctx, m, grid, z, x, y)
 }
 
 // PurgeMapTile will purge a map tile from the configured cache backend
 // for the defaultAtlas
-func PurgeMapTile(ctx context.Context, m Map, tile *shigola.Tile) error {
-	return defaultAtlas.PurgeMapTile(ctx, m, tile)
+func PurgeMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet, tile *shigola.Tile) error {
+	return defaultAtlas.PurgeMapTile(ctx, m, grid, tile)
 }
 
 // CacheWritePool returns the defaultAtlas cache's detached-write pool, if it

@@ -237,8 +237,9 @@ func TestEncodeWorldCRS84QuadClipsPolygonsBeforeMVTPrepare(t *testing.T) {
 		{30, 30},
 	}}
 
+	grid := mustGrid(t, tms.WorldCRS84Quad)
+
 	atlasMap := atlas.NewWebMercatorMap("crs84")
-	atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, tms.WorldCRS84Quad)}
 	atlasMap.TileBuffer = 64
 	atlasMap.Layers = []atlas.Layer{{
 		Name:              "polygons",
@@ -252,7 +253,7 @@ func TestEncodeWorldCRS84QuadClipsPolygonsBeforeMVTPrepare(t *testing.T) {
 		},
 	}}
 
-	out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
+	out, err := atlasMap.Encode(context.Background(), grid, slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
@@ -282,8 +283,9 @@ func TestEncodeWorldCRS84QuadCleansClippedPolygons(t *testing.T) {
 		{30, 30},
 	}}
 
+	grid := mustGrid(t, tms.WorldCRS84Quad)
+
 	atlasMap := atlas.NewWebMercatorMap("crs84")
-	atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, tms.WorldCRS84Quad)}
 	atlasMap.TileBuffer = 64
 	atlasMap.Layers = []atlas.Layer{{
 		Name:              "polygons",
@@ -296,7 +298,7 @@ func TestEncodeWorldCRS84QuadCleansClippedPolygons(t *testing.T) {
 		},
 	}}
 
-	out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
+	out, err := atlasMap.Encode(context.Background(), grid, slippy.Tile{Z: 16, X: 78212, Y: 21154}, nil)
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
@@ -376,14 +378,14 @@ func TestEncode(t *testing.T) {
 	polygon := vectorTile.Tile_POLYGON
 
 	type tcase struct {
-		grid     atlas.Map
+		atlasMap atlas.Map
 		tile     slippy.Tile
 		expected vectorTile.Tile
 	}
 
 	fn := func(tc tcase) func(t *testing.T) {
 		return func(t *testing.T) {
-			out, err := tc.grid.Encode(context.Background(), tc.tile, nil)
+			out, err := tc.atlasMap.Encode(context.Background(), mustGrid(t, tms.WebMercatorQuad), tc.tile, nil)
 			if err != nil {
 				t.Errorf("err: %v", err)
 				return
@@ -507,7 +509,7 @@ func TestEncode(t *testing.T) {
 
 	tests := map[string]tcase{
 		"test_provider": {
-			grid: atlas.Map{
+			atlasMap: atlas.Map{
 				Layers: []atlas.Layer{
 					{
 						Name:     "layer1",
@@ -574,7 +576,7 @@ func TestEncode(t *testing.T) {
 			},
 		},
 		"empty_collection": {
-			grid: atlas.Map{
+			atlasMap: atlas.Map{
 				Layers: []atlas.Layer{
 					{
 						Name:     "empty_geom_collection",
@@ -641,7 +643,6 @@ func TestEncodeDiffersByTileMatrixSet(t *testing.T) {
 		t.Helper()
 
 		atlasMap := atlas.NewWebMercatorMap("differs")
-		atlasMap.TileMatrixSets = []*tms.TileMatrixSet{mustGrid(t, gridID)}
 		atlasMap.TileBuffer = 0
 		atlasMap.Layers = []atlas.Layer{{
 			Name:              "polygons",
@@ -654,7 +655,7 @@ func TestEncodeDiffersByTileMatrixSet(t *testing.T) {
 			},
 		}}
 
-		out, err := atlasMap.Encode(context.Background(), slippy.Tile{Z: 3, X: 5, Y: 2}, nil)
+		out, err := atlasMap.Encode(context.Background(), mustGrid(t, gridID), slippy.Tile{Z: 3, X: 5, Y: 2}, nil)
 		if err != nil {
 			t.Fatalf("Encode(%v) error = %v", gridID, err)
 		}

@@ -51,11 +51,9 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The collection's map may offer several schemes; this request named one,
-	// so the encode and the cache key must both use it rather than the map's
-	// default.
-	m := c.Map.InGrid(grid)
-
-	m = m.FilterLayersByZoom(slippy.Zoom(tile.Z))
+	// and grid is handed to the encode and to the cache key below so that both
+	// use it. Nothing on this path reads a default off the map.
+	m := c.Map.FilterLayersByZoom(slippy.Zoom(tile.Z))
 	if len(m.Layers) == 0 {
 		// The tileset exists, this zoom simply holds nothing. An empty tile is
 		// the honest answer: a 404 would tell a client the tileset is wrong.
@@ -89,7 +87,7 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.WithValue(r.Context(), observability.ObserveVarMapName, m.Name)
 
-	body, err := m.Encode(ctx, slippy.Tile{Z: slippy.Zoom(tile.Z), X: uint(tile.X), Y: uint(tile.Y)}, nil)
+	body, err := m.Encode(ctx, grid, slippy.Tile{Z: slippy.Zoom(tile.Z), X: uint(tile.X), Y: uint(tile.Y)}, nil)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "operation was canceled") {
 			return

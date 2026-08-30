@@ -110,11 +110,13 @@ func TestGenerateTilesForBounds(t *testing.T) {
 		"max_zoom=0": {
 			zooms:  []uint{0},
 			bounds: worldBounds,
+			grid:   mustTestGrid(t, tms.WebMercatorQuad),
 			tiles:  sTiles{slippy.Tile{}},
 		},
 		"min_zoom=1 max_zoom=1": {
 			zooms:  []uint{1},
 			bounds: worldBounds,
+			grid:   mustTestGrid(t, tms.WebMercatorQuad),
 			tiles: sTiles{
 				slippy.Tile{Z: 1},
 				slippy.Tile{Z: 1, Y: 1},
@@ -133,6 +135,7 @@ func TestGenerateTilesForBounds(t *testing.T) {
 		"min_zoom=1 max_zoom=1 bounds=180,90,0,0": {
 			zooms:  []uint{1},
 			bounds: [4]float64{180.0, 90.0, 0.0, 0.0},
+			grid:   mustTestGrid(t, tms.WebMercatorQuad),
 			tiles: sTiles{
 				slippy.Tile{Z: 1, X: 1},
 			},
@@ -159,6 +162,15 @@ func TestGenerateTilesForBounds(t *testing.T) {
 				slippy.Tile{Z: 10, X: 541, Y: 356}, slippy.Tile{Z: 10, X: 541, Y: 357}, slippy.Tile{Z: 10, X: 541, Y: 358}, slippy.Tile{Z: 10, X: 541, Y: 359}, slippy.Tile{Z: 10, X: 541, Y: 360}, slippy.Tile{Z: 10, X: 541, Y: 361}, slippy.Tile{Z: 10, X: 541, Y: 362}, slippy.Tile{Z: 10, X: 541, Y: 363}, slippy.Tile{Z: 10, X: 541, Y: 364}, slippy.Tile{Z: 10, X: 541, Y: 365},
 			},
 		},
+		// The generator used to fall back to WebMercatorQuad here. It cannot:
+		// the worker writes under the grid the run resolved, so enumerating a
+		// different one produces tiles filed where nothing looks for them, and
+		// the run reports success.
+		"no grid resolved": {
+			zooms:  []uint{0},
+			bounds: worldBounds,
+			err:    ErrNoGridResolved,
+		},
 	}
 
 	for name, tc := range tests {
@@ -173,6 +185,13 @@ func TestGenerateTilesForBounds(t *testing.T) {
 func TestResolveSeedPurgeGrid(t *testing.T) {
 	newMap := func(name string, gridIDs ...string) atlas.Map {
 		m := atlas.NewWebMercatorMap(name)
+		if len(gridIDs) == 0 {
+			// The constructor already lists WebMercatorQuad, and registration
+			// never produces a map listing nothing, so leaving it alone is what
+			// a real map looks like. Emptying the list instead would make this
+			// helper build a map that supports no scheme at all.
+			return m
+		}
 
 		grids := make([]*tms.TileMatrixSet, 0, len(gridIDs))
 		for _, id := range gridIDs {
@@ -224,6 +243,20 @@ func TestResolveSeedPurgeGrid(t *testing.T) {
 		"a scheme this build cannot serve": {
 			flag:    "NZTM2000Quad",
 			maps:    []atlas.Map{newMap("a")},
+			wantErr: true,
+		},
+		// A map listing no scheme supports none, so it fails the run's support
+		// check rather than being seeded on WebMercatorQuad.
+		//
+		// This is a change: the list used to read as "the default one" when
+		// empty, so such a map both chose WebMercatorQuad and passed the check.
+		// Registration cannot produce it — register fills the list with every
+		// available grid when the config omits the key — and failing beats
+		// seeding a pyramid the map never declared, which is the same reason
+		// the check rejects a mismatched map. It is pinned here so that if a
+		// map ever can reach the CLI with no schemes, this says what happens.
+		"a map listing no scheme at all": {
+			maps:    []atlas.Map{{Name: "gridless"}},
 			wantErr: true,
 		},
 	}

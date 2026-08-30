@@ -44,12 +44,19 @@ func NewWebMercatorMap(name string) Map {
 	}
 }
 
-// DefaultTileGrid is the TileMatrixSet a map serves when its configuration names
-// none: WebMercatorQuad, the grid tegola has always served.
+// DefaultTileGrid is the TileMatrixSet a Map carries when nothing else names
+// one: WebMercatorQuad, the grid tegola has always served.
 //
 // WebMercatorQuad is bundled and active in every build, so a failure to resolve
 // it means the tms package's embedded definitions are broken — the same
 // condition its own init panics on.
+//
+// It panics, so it must stay off every request path. Nothing reached from a
+// handler may call it: a served request names its grid, and every seam it
+// travels through — Encode, SeedMapTile, PurgeMapTile — takes that grid as an
+// argument rather than resolving a default of its own (MAPCO-11486). Its one
+// caller is NewWebMercatorMap, and keeping it to construction is what makes the
+// panic a startup concern rather than a request-time one.
 func DefaultTileGrid() *tms.TileMatrixSet {
 	grid, err := tms.Get(tms.WebMercatorQuad)
 	if err != nil {
@@ -77,12 +84,18 @@ type Map struct {
 	Params []provider.QueryParameter
 
 	SRID uint64
-	// TileMatrixSets are the grids this map may be requested in. The first is
-	// the map's default: the grid its native /maps/... routes serve, and the
-	// one an OGC request that does not name a grid gets (ADR-0008).
+	// TileMatrixSets are the grids this map may be requested in.
 	//
-	// An empty list means the default grid alone; read it through TileGrid and
-	// TileGrids rather than directly.
+	// ADR-0008 gave the first entry a second job — naming the map's default —
+	// because the native /maps/... routes served a grid without being told
+	// which. Those routes are gone (MAPCO-11484), and every OGC request names
+	// its scheme, so serving reads no default from this list: it reads
+	// membership, through SupportsTileGrid, and nothing else. The order that
+	// remains is presentation — the order a collection's tilesets are listed
+	// in — plus one fallback that `cache seed` states in its own terms rather
+	// than inheriting from here.
+	//
+	// Read it through TileGrids rather than directly.
 	TileMatrixSets []*tms.TileMatrixSet
 	// MVT output values
 	TileExtent uint64
@@ -94,52 +107,19 @@ type Map struct {
 	observer observability.Interface
 }
 
-// TileGrid returns the map's default TileMatrixSet — the grid its tiles are cut
-// in unless a request names another. It is never nil.
-func (m Map) TileGrid() *tms.TileMatrixSet {
-	for _, grid := range m.TileMatrixSets {
-		if grid != nil {
-			return grid
-		}
-	}
-
-	return DefaultTileGrid()
-}
-
-// InGrid returns a copy of the map pinned to one tiling scheme.
+// TileGrids returns every TileMatrixSet this map may be requested in.
 //
-// A Map is a value, so this scopes the choice to a single call chain: TileGrid
-// then reports the pinned scheme, and the encode, the existence check and the
-// cache key all agree on it rather than each consulting the map's own default.
-//
-// It exists because a request or a seed run names a scheme the map merely
-// supports, and everything downstream reads that choice off the Map. Two call
-// sites — the OGC tile handler and the seed/purge worker — had each written the
-// field assignment out longhand, which is one silent divergence away from a tile
-// encoded in one scheme and filed under another's key.
-//
-// A nil grid leaves the map alone: callers that never resolved one keep the
-// map's own default rather than falling through to a hardcoded WebMercatorQuad.
-func (m Map) InGrid(grid *tms.TileMatrixSet) Map {
-	if grid != nil {
-		m.TileMatrixSets = []*tms.TileMatrixSet{grid}
-	}
-
-	return m
-}
-
-// TileGrids returns every TileMatrixSet this map may be requested in, defaulting
-// to the default grid alone. The first entry is the map's default.
+// A map that names none offers none, rather than falling back to
+// DefaultTileGrid: this is read from handlers, and the fallback would put a
+// panicking resolver on the request path to cover a case registration cannot
+// produce — register fills the list with every available grid when the config
+// omits the key, so a live map always has at least one.
 func (m Map) TileGrids() []*tms.TileMatrixSet {
 	grids := make([]*tms.TileMatrixSet, 0, len(m.TileMatrixSets))
 	for _, grid := range m.TileMatrixSets {
 		if grid != nil {
 			grids = append(grids, grid)
 		}
-	}
-
-	if len(grids) == 0 {
-		return []*tms.TileMatrixSet{DefaultTileGrid()}
 	}
 
 	return grids
@@ -501,9 +481,9 @@ func (m Map) FilterLayersByName(names ...string) Map {
 	return m
 }
 
-func (m Map) encodeMVTProviderTile(ctx context.Context, tile slippy.Tile, params provider.Params) ([]byte, error) {
+func (m Map) encodeMVTProviderTile(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Tile, params provider.Params) ([]byte, error) {
 	// get the list of our layers
-	ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y, uint(m.TileBuffer), m.TileGrid())
+	ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y, uint(m.TileBuffer), grid)
 
 	layers := make([]provider.Layer, len(m.Layers))
 	for i := range m.Layers {
@@ -518,7 +498,7 @@ func (m Map) encodeMVTProviderTile(ctx context.Context, tile slippy.Tile, params
 
 // encodeMVTTile will encode the given tile into mvt format
 // TODO (arolek): support for max zoom
-func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provider.Params) ([]byte, error) {
+func (m Map) encodeMVTTile(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Tile, params provider.Params) ([]byte, error) {
 
 	// tile container
 	var mvtTile mvt.Tile
@@ -528,10 +508,9 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 	// layer stack
 	mvtLayers := make([]*mvt.Layer, len(m.Layers))
 
-	// the grid this tile is cut in, and the CRS features must be reprojected
-	// into before they are clipped and encoded. Both are properties of the map,
-	// not of a layer, so they are resolved once here rather than per layer.
-	grid := m.TileGrid()
+	// the CRS features are reprojected into before they are clipped and
+	// encoded. It belongs to the grid, not to a layer, so it is resolved once
+	// here rather than per layer.
 	tileSRID, sridErr := grid.NativeSRID()
 	if sridErr != nil {
 		return nil, fmt.Errorf("tile grid %v has no SRID to encode in: %w", grid.ID(), sridErr)
@@ -710,16 +689,27 @@ func (m Map) encodeMVTTile(ctx context.Context, tile slippy.Tile, params provide
 	return proto.Marshal(vtile)
 }
 
-// Encode will encode the given tile into mvt format
-func (m Map) Encode(ctx context.Context, tile slippy.Tile, params provider.Params) ([]byte, error) {
+// Encode will encode the given tile, cut in grid, into mvt format.
+//
+// grid is required. It decides the tile's ground extent and the CRS features
+// are reprojected into, and it is the same grid the caller must file the result
+// under in the cache — so a caller that has not resolved one has not decided
+// what it is asking for. Defaulting it here would let the encode and the cache
+// key disagree silently, which is the failure this parameter exists to make
+// impossible (MAPCO-11486).
+func (m Map) Encode(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Tile, params provider.Params) ([]byte, error) {
+	if grid == nil {
+		return nil, ErrNilGrid
+	}
+
 	var (
 		tileBytes []byte
 		err       error
 	)
 	if m.HasMVTProvider() {
-		tileBytes, err = m.encodeMVTProviderTile(ctx, tile, params)
+		tileBytes, err = m.encodeMVTProviderTile(ctx, grid, tile, params)
 	} else {
-		tileBytes, err = m.encodeMVTTile(ctx, tile, params)
+		tileBytes, err = m.encodeMVTTile(ctx, grid, tile, params)
 	}
 	if err != nil {
 		return nil, err
