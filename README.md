@@ -4,7 +4,7 @@
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/MapColonies/shigola)
 [![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](LICENSE.md)
 
-Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) with support for [PostGIS](https://postgis.net/), [GeoPackage](https://www.geopackage.org/) and [SAP HANA Spatial](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) data providers.
+Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) with support for [PostGIS](https://postgis.net/) and [GeoPackage](https://www.geopackage.org/) data providers.
 
 > ### Shigola is a fork of Tegola
 >
@@ -434,7 +434,6 @@ The following build flags can be used to turn off certain features of shigola:
 - `noGCSCache` - turn off the Google Cloud Storage cache back end.
 - `noPostgisProvider` - turn off the PostGIS data provider.
 - `noGpkgProvider` - turn off the GeoPackage data provider. Note, GeoPackage uses CGO and will be turned off if the environment variable `CGO_ENABLED=0` is set prior to building.
-- `noHanaProvider` - turn off the SAP HANA data provider.
 - `pprof` - enable [Go profiler](https://golang.org/pkg/net/http/pprof/). Start profile server by setting the environment `SHIGOLA_HTTP_PPROF_BIND` environment (e.g. `SHIGOLA_HTTP_PPROF_BIND=localhost:6060`).
 - `noPrometheusObserver` - turn off support for the Prometheus metric end point.
 

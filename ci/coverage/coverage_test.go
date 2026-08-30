@@ -410,7 +410,7 @@ func TestWriteBaselineFloorAndGates(t *testing.T) {
 		clearGates(t)
 		path := seed(t)
 		t.Setenv("RUN_S3_TESTS", "yes")
-		t.Setenv("RUN_HANA_TESTS", "yes")
+		t.Setenv("RUN_AZBLOB_TESTS", "yes")
 
 		if err := writeBaseline(lean); err != nil {
 			t.Fatalf("regenerating the baseline: %v", err)
@@ -419,7 +419,7 @@ func TestWriteBaselineFloorAndGates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading the regenerated baseline: %v", err)
 		}
-		if after.Gates != "RUN_HANA_TESTS RUN_S3_TESTS" {
+		if after.Gates != "RUN_AZBLOB_TESTS RUN_S3_TESTS" {
 			t.Errorf("gates = %q, want the two gates the environment had set", after.Gates)
 		}
 	})
