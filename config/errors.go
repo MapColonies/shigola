@@ -209,7 +209,7 @@ type ErrUnknownProviderType struct {
 }
 
 func (e ErrUnknownProviderType) Error() string {
-	return fmt.Sprintf("config: invalid type (%s) for provider %s; known providers are: %v", e.Name, e.Type, strings.Join(e.KnownProviders, ","))
+	return fmt.Sprintf("config: invalid type (%s) for provider %s; known providers are: %v", e.Type, e.Name, strings.Join(e.KnownProviders, ","))
 }
 
 // Is returns whether the error is of type ErrUnknownProviderType, only checking the Type value.
