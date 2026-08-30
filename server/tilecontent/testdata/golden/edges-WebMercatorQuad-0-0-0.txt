@@ -1,0 +1,4 @@
+layer "edges" extent=4096 keys=[name]
+  id=1 POINT tags={name=string("origin")} [(1024,2048)]
+  id=3 POINT tags={name=string("antimeridian")} [(4088,2048)]
+  id=4 POINT tags={name=string("corner")} [(2048,2048)]
