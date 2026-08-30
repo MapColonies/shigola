@@ -35,7 +35,6 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 - Support for Web Mercator (3857) and WGS84 (4326) projections.
 - Support for [AWS Lambda](cmd/shigola_lambda).
 - Support for serving HTTPS.
-- Support for [PostGIS ST_AsMVT](mvtprovider/postgis).
 - Support for [Prometheus](observability/prometheus/README.md) observability.
 
 ## Usage
@@ -141,7 +140,7 @@ name = "zoning"                           # the collection id: /collections/zoni
 ```
 
 - More information on PostgreSQL SSL modes can be found [here](https://www.postgresql.org/docs/current/libpq-ssl.html).
-- More information on the `mvt_postgis` provider can be found [here](mvtprovider/postgis)
+- More information on the `mvt_postgis` provider can be found [here](provider/postgis)
 
 ## Layered cache
 

@@ -221,6 +221,33 @@ func (e ErrUnknownProviderType) Is(err error) bool {
 	return err1.Type == e.Type
 }
 
+// ErrRemovedProviderType is returned when the config names a provider type this
+// build has stopped serving and something else took over from it.
+//
+// It is deliberately not ErrUnknownProviderType: the config is not wrong about
+// the world, it is a working config written against an older build, and the
+// operator's next move is to change one word rather than to work out which of
+// the known types is the one they wanted.
+type ErrRemovedProviderType struct {
+	Name        string // Name is the name of the entry in the config
+	Type        string // Type is the removed data provider type
+	Replacement string // Replacement is the type that took over from it
+}
+
+func (e ErrRemovedProviderType) Error() string {
+	return fmt.Sprintf("config: provider %s uses type (%s), which has been removed; use type (%s) instead", e.Name, e.Type, e.Replacement)
+}
+
+// Is returns whether the error is of type ErrRemovedProviderType, only checking
+// the Type value.
+func (e ErrRemovedProviderType) Is(err error) bool {
+	err1, ok := err.(ErrRemovedProviderType)
+	if !ok {
+		return false
+	}
+	return err1.Type == e.Type
+}
+
 // ErrProviderNameRequired is returned when the name of a provider is missing from the provider list
 type ErrProviderNameRequired struct {
 	Pos int

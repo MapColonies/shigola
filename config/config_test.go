@@ -133,7 +133,7 @@ func TestParse(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "mvt_postgis",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -213,7 +213,7 @@ func TestParse(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "mvt_postgis",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -310,7 +310,7 @@ func TestParse(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "mvt_postgis",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -430,7 +430,7 @@ func TestValidateMutateZoom(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -474,7 +474,7 @@ func TestValidateMutateZoom(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -543,7 +543,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -560,7 +560,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -607,7 +607,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -624,7 +624,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -677,7 +677,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -694,7 +694,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -760,7 +760,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -777,7 +777,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -829,7 +829,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -846,7 +846,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "postgis",
+						"type":     "test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",

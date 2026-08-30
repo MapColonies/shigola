@@ -293,6 +293,47 @@ func MVTRegister(name string, init MVTInitFunc, cleanup CleanupFunc) error {
 	return nil
 }
 
+// removedProviders maps a provider type this build deliberately no longer
+// serves onto the type that took over from it.
+//
+// A removed type is not a misspelled one. It is a name that worked, in a
+// config someone is still running, and the useful thing to say about it is
+// which type to write instead -- not a list of every type this binary happens
+// to know, out of which the operator has to guess.
+//
+// Only types with a successor belong here. A backend that was dropped outright
+// has nothing to redirect to and is better served by the unknown-provider
+// error, which at least lists what is left.
+var removedProviders map[string]string
+
+// RegisterRemoved records that name is no longer served and that replacement
+// took over from it. Like Register, this is called from a provider package's
+// init function -- the package that used to serve the name is the one that
+// knows what replaced it.
+func RegisterRemoved(name, replacement string) error {
+	if replacement == "" {
+		return ErrNilReplacement
+	}
+	if removedProviders == nil {
+		removedProviders = make(map[string]string)
+	}
+
+	if _, ok := providers[name]; ok {
+		return fmt.Errorf("provider %v is registered, so it has not been removed", name)
+	}
+
+	removedProviders[name] = replacement
+
+	return nil
+}
+
+// Removed reports whether name was a provider type this build has stopped
+// serving, and if so what replaced it.
+func Removed(name string) (replacement string, ok bool) {
+	replacement, ok = removedProviders[name]
+	return replacement, ok
+}
+
 // Drivers returns a list of registered drivers.
 func Drivers(types ...providerType) (l []string) {
 	if providers == nil {
@@ -337,6 +378,9 @@ func For(name string, config dict.Dicter, maps []Map) (val TilerUnion, err error
 	}
 	p, ok := providers[name]
 	if !ok {
+		if replacement, removed := Removed(name); removed {
+			return val, ErrRemovedProvider{Name: name, Replacement: replacement}
+		}
 		return val, ErrUnknownProvider{KnownProviders: driversList, Name: name}
 	}
 	if p.init != nil {

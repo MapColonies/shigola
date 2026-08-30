@@ -6,8 +6,14 @@ import (
 )
 
 func init() {
-	provider.Register(provider.TypeStd.Prefix()+Name, NewTileProvider, Cleanup)
 	provider.MVTRegister(provider.TypeMvt.Prefix()+Name, NewMVTTileProvider, Cleanup)
+
+	// The standard type was this package's other half until MAPCO-11490: it
+	// pulled raw geometry into the process and encoded MVT in Go, where the
+	// mvt type has PostGIS do it with ST_AsMVT. Recording it as removed rather
+	// than simply dropping it is what lets a config that still names it say so
+	// -- see provider.RegisterRemoved.
+	provider.RegisterRemoved(ProviderType, MVTProviderType)
 }
 
 const (
@@ -15,10 +21,10 @@ const (
 	ProviderType    = "postgis"
 )
 
-// NewTileProvider instantiates and returns a new postgis provider or an error.
-// The function will validate that the config object looks good before
-// trying to create a driver. This Provider supports the following fields
-// in the provided map[string]interface{} map:
+// NewMVTTileProvider instantiates and returns a new PostGIS MVT provider, or an
+// error. The function validates the config object before trying to create a
+// driver. This provider supports the following fields in the provided
+// map[string]interface{} map:
 //
 //	host (string): [Required] postgis database host
 //	port (int): [Required] postgis database port (required)
@@ -39,9 +45,6 @@ const (
 //
 //			!BBOX! - [Required] will be replaced with the bounding box of the tile before the query is sent to the database.
 //			!ZOOM! - [Optional] will be replaced with the "Z" (zoom) value of the requested tile.
-func NewTileProvider(config dict.Dicter, maps []provider.Map) (provider.Tiler, error) {
-	return CreateProvider(config, maps, ProviderType)
-}
 func NewMVTTileProvider(config dict.Dicter, maps []provider.Map) (provider.MVTTiler, error) {
-	return CreateProvider(config, maps, MVTProviderType)
+	return CreateProvider(config, maps)
 }

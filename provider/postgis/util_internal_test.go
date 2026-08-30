@@ -1,13 +1,9 @@
 package postgis
 
 import (
-	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/MapColonies/shigola"
-	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/provider"
 )
 
@@ -116,138 +112,6 @@ func TestUppercaseTokens(t *testing.T) {
 		"unclosed token": {
 			str:      "unclosed !token",
 			expected: "unclosed !token",
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, fn(tc))
-	}
-}
-
-func TestDecipherFields(t *testing.T) {
-	ttools.ShouldSkip(t, TESTENV)
-
-	type tcase struct {
-		sql              string
-		expectedRowCount int
-		expectedTags     map[string]any
-	}
-
-	uri := ttools.GetEnvDefault("PGURI", "postgres://postgres:postgres@localhost:5432/shigola")
-	dbconfig, err := BuildDBConfig(
-		&DBConfigOptions{
-			Uri:                        uri,
-			DefaultTransactionReadOnly: "TRUE",
-			ApplicationName:            "tegola",
-		})
-	if err != nil {
-		t.Fatalf("unable to build db config: %v", err)
-	}
-
-	conn, err := pgxpool.NewWithConfig(context.Background(), dbconfig)
-	if err != nil {
-		t.Fatalf("unable to connect to database: %v", err)
-	}
-	defer conn.Close()
-
-	fn := func(tc tcase) func(t *testing.T) {
-		return func(t *testing.T) {
-			rows, err := conn.Query(context.Background(), tc.sql)
-			if err != nil {
-				t.Errorf("Error performing query: %v", err)
-				return
-			}
-			defer rows.Close()
-
-			var rowCount int
-			for rows.Next() {
-				geoFieldname := "geom"
-				idFieldname := "id"
-				descriptions := rows.FieldDescriptions()
-
-				vals, err := rows.Values()
-				if err != nil {
-					t.Errorf("unexpected error reading row Values: %v", err)
-					return
-				}
-
-				_, _, tags, err := decipherFields(
-					context.TODO(),
-					geoFieldname,
-					idFieldname,
-					descriptions,
-					vals,
-				)
-				if err != nil {
-					t.Errorf("unexpected error running decipherFileds: %v", err)
-					return
-				}
-
-				if len(tags) != len(tc.expectedTags) {
-					t.Errorf(
-						"got (%v): %#v, expected (%v): %#v",
-						len(tags),
-						tags,
-						len(tc.expectedTags),
-						tc.expectedTags,
-					)
-					return
-				}
-
-				for k, v := range tags {
-					if tc.expectedTags[k] != v {
-						t.Errorf(
-							"missing or bad value for tag %v: %v (%T) != %v (%T)",
-							k,
-							v,
-							v,
-							tc.expectedTags[k],
-							tc.expectedTags[k],
-						)
-						return
-					}
-				}
-
-				rowCount++
-			}
-			if rows.Err() != nil {
-				t.Errorf("unexpected err: %v", rows.Err())
-				return
-			}
-
-			if rowCount != tc.expectedRowCount {
-				t.Errorf("invalid row count. expected %v. got %v", tc.expectedRowCount, rowCount)
-				return
-			}
-		}
-	}
-
-	tests := map[string]tcase{
-		"tags with hstore": {
-			sql:              "SELECT name, extra_text, extra_int, properties FROM test_tags_table WHERE id = 1;",
-			expectedRowCount: 1,
-			expectedTags: map[string]any{
-				"name":        "Polygon A",
-				"count":       "42",
-				"enabled":     "true",
-				"price":       "19.99",
-				"description": "example polygon A",
-				"extra_text":  "Additional info A",
-				"extra_int":   int64(100),
-			},
-		},
-		"tags with uuid": {
-			sql:              "SELECT uuid FROM test_tags_table WHERE id = 1;",
-			expectedRowCount: 1,
-			expectedTags: map[string]any{
-				"uuid": "550e8400-e29b-41d4-a716-446655440000",
-			},
-		},
-		// NOTE: should they or should they not?
-		"tags do not contain primary key": {
-			sql:              "SELECT id FROM test_tags_table WHERE id = 2;",
-			expectedRowCount: 1,
-			expectedTags:     map[string]any{},
 		},
 	}
 

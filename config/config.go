@@ -187,6 +187,16 @@ func (c *Config) Validate() error {
 		}
 		drv, ok := drivers[typ]
 		if !ok {
+			// A type with a named successor is reported as removed rather than
+			// as unknown, so the operator is told what to write instead of
+			// being handed the list to choose from.
+			if replacement, removed := provider.Removed(typ); removed {
+				return ErrRemovedProviderType{
+					Name:        name,
+					Type:        typ,
+					Replacement: replacement,
+				}
+			}
 			return ErrUnknownProviderType{
 				Name:           name,
 				Type:           typ,

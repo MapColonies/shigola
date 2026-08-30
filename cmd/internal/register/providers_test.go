@@ -41,7 +41,7 @@ func TestProviders(t *testing.T) {
 		"missing name": {
 			config: []dict.Dict{
 				{
-					"type": "postgis",
+					"type": "mvt_postgis",
 				},
 			},
 			expectedErr: register.ErrProviderNameMissing,

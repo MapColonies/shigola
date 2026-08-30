@@ -11,7 +11,7 @@ proxy_protocol = ""
 
 [[providers]]
 name = "provider1"
-type = "postgis"
+type = "mvt_postgis"
 host = "localhost"
 port = 5432
 database = "osm_water" 

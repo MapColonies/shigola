@@ -54,7 +54,7 @@ srid = 4326
 # but roughly 100 units at zoom 4.
 #
 # The alternative — ST_Transform(...,3857) around both the geom and !BBOX!, the
-# pattern mvtprovider/postgis/README.md documents for a 4326 provider — is exact
+# pattern provider/postgis/README.md documents for a 4326 provider — is exact
 # for WebMercatorQuad and out by the same amount for WorldCRS84Quad, and at low
 # zoom it asks PostGIS to project latitude 90. One SQL string cannot be exact for
 # both schemes: nothing in it says which grid the request came from. That is a

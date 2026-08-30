@@ -255,7 +255,7 @@ func TestLayerGeomType(t *testing.T) {
 		return func(t *testing.T) {
 			config := tc.Config(DefaultEnvConfig)
 			config[ConfigKeyName] = "provider_name"
-			provider, err := NewTileProvider(config, nil)
+			provider, err := NewMVTTileProvider(config, nil)
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Logf("error %#v", err)
