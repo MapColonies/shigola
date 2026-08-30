@@ -35,7 +35,13 @@ func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map, err error)
 	}
 
 	// A map that names no tiling schemes may be requested in any this build can
-	// serve, with WebMercatorQuad — tegola's historical grid — the default.
+	// serve. Filling the list here rather than leaving it empty is what keeps
+	// "no schemes named" from meaning "no schemes offered" downstream: nothing
+	// past this point re-reads the config to find out which it was.
+	//
+	// AvailableIDs puts WebMercatorQuad first, which `cache seed --map` takes as
+	// the run's scheme. Serving reads no default off the order — see
+	// atlas.Map.TileMatrixSets.
 	ids := make([]string, 0, len(cfg.TileMatrixSets))
 	for _, id := range cfg.TileMatrixSets {
 		ids = append(ids, string(id))

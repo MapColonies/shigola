@@ -74,8 +74,8 @@ func TestCiteConformanceConfig(t *testing.T) {
 		}
 	}
 
-	// Both distinct servable grid shapes, in order: the first entry is the map's
-	// default. WGS1984Quad is servable too but indexes the same ground as
+	// Both distinct servable grid shapes, in the order the config names them.
+	// WGS1984Quad is servable too but indexes the same ground as
 	// WorldCRS84Quad with only its declared axis order differing -- see
 	// TestWGS1984QuadInvertedAxes -- so running the suite against it as well
 	// would add a third of the run time for none of the coverage.

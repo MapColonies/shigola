@@ -90,8 +90,6 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 			}
 		}
 
-		m = m.InGrid(seedPurgeGrid)
-
 		z, x, y := mt.Tile.ZXY()
 
 		//	filter down the layers we need for this zoom
@@ -107,8 +105,9 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 
 			//	cache key. it must name the same grid SeedMapTile will write
 			//	under, or the existence check reads a key nothing writes and
-			//	every tile looks absent.
-			key, err := cache.NewKey(m.TileGrid(), mt.MapName, "", uint(z), x, y)
+			//	every tile looks absent. Both are handed seedPurgeGrid, so
+			//	there is nowhere for the two to diverge.
+			key, err := cache.NewKey(seedPurgeGrid, mt.MapName, "", uint(z), x, y)
 			if err != nil {
 				return err
 			}
@@ -126,7 +125,7 @@ func seedWorker(overwrite bool, logThresholdMs int64) func(ctx context.Context, 
 		}
 
 		//	seed the tile
-		if err = atlas.SeedMapTile(ctx, m, uint(z), x, y); err != nil {
+		if err = atlas.SeedMapTile(ctx, m, seedPurgeGrid, uint(z), x, y); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -166,12 +165,10 @@ func purgeWorker(ctx context.Context, mt MapTile) error {
 		}
 	}
 
-	m = m.InGrid(seedPurgeGrid)
-
 	//	purge the tile
 	ttile := shigola.TileFromSlippyTile(mt.Tile)
 
-	if err = atlas.PurgeMapTile(ctx, m, ttile); err != nil {
+	if err = atlas.PurgeMapTile(ctx, m, seedPurgeGrid, ttile); err != nil {
 		return seedPurgeWorkerTileError{
 			Purge: true,
 			Tile:  mt.Tile,
