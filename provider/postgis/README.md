@@ -2,6 +2,13 @@
 
 The PostGIS provider manages querying for tile requests against a Postgres
 database with the [PostGIS](http://postgis.net/) extension installed.
+
+There is one PostGIS provider type, `mvt_postgis`: the tile is encoded by the
+database with [`ST_AsMVT`](https://postgis.net/docs/ST_AsMVT.html), and shigola
+serves the bytes it returns. A `postgis` type existed alongside it until
+MAPCO-11490 and did the encoding in Go from raw geometry; a config still naming
+it is rejected at startup with a message naming `mvt_postgis`.
+
 The connection between shigola and Postgis is configured in a `shigola.toml` file.
 An example minimum connection config:
 
@@ -10,8 +17,8 @@ An example minimum connection config:
 # provider name is referenced from map layers (required)
 name = "test_postgis"
 
-# the type of data provider must be "postgis" for this data provider (required)
-type = "postgis"
+# the type of data provider must be "mvt_postgis" for this data provider (required)
+type = "mvt_postgis"
 
 # PostGIS connection string (required)
 uri = "postgres://shigola:supersecret@localhost:5432/shigola?sslmode=prefer" #
@@ -37,7 +44,7 @@ connection method as of v0.16.0. Connecting via host/port/database is deprecated
 
 -   `uri` (string): [Required] PostGIS connection string
 -   `name` (string): [Required] provider name is referenced from map layers
--   `type` (string): [Required] the type of data provider. must be "postgis" to use this data provider
+-   `type` (string): [Required] the type of data provider. must be "mvt_postgis" to use this data provider
 -   `srid` (int): [Optional] The default SRID for the provider. Defaults to WebMercator (3857) but also supports WGS84 (4326)
 
 ### Connection string properties
@@ -65,26 +72,30 @@ as parameters.
 
 ## Provider Layers
 
-In addition to the connection configuration above, Provider Layers need to be configured. A Provider Layer tells shigola how to query PostGIS for a certain layer. An example minimum config:
+In addition to the connection configuration above, Provider Layers need to be
+configured. A Provider Layer tells shigola how to query PostGIS for a certain
+layer. The geometry MUST be wrapped in
+[`ST_AsMVTGeom()`](https://postgis.net/docs/ST_AsMVTGeom.html): shigola wraps
+each layer's SQL in `ST_AsMVT()` and serves the bytes the database returns, so
+the transform into tile coordinates has to happen in the query.
 
 ```toml
 [[providers.layers]]
 name = "landuse"
 # this table uses "geom" for the geometry_fieldname and "gid" for the
 # id_fieldname so they don't need to be configured
-tablename = "gis.zoning_base_3857"
+geometry_type = "multipolygon"
+sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
 ```
 
 ### Provider Layers Properties
 
 -   `name` (string): [Required] the name of the layer. This is used to reference this layer from map layers.
--   `tablename` (string): [*Required] the name of the database table to query against. Required if `sql` is not defined.
 -   `geometry_fieldname` (string): [Optional] the name of the filed which contains the geometry for the feature. defaults to `geom`.
 -   `id_fieldname` (string): [Optional] the name of the feature id field. defaults to `gid`.
--   `fields` ([]string): [Optional] a list of fields to include alongside the feature. Can be used if `sql` is not defined.
 -   `srid` (int): [Optional] the SRID of the layer. Supports `3857` (WebMercator) or `4326` (WGS84).
--   `geometry_type` (string): [Optional] the layer geometry type. If not set, the table will be inspected at startup to try and infer the gemetry type. Valid values are: `Point`, `LineString`, `Polygon`, `MultiPoint`, `MultiLineString`, `MultiPolygon`, `GeometryCollection`.
--   `sql` (string): [*Required] custom SQL to use use. Required if `tablename` is not defined. Supports the following tokens:
+-   `geometry_type` (string): [Required in practice] the layer geometry type. Valid values are: `Point`, `LineString`, `Polygon`, `MultiPoint`, `MultiLineString`, `MultiPolygon`, `GeometryCollection`. If it is not set, the layer's SQL is run at startup to infer the type — and a query ending in `ST_AsMVTGeom` returns tile-space geometry that cannot be typed, so the provider fails to start with `returned unsupported geometry type`. Declare it.
+-   `sql` (string): [Required] custom SQL to use use. Supports the following tokens:
     -   `!BBOX!` - [Required] will be replaced with the bounding box of the tile before the query is sent to the database. `!bbox!` and`!BOX!` are supported as well for compatibilitiy with queries from Mapnik and MapServer styles.
     -   `!ZOOM!` - [Optional] will be replaced with the "Z" (zoom) value of the requested tile.
     -   `!X!` - [Optional] will be replaced with the "X" value of the requested tile.
@@ -97,16 +108,72 @@ tablename = "gis.zoning_base_3857"
     -   `!GEOM_FIELD!` - [Optional] the geom field name
     -   `!GEOM_TYPE!` - [Optional] the geom type field name
 
-`*Required`: either the `tablename` or `sql` must be defined, but not both.
+A `tablename` may be given instead of `sql`, along with `fields` to choose the
+columns it selects. Both are leftovers of the removed standard type, which is
+what that path was shaped for, and neither is usable here: shigola generates a
+whole-table select with no `ST_AsMVTGeom` and no bounding-box filter, which
+`ST_AsMVT` cannot make a correct tile out of.
 
-#### Example minimum custom SQL config
+Which way it fails depends on something unrelated. Without `geometry_type` the
+provider refuses to start, because inferring the type means reading that
+generated query back and it returns raw geometry. **With `geometry_type` — which
+you are told above to always declare — it starts, and serves whole-table tiles.**
+Write the `sql`.
+
+#### Example mvt_postgis and map config
 
 ```toml
-[[providers.layers]]
-name = "rivers"
-# custom SQL to be used for this layer. Note: that the geometery field is wrapped
-# in ST_AsBinary() and a !BBOX! token is supplied for querying the table with the tile bounds
-sql = "SELECT gid, ST_AsBinary(geom) AS geom FROM gis.rivers WHERE geom && !BBOX!"
+[[providers]]
+name = "test_postgis"
+type = "mvt_postgis"
+uri = "postgres://postgres:postgres@localhost:5432/shigola"
+
+  [[providers.layers]]
+  name = "landuse"
+  geometry_type = "multipolygon"
+  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
+
+[[maps]]
+name = "cities"
+center = [-90.2,38.6,3.0]  # where to center of the map (lon, lat, zoom)
+
+  [[maps.layers]]
+  name = "landuse"
+  provider_layer = "test_postgis.landuse"
+  min_zoom = 0
+  max_zoom = 14
+```
+
+#### Example mvt_postgis and map config for SRID 4326
+
+When using a 4326 projection with `ST_AsMVT` the SQL statement needs to be
+modified. `ST_AsMVTGeom` is expecting data in 3857 projection so the geometries
+and the `!BBOX!` token need to be transformed prior to `ST_AsMVTGeom` processing
+them. For example:
+
+```toml
+[[providers]]
+name = "test_postgis"
+type = "mvt_postgis"
+uri = "postgres://postgres:postgres@localhost:5432/shigola"
+srid = 4326 # setting the srid on the provider to 4326 will cause the !BBOX! value to use the 4326 projection.
+
+  [[providers.layers]]
+  name = "landuse"
+  # the !BBOX! token used in the WHERE clause is not reprojected so it can match 4326 data
+  # the matched data AND the !BBOX! are then reporojected to 3857 prior to being passed to ST_AsMVTGeom
+  geometry_type = "multipolygon"
+  sql = "SELECT ST_AsMVTGeom(ST_Transform(geom, 3857),ST_Transform(!BBOX!,3857)) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
+
+[[maps]]
+name = "cities"
+center = [-90.2,38.6,3.0]  # where to center of the map (lon, lat, zoom)
+
+  [[maps.layers]]
+  name = "landuse"
+  provider_layer = "test_postgis.landuse"
+  min_zoom = 0
+  max_zoom = 14
 ```
 
 ## Environment Variable support
@@ -159,7 +226,7 @@ The fixture holds two groups of tables:
 | Tables | Where they come from |
 |:---|:---|
 | `hstore_test`, `ne_10m_land_scale_rank`, `null_geom_test`, `osm_buildings_test`, `three_d_test`, and the `as_numeric`/`tilebbox` functions | Inherited from upstream Tegola. No higher-level source exists, so they are carried forward from the previous dump on each regeneration. |
-| `land_polygons`, `roads_lines`, `places_points` | Converted from the Athens OSM extract at `provider/gpkg/testdata/athens-osm-20170921.gpkg` — the three layers `.github/cite/config.toml` serves through `mvt_postgis`. This is now the OGC conformance suite's only data source, so a fixture that fails to restore takes the conformance run with it. |
+| `land_polygons`, `roads_lines`, `places_points` | Converted from the Athens OSM extract at `testdata/postgis/athens-osm-20170921.gpkg` — the three layers `.github/cite/config.toml` serves through `mvt_postgis`. This is now the OGC conformance suite's only data source, so a fixture that fails to restore takes the conformance run with it. |
 
 `test_tags_table` and `test_warning_log()` are not in the dump; they are applied
 afterwards from the `testdata/postgis/postgis-*.sql` files.

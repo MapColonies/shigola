@@ -21,10 +21,8 @@ import (
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
-	"github.com/go-spatial/geom/encoding/wkb"
 	pgxuuid "github.com/jackc/pgx-gofrs-uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -176,7 +174,6 @@ func (p *Provider) Collectors(
 
 const (
 	// We quote the field and table names to prevent colliding with postgres keywords.
-	stdSQL = `SELECT %[1]v FROM %[2]v WHERE "%[3]v" && ` + conf.BboxToken
 	mvtSQL = `SELECT %[1]v FROM %[2]v`
 
 	// SQL to get the column names, without hitting the information_schema.
@@ -399,7 +396,6 @@ func BuildDBConfig(opts *DBConfigOptions) (*pgxpool.Config, error) {
 func CreateProvider(
 	config dict.Dicter,
 	maps []provider.Map,
-	providerType string,
 ) (*Provider, error) {
 	uri, params, err := BuildURI(config)
 	if err != nil {
@@ -657,7 +653,7 @@ func CreateProvider(
 			// Tablename and Fields will be used to build the query.
 			// We need to do some work. We need to check to see Fields contains the geom and gid fields
 			// and if not add them to the list. If Fields list is empty/nil we will use '*' for the field list.
-			l.sql, err = genSQL(&l, p.pool, tblName, fields, true, providerType)
+			l.sql, err = genSQL(&l, p.pool, tblName, fields, true)
 			if err != nil {
 				return nil, fmt.Errorf("could not generate sql, for layer(%v): %w", lName, err)
 			}
@@ -783,7 +779,20 @@ func (p Provider) setLayerGeomType(l *Layer, geomType string) error {
 func (p Provider) inspectLayerGeomType(pname string, l *Layer, maps []provider.Map) error {
 	var err error
 
-	// we want to know the geom type instead of returning the geom data so we modify the SQL
+	// We want the geom type rather than the geom data, so the SQL is rewritten
+	// to ask for it.
+	//
+	// The ST_AsBinary substitution outlives the standard provider type
+	// (MAPCO-11490) on purpose: genSQL no longer emits ST_AsBinary, but a
+	// hand-written `sql` layer may still wrap its geometry that way, and this is
+	// what lets the type be inferred for one. TestLayerGeomType covers it.
+	//
+	// An ST_AsMVTGeom layer is wrapped rather than substituted, because its
+	// geometry is already in tile space by the time the outer query sees it.
+	// ST_GeometryType of that is the type of the clipped result, which is
+	// commonly NULL at the zoom this inspection uses -- which is why declaring
+	// geometry_type is not really optional here. See provider/postgis/README.md.
+	//
 	// TODO (arolek): this strategy wont work if remove the requirement of wrapping ST_AsBinary(geom) in the SQL statements.
 	//
 	// https://github.com/go-spatial/tegola/issues/180
@@ -899,174 +908,6 @@ func (p Provider) Layers() ([]provider.LayerInfo, error) {
 	}
 
 	return ls, nil
-}
-
-// TileFeatures adheres to the provider.Tiler any
-func (p Provider) TileFeatures(
-	ctx context.Context,
-	layer string,
-	tile provider.Tile,
-	params provider.Params,
-	fn func(f *provider.Feature) error,
-) error {
-	var mapName string
-	{
-		mapNameVal := ctx.Value(observability.ObserveVarMapName)
-		if mapNameVal != nil {
-			// if it's not convertible to a string, we will ignore it.
-			mapName, _ = mapNameVal.(string)
-		}
-	}
-	// fetch the provider layer
-	plyr, ok := p.Layer(layer)
-	if !ok {
-		return ErrLayerNotFound{layer}
-	}
-
-	sql, err := replaceTokens(plyr.sql, &plyr, tile, true)
-	if err := ctxErr(ctx, err); err != nil {
-		return fmt.Errorf(
-			"error replacing layer tokens for layer (%v) SQL (%v): %w",
-			layer,
-			sql,
-			err,
-		)
-	}
-
-	// replace configured query parameters if any
-	args := make([]any, 0)
-	sql = params.ReplaceParams(sql, &args)
-	if err != nil {
-		return err
-	}
-
-	if debugExecuteSQL {
-		log.Debugf("TEGOLA_SQL_DEBUG:EXECUTE_SQL for layer (%v): %v with args %v", layer, sql, args)
-	}
-
-	// context check
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	now := time.Now()
-	rows, err := p.pool.Query(ctx, sql, args...)
-	if p.queryHistogramSeconds != nil {
-		z, _, _ := tile.ZXY()
-		lbls := prometheus.Labels{
-			"z":          strconv.FormatUint(uint64(z), 10),
-			"map_name":   mapName,
-			"layer_name": layer,
-		}
-		p.queryHistogramSeconds.With(lbls).Observe(time.Since(now).Seconds())
-	}
-	// when using ctxErr, it's import to make sure the defer rows.Close()
-	// statement happens before the error check. The context may have been
-	// canceled, but rows were also returned. If we don't close the rows
-	// the provider can't clean up the pool and the process will hang
-	// trying to clean itself up.
-	defer rows.Close()
-	if err := ctxErr(ctx, err); err != nil {
-		return fmt.Errorf(
-			"error running layer (%v) SQL (%v) with args %v: %w",
-			layer,
-			sql,
-			args,
-			err,
-		)
-	}
-
-	// fieldDescriptions
-	var fdescs []pgconn.FieldDescription
-
-	reportedLayerFieldName := ""
-
-	for rows.Next() {
-		// context check
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		// fetch rows FieldDescriptions. this gives us the OID for the data types
-		// returned to aid in decoding. This only needs to be done once.
-		if fdescs == nil {
-			fdescs = rows.FieldDescriptions()
-
-			// loop our field descriptions looking for the geometry field
-			var geomFieldFound bool
-
-			for i := range fdescs {
-				if string(fdescs[i].Name) == plyr.GeomFieldName() {
-					geomFieldFound = true
-
-					break
-				}
-			}
-
-			if !geomFieldFound {
-				return ErrGeomFieldNotFound{
-					GeomFieldName: plyr.GeomFieldName(),
-					LayerName:     plyr.Name(),
-				}
-			}
-		}
-
-		// fetch row values
-		vals, err := rows.Values()
-		if err := ctxErr(ctx, err); err != nil {
-			return fmt.Errorf("error running layer (%v) SQL (%v): %w", layer, sql, err)
-		}
-
-		gid, geobytes, tags, err := decipherFields(
-			ctx,
-			plyr.GeomFieldName(),
-			plyr.IDFieldName(),
-			fdescs,
-			vals,
-		)
-		if err := ctxErr(ctx, err); err != nil {
-			return fmt.Errorf("for layer (%v) %w", plyr.Name(), err)
-		}
-
-		// check that we have geometry data. if not, skip the feature
-		if len(geobytes) == 0 {
-			continue
-		}
-
-		// decode our WKB
-		geometry, err := wkb.DecodeBytes(geobytes)
-		if err != nil {
-			switch err.(type) {
-			case wkb.ErrUnknownGeometryType:
-				rplfn := layer + ":" + plyr.GeomFieldName()
-				// Only report to the log once.
-				// This is to prevent the logs from filling up if there are many geometries in the layer
-				if reportedLayerFieldName == "" || reportedLayerFieldName == rplfn {
-					reportedLayerFieldName = rplfn
-					log.Warnf("Ignoring unsupported geometry in layer (%v). Only basic 2D geometry type are supported. Try using `ST_Force2D(%v)`.", layer, plyr.GeomFieldName())
-				}
-
-				continue
-
-			default:
-				return fmt.Errorf("unable to decode layer (%v) geometry field (%v) into wkb where (%v = %v): %w", layer, plyr.GeomFieldName(), plyr.IDFieldName(), gid, err)
-			}
-		}
-
-		feature := provider.Feature{
-			ID:       gid,
-			Geometry: geometry,
-			SRID:     plyr.SRID(),
-			Tags:     tags,
-		}
-
-		// pass the feature to the provided callback
-		if err = fn(&feature); err != nil {
-			return err
-		}
-	}
-
-	return rows.Err()
 }
 
 func (p Provider) MVTForLayers(

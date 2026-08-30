@@ -17,8 +17,12 @@ import (
 // data source used to be a GeoPackage. That made the project's conformance
 // evidence an invisible dependency of the GeoPackage provider: removing the
 // provider would have deleted the evidence with it, and nothing would have said
-// so. These tests are what make the dependency visible, and they need neither
-// TeamEngine nor a database.
+// so. These tests are what made the dependency visible, and they are what let
+// the provider be deleted (MAPCO-11488) with the evidence left standing.
+//
+// They still earn their place with the provider gone: the suite's data source
+// is a config file, and a config file can be pointed anywhere. They need
+// neither TeamEngine nor a database.
 const (
 	citeConfigPath   = "../.github/cite/config.toml"
 	citeWorkflowPath = "../.github/workflows/ogc_cite.yml"
@@ -51,11 +55,11 @@ func loadCiteConfig(t *testing.T) config.Config {
 
 // TestCiteConformanceConfig pins what the conformance fixture is allowed to be.
 //
-// The provider-type assertion is the guard that matters: it fails whether or not
-// a GeoPackage provider happens to be registered. That this test binary does not
-// register one -- config_test.go imports debug, test and postgis, and no gpkg --
-// means LoadAndValidate would reject the type outright as well, but that is a
-// second line of defence, not the first.
+// The provider-type assertion is the guard that matters, and it is a stricter
+// one than "the config loads": LoadAndValidate rejects a provider type no
+// binary serves, but it has nothing to say about a config quietly re-pointed at
+// some other type that is served. Naming mvt_postgis exactly is what keeps the
+// conformance evidence about the path shigola actually ships.
 func TestCiteConformanceConfig(t *testing.T) {
 	cfg := loadCiteConfig(t)
 

@@ -64,7 +64,7 @@ type Config struct {
 	// 1. name -- this is the name that is referenced in
 	// the maps section
 	// 2. type -- this is the name the provider modules register
-	// themselves under. (e.g. postgis, gpkg, mvt_postgis )
+	// themselves under. (e.g. mvt_postgis)
 	// Note: Use the type to figure out if the provider is a mvt or std provider
 	Providers []env.Dict     `toml:"providers"`
 	Maps      []provider.Map `toml:"maps"`
@@ -187,6 +187,16 @@ func (c *Config) Validate() error {
 		}
 		drv, ok := drivers[typ]
 		if !ok {
+			// A type with a named successor is reported as removed rather than
+			// as unknown, so the operator is told what to write instead of
+			// being handed the list to choose from.
+			if replacement, removed := provider.Removed(typ); removed {
+				return ErrRemovedProviderType{
+					Name:        name,
+					Type:        typ,
+					Replacement: replacement,
+				}
+			}
 			return ErrUnknownProviderType{
 				Name:           name,
 				Type:           typ,

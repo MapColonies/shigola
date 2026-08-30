@@ -4,7 +4,7 @@
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/MapColonies/shigola)
 [![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](LICENSE.md)
 
-Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) with support for [PostGIS](https://postgis.net/), [GeoPackage](https://www.geopackage.org/) and [SAP HANA Spatial](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) data providers.
+Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) from [PostGIS](https://postgis.net/).
 
 > ### Shigola is a fork of Tegola
 >
@@ -16,8 +16,10 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 >
 > Shigola adds three things Tegola does not have — [OGC API - Tiles](docs/ogc-api-tiles.md),
 > multiple [tile matrix sets](docs/ogc-api-tiles.md#configuration), and a
-> [layered cache](#layered-cache) — and is otherwise additive. For anything not listed as a Shigola
-> feature, upstream behaviour and the [official Tegola docs](https://tegola.io) apply.
+> [layered cache](#layered-cache) — on a deliberately narrower server. It is **not a superset of
+> Tegola**: it removes more than it adds, and [What Shigola removes](#what-shigola-removes) lists
+> what. For behaviour it kept and did not change, upstream behaviour and the [official Tegola
+> docs](https://tegola.io) apply.
 >
 > **Bug reports about behaviour this fork did not change belong
 > [upstream](https://github.com/go-spatial/tegola/issues).** See [Relationship to
@@ -27,7 +29,7 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 
 - Native geometry processing (simplification, clipping, make valid, intersection, contains, scaling, translation)
 - [Mapbox Vector Tile v2 specification](https://github.com/mapbox/vector-tile-spec) compliant.
-- Support for [PostGIS](provider/postgis) and [GeoPackage](provider/gpkg) data providers. Extensible design to support additional data providers.
+- [PostGIS](provider/postgis) data provider, with the MVT encoding done in the database by `ST_AsMVT`. Extensible design to support additional data providers.
 - Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob).
 - [Layered caching](#layered-cache): an ordered chain of cache backends with read-through promotion, per-tier read deadlines and non-blocking writes.
 - Cache seeding and invalidation via individual tiles (ZXY), lat / lon bounds and ZXY tile list.
@@ -35,7 +37,6 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 - Support for Web Mercator (3857) and WGS84 (4326) projections.
 - Support for [AWS Lambda](cmd/shigola_lambda).
 - Support for serving HTTPS.
-- Support for [PostGIS ST_AsMVT](mvtprovider/postgis).
 - Support for [Prometheus](observability/prometheus/README.md) observability.
 
 ## Usage
@@ -110,7 +111,10 @@ uri = "postgresql://shigola:<password>@localhost:5432/shigola?ssl_mode=prefer" #
   name = "landuse"
   # MVT data provider must use SQL statements
   # this table uses "geom" for the geometry_fieldname and "gid" for the id_fieldname so they don't need to be configured
-  # Wrapping the geom with ST_AsMVTGeom is required.
+  # Wrapping the geom with ST_AsMVTGeom is required, and so is declaring
+  # geometry_type: the startup inference that would otherwise guess it reads the
+  # layer's SQL back, and cannot type what ST_AsMVTGeom returns.
+  geometry_type = "multipolygon"
   sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
   # If you want to use the configurable parameters defined in maps.params make sure to include the token in the SQL statement
   sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX! !PARAM!"
@@ -141,7 +145,7 @@ name = "zoning"                           # the collection id: /collections/zoni
 ```
 
 - More information on PostgreSQL SSL modes can be found [here](https://www.postgresql.org/docs/current/libpq-ssl.html).
-- More information on the `mvt_postgis` provider can be found [here](mvtprovider/postgis)
+- More information on the `mvt_postgis` provider can be found [here](provider/postgis)
 
 ## Layered cache
 
@@ -433,15 +437,13 @@ The following build flags can be used to turn off certain features of shigola:
 - `noRedisCache` - turn off the Redis cache back end.
 - `noGCSCache` - turn off the Google Cloud Storage cache back end.
 - `noPostgisProvider` - turn off the PostGIS data provider.
-- `noGpkgProvider` - turn off the GeoPackage data provider. Note, GeoPackage uses CGO and will be turned off if the environment variable `CGO_ENABLED=0` is set prior to building.
-- `noHanaProvider` - turn off the SAP HANA data provider.
 - `pprof` - enable [Go profiler](https://golang.org/pkg/net/http/pprof/). Start profile server by setting the environment `SHIGOLA_HTTP_PPROF_BIND` environment (e.g. `SHIGOLA_HTTP_PPROF_BIND=localhost:6060`).
 - `noPrometheusObserver` - turn off support for the Prometheus metric end point.
 
-Example of using the build flags to turn off the Redis cache back end and the GeoPackage provider.
+Example of using the build flags to turn off the Redis cache back end and the S3 cache back end.
 
 ```bash
-go build -tags 'noRedisCache noGpkgProvider'
+go build -tags 'noRedisCache noS3Cache'
 ```
 
 **Setting Version Information** The following flags can be used to set version information:
@@ -459,8 +461,9 @@ go build -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevi
 
 ## Relationship to Tegola
 
-Shigola is a fork of [go-spatial/tegola](https://github.com/go-spatial/tegola). It is additive
-except where noted below.
+Shigola is a fork of [go-spatial/tegola](https://github.com/go-spatial/tegola). It is **not a
+superset of it**: three things were added, rather more was taken away, and four remaining behaviours
+changed incompatibly. All three lists are below.
 
 ### What Shigola adds
 
@@ -471,6 +474,21 @@ except where noted below.
   per map with `tile_matrix_sets`, where Tegola serves one implicit scheme.
 - **[Layered cache](#layered-cache)** — `type = "multi"`: an ordered chain of cache backends with
   read-through promotion, per-tier read deadlines and non-blocking writes.
+
+### What Shigola removes
+
+Removed on purpose, and not coming back: this is a server aimed at one job, and each of these was a
+surface that had to be kept working, documented and tested for no user of it here.
+
+| Removed | Instead |
+|:---|:---|
+| The built-in map viewer | Nothing. Point your own client at the tile endpoints. |
+| The native `/maps/...` tile routes | OGC API - Tiles is the only tile surface, and `/` is its landing page. |
+| The [GeoPackage](https://www.geopackage.org/) and [SAP HANA](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) providers | PostGIS. A config naming `gpkg` or `hana` is rejected at startup. |
+| The `postgis` provider type | [`mvt_postgis`](provider/postgis), which encodes the tile in the database with `ST_AsMVT`. A config naming `postgis` is rejected at startup with a message naming its replacement. |
+
+Removing the GeoPackage provider also took the last cgo out of the tree, so `CGO_ENABLED` no longer
+decides what a shigola binary can do.
 
 ### Breaking changes vs Tegola
 

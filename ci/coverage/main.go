@@ -187,7 +187,6 @@ var gateVars = []string{
 	"RUN_S3_TESTS",
 	"RUN_AZBLOB_TESTS",
 	"RUN_GCS_TESTS",
-	"RUN_HANA_TESTS",
 }
 
 // enabledGates lists the gate variables set to the literal "yes" that

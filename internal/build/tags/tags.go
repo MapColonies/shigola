@@ -309,7 +309,6 @@ func main() {
 		IgnorePackages: []string{*PackageName},
 		IgnoreTags: []string{
 			"^ignore$",
-			"^cgo$", // we add in "cgo" later
 			"^go1.\\d+$",
 		},
 	})
@@ -317,7 +316,15 @@ func main() {
 		panic(err)
 	}
 
-	tags = append(tags, "cgo", "pprof")
+	// pprof gates no file in the tree -- it is read at runtime, in
+	// cmd/shigola, to decide whether to start the profile server -- so nothing
+	// above can discover it and it is named here.
+	//
+	// cgo used to be named alongside it, for the GeoPackage provider. Nothing
+	// in the tree is compiled conditionally on cgo now (see
+	// TestNoCgoConstraints), so reporting a cgo tag would describe the
+	// toolchain rather than the binary.
+	tags = append(tags, "pprof")
 
 	if !*KeepOldFiles {
 		err = removeGeneratedFiles(src)

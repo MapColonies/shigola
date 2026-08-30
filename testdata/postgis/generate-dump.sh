@@ -20,8 +20,12 @@
 #            tests call. Their contents predate this repository and there is no
 #            higher-level source to rebuild them from, so they are carried
 #            forward rather than regenerated.
-#   the GeoPackage at provider/gpkg/testdata/athens-osm-20170921.gpkg, for the
-#            three Athens layers.
+#   the GeoPackage at testdata/postgis/athens-osm-20170921.gpkg, for the three
+#            Athens layers. It sat under provider/gpkg/testdata until that
+#            provider was deleted (MAPCO-11488) and moved here with it: shigola
+#            cannot read a GeoPackage any more, but this script does not ask it
+#            to -- GDAL converts the file, and it is the only provenance the
+#            Athens layers have.
 #
 # "Reproducible" here means the same logical content every run, not identical
 # bytes: pg_dump stamps a creation time into the archive header, so two runs
@@ -57,7 +61,7 @@ PG_IMAGE=postgis/postgis:12-3.0-alpine
 # regenerate and check the resulting table definitions before committing.
 GDAL_IMAGE=ghcr.io/osgeo/gdal@sha256:01ae355051f63f17b8f1ffd5486331b4996a7b9f618c680e418a7228b236cc55
 
-GPKG=$REPO_ROOT/provider/gpkg/testdata/athens-osm-20170921.gpkg
+GPKG=$REPO_ROOT/testdata/postgis/athens-osm-20170921.gpkg
 FROM_DUMP=$REPO_ROOT/testdata/postgis/shigola.dump
 OUT_DUMP=$REPO_ROOT/testdata/postgis/shigola.dump
 

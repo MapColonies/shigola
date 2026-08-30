@@ -204,17 +204,16 @@ Running with fewer gates enabled measures less, so the check may fail locally on
 in CI. Compare the per-package rows in the baseline rather than only the total.
 
 The baseline deliberately records **only** the gates a contributor can provision from this
-repository. `RUN_S3_TESTS` and `RUN_HANA_TESTS` are enabled in CI and do really run there — as of
-this writing they measure `cache/s3` at 65.6% and `provider/hana` at 67.7% — but neither is
-reproducible locally: they reach an S3 bucket and a third-party SAP HANA instance that this
+repository. `RUN_S3_TESTS` is enabled in CI and does really run there — as of this writing it
+measures `cache/s3` at 65.6% — but it is not reproducible locally: it reaches an S3 bucket this
 repository does not provision and a contributor has no way to stand up. A baseline nobody can
-regenerate is not a baseline, so they are left out.
+regenerate is not a baseline, so it is left out.
 
-The consequence is worth being clear about: those packages are recorded near zero in the baseline,
-so **CI measures a good deal higher than the recorded total**. That is the safe direction for a
-floor, but it does mean the baseline understates coverage for exactly the backends the
-provider-removal work deletes — check the CI log, not this file, if you need to know what those
-packages are really covered at.
+The consequence is worth being clear about: `cache/s3` is recorded near zero in the baseline, so
+**CI measures a good deal higher than the recorded total**. That is the safe direction for a floor.
+It also means the baseline still carries rows for packages the provider-removal work has since
+deleted; it is a before-picture on purpose, and those rows are what the removals are measured
+against.
 
 To regenerate after a change that is *meant* to move the numbers, run `-write` in the same shell that
 ran the tests — it records the `RUN_*_TESTS` gates it finds set, so the baseline says which suites

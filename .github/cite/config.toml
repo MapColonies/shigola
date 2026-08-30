@@ -7,10 +7,12 @@
 # It used to serve the same three layers out of provider/gpkg/testdata via the
 # GeoPackage provider, which made the project's only external conformance
 # evidence an invisible dependency of that provider — removing it would have
-# deleted the evidence and said nothing. Nothing here is file-backed now, and
-# config/config_cite_test.go loads this file in a test binary that has no
-# GeoPackage provider registered, so a relapse fails a unit test rather than
-# surfacing as a weekly CI job that quietly stopped proving anything.
+# deleted the evidence and said nothing. Moving the data here first is what let
+# that provider be deleted (MAPCO-11488) without taking the evidence with it.
+# Nothing here is file-backed now, and config/config_cite_test.go pins the
+# provider type this file is allowed to name, so a relapse to any file-backed
+# source fails a unit test rather than surfacing as a weekly CI job that
+# quietly stopped proving anything.
 #
 # The map declares both distinct servable tiling schemes so the tilesets list,
 # the per-scheme tileset metadata, and the tile paths are all exercised rather
@@ -52,7 +54,7 @@ srid = 4326
 # but roughly 100 units at zoom 4.
 #
 # The alternative — ST_Transform(...,3857) around both the geom and !BBOX!, the
-# pattern mvtprovider/postgis/README.md documents for a 4326 provider — is exact
+# pattern provider/postgis/README.md documents for a 4326 provider — is exact
 # for WebMercatorQuad and out by the same amount for WorldCRS84Quad, and at low
 # zoom it asks PostGIS to project latitude 90. One SQL string cannot be exact for
 # both schemes: nothing in it says which grid the request came from. That is a

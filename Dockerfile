@@ -4,8 +4,8 @@
 #	$ cd shigola
 #	$ docker build -t shigola .
 #
-# To use with local files, add file data sources (i.e. Geopackages) and config as config.toml to a
-# local directory and mount that directory as a volume at /opt/shigola_config/.  Examples:
+# To use a local config, put it in a local directory as config.toml and mount that directory as a
+# volume at /opt/shigola_config/.  Examples:
 #
 # To display command-line options available:
 #  
@@ -19,12 +19,6 @@
 #	$ mkdir docker-config
 #	$ cp my-config-file docker-config/config.toml
 #	$ docker run -v /path/to/docker-config:/opt/shigola_config -p 8080 shigola serve
-#
-# Example gpkg use:
-#  $ mkdir docker-config
-#  $ cp my-config-file docker-config/config.toml
-#  $ cp my-db.gpkg docker-config/
-#  $ docker run -v /path/to/docker-config:/opt/shigola_config -p 8080 shigola serve
 
 # Intermediary container for building.
 #

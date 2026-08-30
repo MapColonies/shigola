@@ -13,15 +13,8 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/tracelog"
 )
-
-// isMVT will return true if the provider is MVT based
-func isMVT(providerType string) bool {
-	return providerType == MVTProviderType
-}
 
 // genSQL will fill in the SQL field of a layer given a pool, and list of fields.
 func genSQL(
@@ -30,7 +23,6 @@ func genSQL(
 	tblname string,
 	flds []string,
 	buffer bool,
-	providerType string,
 ) (sql string, err error) {
 	// we need to hit the database to see what the fields are.
 	if len(flds) == 0 {
@@ -75,18 +67,13 @@ func genSQL(
 	// to avoid field names possibly colliding with Postgres keywords,
 	// we wrap the field names in quotes
 
+	// The geometry is selected as-is: ST_AsMVT takes it from here, and the
+	// bytes never reach this process. The removed standard type wrapped it in
+	// ST_AsBinary and decoded the WKB in Go.
 	if fgeom == -1 {
-		if isMVT(providerType) {
-			flds = append(flds, fmt.Sprintf(`"%v" AS "%[1]v"`, l.geomField))
-		} else {
-			flds = append(flds, fmt.Sprintf(`ST_AsBinary("%v") AS "%[1]v"`, l.geomField))
-		}
+		flds = append(flds, fmt.Sprintf(`"%v" AS "%[1]v"`, l.geomField))
 	} else {
-		if isMVT(providerType) {
-			flds[fgeom] = fmt.Sprintf(`"%v" AS "%[1]v"`, l.geomField)
-		} else {
-			flds[fgeom] = fmt.Sprintf(`ST_AsBinary("%v") AS "%[1]v"`, l.geomField)
-		}
+		flds[fgeom] = fmt.Sprintf(`"%v" AS "%[1]v"`, l.geomField)
 	}
 
 	// add required id field
@@ -96,13 +83,7 @@ func genSQL(
 
 	selectClause := strings.Join(flds, ", ")
 
-	sqlTmpl := stdSQL
-
-	if isMVT(providerType) {
-		sqlTmpl = mvtSQL
-	}
-
-	return fmt.Sprintf(sqlTmpl, selectClause, tblname, l.geomField), nil
+	return fmt.Sprintf(mvtSQL, selectClause, tblname, l.geomField), nil
 }
 
 // replaceTokens replaces tokens in the provided SQL string
@@ -219,189 +200,6 @@ func extractQueryParamValues(pname string, maps []provider.Map, layer *Layer) pr
 // contain alphanumerics, dash and underline chars.
 func uppercaseTokens(str string) string {
 	return provider.ParameterTokenRegexp.ReplaceAllStringFunc(str, strings.ToUpper)
-}
-
-func transformVal(valType uint32, val any) (any, error) {
-	switch valType {
-	default:
-		switch vt := val.(type) {
-		default:
-			log.Errorf("%v type is not supported. (Expected it to be a stringer type)", valType)
-			return nil, fmt.Errorf("%v type is not supported. (Expected it to be a stringer type)", valType)
-		case fmt.Stringer:
-			return vt.String(), nil
-		case string:
-			return vt, nil
-		}
-	case pgtype.BoolOID,
-		pgtype.ByteaOID,
-		pgtype.TextOID,
-		pgtype.OIDOID,
-		pgtype.VarcharOID,
-		pgtype.JSONBOID:
-		return val, nil
-	case pgtype.Int8OID,
-		pgtype.Int2OID,
-		pgtype.NumericOID,
-		pgtype.Int4OID,
-		pgtype.Float4OID,
-		pgtype.Float8OID:
-		switch vt := val.(type) {
-		case int8:
-			return int64(vt), nil
-		case int16:
-			return int64(vt), nil
-		case int32:
-			return int64(vt), nil
-		case int64, uint64:
-			return vt, nil
-		case uint8:
-			return int64(vt), nil
-		case uint16:
-			return int64(vt), nil
-		case uint32:
-			return int64(vt), nil
-		case float32:
-			return float64(vt), nil
-		case float64:
-			return vt, nil
-		default: // should never happen.
-			return nil, fmt.Errorf("%v type is not supported. (should never happen)", valType)
-		}
-	case pgtype.DateOID, pgtype.TimestampOID, pgtype.TimestamptzOID:
-		return fmt.Sprintf("%v", val), nil
-	}
-}
-
-// decipherFields is responsible for processing the SQL result set, decoding geometries, ids and feature tags.
-func decipherFields(
-	ctx context.Context,
-	geomFieldname, idFieldname string,
-	descriptions []pgconn.FieldDescription,
-	values []any,
-) (gid uint64, geom []byte, tags map[string]any, err error) {
-	var ok bool
-
-	tags = make(map[string]any)
-
-	var idParsed bool
-	for i := range values {
-
-		// do a quick check
-		if err := ctx.Err(); err != nil {
-			return 0, nil, nil, err
-		}
-
-		// skip nil values.
-		if values[i] == nil {
-			continue
-		}
-
-		desc := descriptions[i]
-		descName := string(desc.Name)
-
-		switch descName {
-		case geomFieldname:
-			if geom, ok = values[i].([]byte); !ok {
-				return 0, nil, nil, fmt.Errorf(
-					"unable to convert geometry field (%v) into bytes",
-					geomFieldname,
-				)
-			}
-		case idFieldname:
-			// the id has to be parsed once but it can also be a tag
-			if !idParsed {
-				gid, err = gId(values[i])
-				if err != nil {
-					return 0, nil, nil, err
-				}
-				idParsed = true
-				// NOTE: if it can also be a tag, then breaking here
-				// will never add it to tags
-				break
-			}
-
-			// adds id as a tag
-			fallthrough
-		default:
-			switch vex := values[i].(type) {
-			case map[string]pgtype.Text:
-				for key, value := range vex {
-					// we need to check if the key already exists. if it does, then don't overwrite it
-					if _, ok := tags[key]; !ok {
-						tags[key] = value
-					} else {
-						log.Warnf("tag %s already exists", key)
-					}
-				}
-			case pgtype.Hstore:
-				for key, ptr := range vex {
-					value := ""
-					if ptr != nil {
-						value = *ptr
-					}
-
-					// we need to check if the key already exists. if it does, then don't overwrite it
-					if _, ok := tags[key]; !ok {
-						tags[key] = value
-					} else {
-						log.Warnf("tag %s already exists", key)
-					}
-				}
-			case pgtype.Numeric:
-				num, err := vex.Float64Value()
-				if err != nil {
-					return 0, nil, nil, fmt.Errorf("unable to scan numeric field (%v) into float64", vex)
-				}
-
-				tags[descName] = num.Float64
-			default:
-				value, err := transformVal(desc.DataTypeOID, values[i])
-				if err != nil {
-					return gid,
-						geom,
-						tags,
-						fmt.Errorf("unable to convert field [%v] (%v) of type (%v) to a suitable value: %+v (%T)",
-							i,
-							descName,
-							desc.DataTypeOID,
-							values[i],
-							values[i],
-						)
-				}
-				tags[descName] = value
-			}
-		}
-	}
-
-	return gid, geom, tags, nil
-}
-
-func gId(v any) (gid uint64, err error) {
-	switch aval := v.(type) {
-	case float64:
-		return uint64(aval), nil
-	case int64:
-		return uint64(aval), nil
-	case uint64:
-		return aval, nil
-	case uint:
-		return uint64(aval), nil
-	case int8:
-		return uint64(aval), nil
-	case uint8:
-		return uint64(aval), nil
-	case uint16:
-		return uint64(aval), nil
-	case int32:
-		return uint64(aval), nil
-	case uint32:
-		return uint64(aval), nil
-	case string:
-		return strconv.ParseUint(aval, 10, 64)
-	default:
-		return gid, fmt.Errorf("unable to convert field into a uint64")
-	}
 }
 
 // ctxErr will check if the supplied context has an error (i.e. context canceled)

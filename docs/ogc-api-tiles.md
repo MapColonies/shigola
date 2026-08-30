@@ -254,7 +254,7 @@ The suite's data source is the Athens OSM extract in the PostGIS fixture, served
 
 ```sh
 docker compose up -d && docker wait migration       # the Athens fixture, in PostGIS
-CGO_ENABLED=0 go build -mod vendor -tags noGpkgProvider -o /tmp/shigola ./cmd/shigola
+go build -mod vendor -o /tmp/shigola ./cmd/shigola
 /tmp/shigola serve --config .github/cite/config.toml --port ":8081" &
 .github/cite/run.sh WebMercatorQuad 14 6324 9271
 .github/cite/run.sh WorldCRS84Quad 14 4740 18542
@@ -264,14 +264,13 @@ Each run prints `<scheme>: 15 passed, 1 untested` and then `<scheme>: OK`. `run.
 floor of 15 passed assertions (`MIN_PASSED`), because the EARL report has no summary line and a run
 that reached nothing at all reports no failures.
 
-The build flags say something the config cannot. The conformance fixture used to be a GeoPackage,
-which made this suite — the project's only external conformance evidence — an invisible dependency
-of a provider that is on its way out; building without the GeoPackage provider is what turns
-"conformance passes with no GeoPackage present" into a fact about the binary. `CGO_ENABLED=0` is
-already enough on its own, since the `init()` that registers the provider is behind
-`//go:build cgo` and `config.Validate` then rejects the `gpkg` type outright. `-tags
-noGpkgProvider` is belt and braces — and it is the half that keeps holding if someone needs cgo
-back for an unrelated reason.
+That build line carried `CGO_ENABLED=0 -tags noGpkgProvider` until MAPCO-11488. The conformance
+fixture used to be a GeoPackage, which made this suite — the project's only external conformance
+evidence — an invisible dependency of the GeoPackage provider, and building without that provider
+was what turned "conformance passes with no GeoPackage present" into a fact about the binary rather
+than about the config. Moving the data into PostGIS first is what let the provider be deleted
+without taking the evidence with it; with no GeoPackage provider left to exclude, the flags describe
+nothing and the ordinary build is the honest one.
 
 The fixture's layers declare a **narrow zoom window** (13–15), which is deliberate and is about
 accuracy rather than about data volume: `ST_AsMVTGeom` maps the bounding box onto the tile grid

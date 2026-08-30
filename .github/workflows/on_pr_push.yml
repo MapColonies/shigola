@@ -66,12 +66,6 @@ jobs:
           PGSSLKEY: ''
           PGSSLCERT: ''
           PGSSLROOTCERT: ''
-
-          # HANA tests
-          RUN_HANA_TESTS: yes
-          # The credentials were exposed on purpose
-          # more information see: https://github.com/go-spatial/tegola/pull/893#discussion_r1136602372
-          HANA_CONNECTION_STRING: 'hdb://TEGOLACI:iZgd6$nOdhf@917df316-4e01-4a10-be54-eac1b6ab15fb.hana.prod-us10.hanacloud.ondemand.com:443?TLSInsecureSkipVerify&TLSServerName=host&timeout=1000&max_connections=10'
         # -race, not just -covermode atomic: atomic is race-safe *counting*, not
         # race *detection*. The cache write path runs a goroutine pool, detached
         # contexts and a concurrent tier fan-out, none of which -covermode checks.
@@ -102,9 +96,9 @@ jobs:
       #
       # The baseline is measured with RUN_POSTGIS_TESTS and RUN_REDIS_TESTS only
       # (see its `gates` header), because those are the only suites a contributor
-      # can provision from this repository. This job also enables RUN_S3_TESTS
-      # and RUN_HANA_TESTS, which really do run here and cover a lot more of
-      # cache/s3 and provider/hana than the baseline records.
+      # can provision from this repository. This job also enables RUN_S3_TESTS,
+      # which really does run here and covers a lot more of cache/s3 than the
+      # baseline records.
       #
       # So the total measured here sits comfortably above the recorded one. That
       # is the safe direction, and it is why this gate is not a tight one: it
