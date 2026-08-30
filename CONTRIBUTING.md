@@ -164,10 +164,11 @@ one column of each MVT value type, a null attribute, a road clipped at the tile 
 outside the tile and a layer outside it entirely.
 
 Two things about that second fixture are worth knowing before you add to it. `ST_AsMVTGeom`'s buffer
-defaults to **256**, not 0, so geometry legitimately runs past the extent and a feature meant to be
-excluded has to sit more than 256 tile units outside the tile. And the tile's column is larger than
-the scheme's row count on purpose: reading the path's row and column the wrong way round then asks
-for a row that does not exist, which is a rejection rather than a plausible-looking tile.
+defaults to **256**, not 0, so geometry legitimately runs past the extent — but that buffer decides
+*clipping*, not *selection*: which rows reach it at all is settled earlier by the layer SQL's
+`WHERE geom && !BBOX!` against the unbuffered envelope. And the tile's column is larger than the
+scheme's row count on purpose: reading the path's row and column the wrong way round then asks for a
+row that does not exist, which is a rejection rather than a plausible-looking tile.
 
 ### Coverage floor
 

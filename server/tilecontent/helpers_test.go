@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola/atlas"
@@ -31,9 +30,14 @@ const extent = 4096
 // mvtBuffer is ST_AsMVTGeom's default buffer, in tile units.
 //
 // It is 256, not 0. The epic assumed no buffer; the road crossing the tile edge
-// in the fixture is what showed otherwise, arriving clipped at extent+256. It
-// matters twice: geometry can legitimately fall outside 0..extent, and a
-// feature meant to be excluded has to sit more than this far outside the tile.
+// is what showed otherwise, arriving clipped at extent+256 rather than at the
+// extent.
+//
+// It decides clipping, not selection. Which row reaches ST_AsMVTGeom at all is
+// decided earlier, by the layer SQL's `WHERE geom && !BBOX!` against the
+// unbuffered envelope, so a feature outside the tile is excluded however close
+// to the edge it sits. The two are easy to conflate and this comment exists
+// because an earlier version of it did.
 const mvtBuffer = 256
 
 // pgConfig is the connection half of a provider config, from the environment
@@ -111,6 +115,12 @@ func tileURI(collection, scheme string, tileMatrix, tileRow, tileCol int) string
 	return fmt.Sprintf("/collections/%s/tiles/%s/%d/%d/%d", collection, scheme, tileMatrix, tileRow, tileCol)
 }
 
+// noCompressionClient is a client that negotiates nothing of its own, so what
+// arrives is what the server sent.
+func noCompressionClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{DisableCompression: true}}
+}
+
 // response is one raw answer, before anything is decoded.
 type response struct {
 	Status   int
@@ -133,15 +143,15 @@ func get(t *testing.T, srv *httptest.Server, uri, acceptEncoding string) respons
 	}
 	if acceptEncoding != "" {
 		req.Header.Set("Accept-Encoding", acceptEncoding)
-	} else {
-		// Go's transport adds gzip and decompresses transparently unless told
-		// not to. This check is about what the server sends, so the client must
-		// not negotiate on its own.
-		req.Header.Set("Accept-Encoding", "identity")
-		req.Header.Del("Accept-Encoding")
 	}
 
-	resp, err := srv.Client().Transport.(*http.Transport).RoundTrip(req)
+	// DisableCompression, and it is load-bearing. Left on, net/http adds
+	// Accept-Encoding: gzip to any request that carries no such header, then
+	// decompresses the answer and strips Content-Encoding before the caller
+	// sees it. A check on what the server sent would then be reading what the
+	// transport did -- and the "advertising nothing" case in particular would
+	// pass whatever the server chose.
+	resp, err := noCompressionClient().Do(req)
 	if err != nil {
 		t.Fatalf("GET %v: %v", uri, err)
 	}
@@ -185,35 +195,9 @@ func fetch(t *testing.T, srv *httptest.Server, collection, scheme string, tileMa
 	// apart from "the tile held nothing and I expected nothing", and the second
 	// is how a fixture that quietly stopped loading looks.
 	t.Logf("GET %v -> 200 %s, %d bytes gzipped, holding %s",
-		uri, resp.Header.Get("Content-Type"), len(resp.Body), describe(tile))
+		uri, resp.Header.Get("Content-Type"), len(resp.Body), tile.Summary())
 
 	return tile
-}
-
-// describe renders a tile's contents on one line, for the log.
-func describe(tile mvttest.Tile) string {
-	if len(tile.Layers) == 0 {
-		return "no layers"
-	}
-
-	parts := make([]string, 0, len(tile.Layers))
-	for _, l := range tile.Layers {
-		names := make([]string, 0, len(l.Features))
-		for _, f := range l.Features {
-			label := "unnamed"
-			if v, ok := f.Tags["name"]; ok {
-				label = v.Str
-			}
-			where := "no geometry"
-			if pts := f.Points(); len(pts) > 0 {
-				where = pts[0].String()
-			}
-			names = append(names, fmt.Sprintf("%s#%d%s", label, f.ID, where))
-		}
-		parts = append(parts, fmt.Sprintf("%s[%s]", l.Name, strings.Join(names, " ")))
-	}
-
-	return strings.Join(parts, " ")
 }
 
 // named returns the single feature in the layer whose name tag is name.
@@ -227,7 +211,7 @@ func named(t *testing.T, tile mvttest.Tile, layer, name string) mvttest.Feature 
 
 	f, ok := l.FeatureByTag("name", mvttest.String(name))
 	if !ok {
-		t.Fatalf("want exactly one feature named %q in %q; the tile holds %v", name, layer, describe(tile))
+		t.Fatalf("want exactly one feature named %q in %q; the tile holds %v", name, layer, tile.Summary())
 	}
 
 	if !f.HasID {
@@ -281,9 +265,14 @@ func absent(t *testing.T, tile mvttest.Tile, layer, name string) {
 		t.Logf("  ok  %-13s absent from this tile, which holds no %v layer at all", name, layer)
 		return
 	}
-	if _, ok := l.FeatureByTag("name", mvttest.String(name)); ok {
-		t.Errorf("feature %q is present in %q, want it absent; the tile holds %v", name, layer, describe(tile))
-		return
+	// Any match, not exactly one. FeatureByTag reports ok only when a single
+	// feature matches, so asking it would let two features sharing a name pass
+	// as absent -- which is the case an absence assertion most needs to catch.
+	for _, f := range l.Features {
+		if v, ok := f.Tags["name"]; ok && v == mvttest.String(name) {
+			t.Errorf("feature %q is present in %q, want it absent; the tile holds %v", name, layer, tile.Summary())
+			return
+		}
 	}
 
 	t.Logf("  ok  %-13s absent from this tile", name)

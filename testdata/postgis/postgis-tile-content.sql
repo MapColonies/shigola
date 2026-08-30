@@ -1,6 +1,6 @@
 -- Fixture for the tile-content checks (MAPCO-11547, and the tickets built on it).
 --
--- Three layers, eight features. Every coordinate was chosen backwards: from the
+-- Three layers, nine features. Every coordinate was chosen backwards: from the
 -- tile-space integer it should produce, to the longitude and latitude that
 -- produce it. That is what makes the expected values in the tests arithmetic a
 -- reviewer can check rather than numbers a generator emitted.
@@ -25,8 +25,11 @@
 --
 -- ST_AsMVTGeom's buffer defaults to 256, not to 0. The epic said otherwise, and
 -- the crossing road below is what showed it: geometry is clipped at the extent
--- plus that buffer, so a feature meant to be excluded has to sit more than 256
--- tile units -- here 1.40625 degrees -- outside the tile.
+-- plus that buffer rather than at the extent.
+--
+-- That buffer decides clipping, not selection. Which rows reach ST_AsMVTGeom is
+-- decided earlier, by `WHERE geom && !BBOX!` against the unbuffered envelope, so
+-- the excluded feature below is excluded however close to the edge it sits.
 
 DROP TABLE IF EXISTS tile_content_places;
 DROP TABLE IF EXISTS tile_content_roads;
@@ -63,10 +66,19 @@ INSERT INTO tile_content_places (fid, name, rank, score, active, note, geom) VAL
     (3, 'nulltag', 30, 3.75, true,  NULL,
         ST_SetSRID(ST_MakePoint( 61.875,         39.375),        4326)),
 
-    -- East of the requested tile, and far enough east to clear the 256-unit
-    -- buffer, so "no more" has something to fail against.
+    -- East of the requested tile, so "no more" has something to fail against.
+    -- The layer SQL filters on the unbuffered envelope, so no margin is needed.
     (4, 'outside', 40, 4.5,  false, 'outside note',
-        ST_SetSRID(ST_MakePoint( 70.0,           33.75),         4326));
+        ST_SetSRID(ST_MakePoint( 70.0,           33.75),         4326)),
+
+    -- Between the two schemes' paired tiles in latitude. The geographic tile
+    -- reaches 45; the mercator tile it pairs with stops at 40.9798980696,
+    -- because a mercator row covers less ground the further it is from the
+    -- equator. So this row is served by one scheme's tile and not the other's,
+    -- which is the latitude disagreement the pairing exists to isolate. Its
+    -- longitude puts it inside both.
+    (5, 'midband', 50, 5.25, true,  'midband note',
+        ST_SetSRID(ST_MakePoint( 56.25,          42.1875),       4326));
 
 CREATE INDEX tile_content_places_geom_idx ON tile_content_places USING GIST (geom);
 

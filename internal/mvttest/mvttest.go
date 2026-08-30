@@ -279,10 +279,12 @@ func decodeGeometry(t *testing.T, g []uint32) []Part {
 		cx, cy int32
 	)
 
+	// Only ever called with a part open: MoveTo opens one before appending, and
+	// LineTo without a preceding MoveTo is not a geometry the encoding can
+	// produce.
 	appendPoint := func(x, y int32) {
 		if cur == nil {
-			parts = append(parts, Part{})
-			cur = &parts[len(parts)-1]
+			t.Fatal("mvttest: geometry continues a part that was never started")
 		}
 		cur.Points = append(cur.Points, Point{X: x, Y: y})
 	}
@@ -435,6 +437,37 @@ func (t Tile) Render() string {
 	}
 
 	return b.String()
+}
+
+// Summary renders a tile on one line, for a log: layer names with the features
+// each holds, named by their name tag where they have one.
+//
+// The same walk as Render, condensed. A check that reports only its own verdict
+// cannot tell "the tile held what I expected" from "the tile held nothing and I
+// expected nothing", and the second is how a fixture that stopped loading looks.
+func (t Tile) Summary() string {
+	if len(t.Layers) == 0 {
+		return "no layers"
+	}
+
+	parts := make([]string, 0, len(t.Layers))
+	for _, l := range t.Layers {
+		names := make([]string, 0, len(l.Features))
+		for _, f := range l.Features {
+			label := "unnamed"
+			if v, ok := f.Tags["name"]; ok && v.Kind == KindString {
+				label = v.Str
+			}
+			where := "no geometry"
+			if pts := f.Points(); len(pts) > 0 {
+				where = pts[0].String()
+			}
+			names = append(names, fmt.Sprintf("%s#%d%s", label, f.ID, where))
+		}
+		parts = append(parts, fmt.Sprintf("%s[%s]", l.Name, strings.Join(names, " ")))
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // AssertGolden compares got against the file at path, or rewrites it under
