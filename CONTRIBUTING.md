@@ -150,10 +150,24 @@ whole decoded tile and catch changes nobody thought to assert; `-update-golden` 
 second set of assertions is written literally in the test and does **not** move when a golden is
 rewritten, so a golden regenerated in error still fails.
 
-That split is the only thing keeping the goldens honest, and it works because they are small — a
-dozen lines over a four-point fixture. Read the diff when you regenerate one. If a golden ever grows
-past what a reviewer will actually read, it has stopped being an assertion: the Athens fixture next
-door would put 633 features and about 4300 coordinate pairs in a single one.
+That split is the only thing keeping the goldens honest, and it works because they are small — 25
+lines across five files, over two fixtures of four and eight features. Read the diff when you
+regenerate one. If a golden ever grows past what a reviewer will actually read, it has stopped being
+an assertion: the Athens fixture next door would put 633 features and about 4300 coordinate pairs in
+a single one.
+
+Two fixtures, because they answer different questions. `postgis-scheme-edges.sql` is four points
+placed where a 4326 layer is exact in *both* tiling schemes — on a tile edge or the equator — which
+is what the poles, the antimeridian and the tile-corner cases need.
+`postgis-tile-content.sql` is three layers and eight features inside one WorldCRS84Quad tile, with
+one column of each MVT value type, a null attribute, a road clipped at the tile edge, a feature
+outside the tile and a layer outside it entirely.
+
+Two things about that second fixture are worth knowing before you add to it. `ST_AsMVTGeom`'s buffer
+defaults to **256**, not 0, so geometry legitimately runs past the extent and a feature meant to be
+excluded has to sit more than 256 tile units outside the tile. And the tile's column is larger than
+the scheme's row count on purpose: reading the path's row and column the wrong way round then asks
+for a row that does not exist, which is a rejection rather than a plausible-looking tile.
 
 ### Coverage floor
 

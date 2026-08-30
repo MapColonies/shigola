@@ -9,11 +9,10 @@ import (
 	"testing"
 
 	"github.com/MapColonies/shigola/dict"
+	"github.com/MapColonies/shigola/internal/mvttest"
 	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
-	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
-	"github.com/golang/protobuf/proto"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -210,23 +209,33 @@ func TestMVTProviders(t *testing.T) {
 	}
 }
 
+// assertMVTForLayers checks a tile against the layers its config asked for.
+//
+// Decoding goes through internal/mvttest (MAPCO-11546), which is also what the
+// server-side tile-content checks use. One decoder in the tree, so a tile is
+// described the same way wherever it is inspected -- and the specification's
+// delta-encoded geometry is resolved in one place rather than in each caller.
+//
+// Layers are matched by name rather than by position. The specification does
+// not order layers within a tile, so reading them positionally pins something
+// ST_AsMVT is free to change.
 func assertMVTForLayers(t *testing.T, data []byte, expectedLayerNames []string) {
 	t.Helper()
 
-	var tile vectorTile.Tile
-	if err := proto.Unmarshal(data, &tile); err != nil {
-		t.Fatalf("proto.Unmarshal() error = %v", err)
-	}
+	tile := mvttest.DecodeRaw(t, data)
+
 	if len(tile.Layers) != len(expectedLayerNames) {
 		t.Fatalf("layer count = %d, want %d", len(tile.Layers), len(expectedLayerNames))
 	}
 
-	for i, layer := range tile.Layers {
-		if layer.Name == nil || *layer.Name != expectedLayerNames[i] {
-			t.Errorf("layer[%d] name = %v, want %q", i, layer.Name, expectedLayerNames[i])
+	for _, name := range expectedLayerNames {
+		layer, ok := tile.Layer(name)
+		if !ok {
+			t.Errorf("layer %q is missing; the tile holds %v", name, tile.LayerNames())
+			continue
 		}
 		if len(layer.Features) == 0 {
-			t.Errorf("layer[%d] has no features", i)
+			t.Errorf("layer %q has no features", name)
 		}
 	}
 }
