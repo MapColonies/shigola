@@ -13,7 +13,7 @@ import (
 )
 
 // The tile-content fixture, as testdata/postgis/postgis-tile-content.sql places
-// it: three layers, nine features, one column of each MVT value type.
+// it: four layers, eleven features, one column of each MVT value type.
 const contentCollection = "content"
 
 // The tile under test: WorldCRS84Quad zoom 3, row 2, column 10, spanning
@@ -39,6 +39,8 @@ func newContentAtlas(t *testing.T) *atlas.Atlas {
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, rank, score, active, note FROM tile_content_places WHERE geom && !BBOX!"),
 		providerLayer("roads", "linestring",
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, lanes FROM tile_content_roads WHERE geom && !BBOX!"),
+		providerLayer("areas", "polygon",
+			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, floors FROM tile_content_areas WHERE geom && !BBOX!"),
 		providerLayer("far", "point",
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name FROM tile_content_far WHERE geom && !BBOX!"),
 	})
@@ -96,11 +98,23 @@ var insideTags = map[string]mvttest.Value{
 	"lanes": mvttest.Uint(4),
 }
 
+var blockTags = map[string]mvttest.Value{
+	"name":   mvttest.String("block"),
+	"floors": mvttest.Uint(3),
+}
+
+var courtyardTags = map[string]mvttest.Value{
+	"name":   mvttest.String("courtyard"),
+	"floors": mvttest.Uint(6),
+}
+
 func point(x, y int32) mvttest.Part {
 	return mvttest.Part{Points: []mvttest.Point{{X: x, Y: y}}}
 }
 
 func line(pts ...mvttest.Point) mvttest.Part { return mvttest.Part{Points: pts} }
+
+func ring(pts ...mvttest.Point) mvttest.Part { return mvttest.Part{Points: pts, Closed: true} }
 
 // assertLayers pins the layer set exactly, rather than checking the ones the
 // test happened to think of.
@@ -185,9 +199,10 @@ func TestTileContent(t *testing.T) {
 	t.Run("the tile carries exactly these layers and features", func(t *testing.T) {
 		// far is absent entirely: every one of its rows is outside this tile,
 		// so ST_AsMVT emits no layer for it at all.
-		assertLayers(t, tile, "places", "roads")
+		assertLayers(t, tile, "places", "roads", "areas")
 		assertFeatureIDs(t, tile, "places", 1, 2, 3, 5)
 		assertFeatureIDs(t, tile, "roads", 1, 2)
+		assertFeatureIDs(t, tile, "areas", 1, 2)
 
 		// The named exclusions, stated literally rather than left to the counts.
 		absent(t, tile, "places", "outside")
@@ -208,6 +223,18 @@ func TestTileContent(t *testing.T) {
 		// this is the assertion that says otherwise.
 		at(t, tile, "roads", "crossing",
 			line(mvttest.Point{X: 3072, Y: 2048}, mvttest.Point{X: extent + mvtBuffer, Y: 2048}))
+
+		// A ring carries four explicit corners and an implicit closing vertex.
+		// courtyard's second part is its interior ring; keeping it separate is
+		// the polygon-specific behavior internal/mvttest exists to preserve.
+		at(t, tile, "areas", "block",
+			ring(mvttest.Point{X: 512, Y: 3072}, mvttest.Point{X: 512, Y: 2560},
+				mvttest.Point{X: 1024, Y: 2560}, mvttest.Point{X: 1024, Y: 3072}))
+		at(t, tile, "areas", "courtyard",
+			ring(mvttest.Point{X: 2560, Y: 3584}, mvttest.Point{X: 2560, Y: 2560},
+				mvttest.Point{X: 3584, Y: 2560}, mvttest.Point{X: 3584, Y: 3584}),
+			ring(mvttest.Point{X: 3328, Y: 2816}, mvttest.Point{X: 2816, Y: 2816},
+				mvttest.Point{X: 2816, Y: 3328}, mvttest.Point{X: 3328, Y: 3328}))
 	})
 
 	t.Run("attribute values are what the rows hold", func(t *testing.T) {
@@ -217,6 +244,8 @@ func TestTileContent(t *testing.T) {
 		assertTags(t, tile, "places", "midband", midbandTags)
 		assertTags(t, tile, "roads", "crossing", crossingTags)
 		assertTags(t, tile, "roads", "inside", insideTags)
+		assertTags(t, tile, "areas", "block", blockTags)
+		assertTags(t, tile, "areas", "courtyard", courtyardTags)
 	})
 
 	t.Run("a null attribute is omitted from the feature, not from the layer", func(t *testing.T) {
@@ -271,6 +300,7 @@ func TestTileContent(t *testing.T) {
 		tests := map[string]tcase{
 			"places are points":     {layer: "places", want: "POINT"},
 			"roads are linestrings": {layer: "roads", want: "LINESTRING"},
+			"areas are polygons":    {layer: "areas", want: "POLYGON"},
 		}
 
 		for name, tc := range tests {
@@ -308,7 +338,7 @@ func TestTileContent(t *testing.T) {
 				} else {
 					decoded = mvttest.DecodeRaw(t, resp.Body)
 				}
-				assertLayers(t, decoded, "places", "roads")
+				assertLayers(t, decoded, "places", "roads", "areas")
 
 				t.Logf("  ok  Accept-Encoding %-9q -> Content-Encoding %q, %d bytes", tc.accept, resp.Encoding, len(resp.Body))
 			}
@@ -354,11 +384,12 @@ func TestTileContentBothSchemes(t *testing.T) {
 	mercator := fetch(t, srv, contentCollection, tms.WebMercatorQuad, 4, 6, 10)
 
 	t.Run("the same layers and features, in the other scheme", func(t *testing.T) {
-		assertLayers(t, mercator, "places", "roads")
+		assertLayers(t, mercator, "places", "roads", "areas")
 		// midband is missing here and present in the geographic tile: that is
 		// the exclusion this pairing exists to produce, asserted below.
 		assertFeatureIDs(t, mercator, "places", 1, 2, 3, 4)
 		assertFeatureIDs(t, mercator, "roads", 1, 2)
+		assertFeatureIDs(t, mercator, "areas", 1, 2)
 	})
 
 	t.Run("every feature sits where this scheme's arithmetic says", func(t *testing.T) {
@@ -380,6 +411,14 @@ func TestTileContentBothSchemes(t *testing.T) {
 			line(mvttest.Point{X: 1024, Y: 345}, mvttest.Point{X: 2048, Y: 345}))
 		at(t, mercator, "roads", "crossing",
 			line(mvttest.Point{X: 3072, Y: 1556}, mvttest.Point{X: extent + mvtBuffer, Y: 1556}))
+		at(t, mercator, "areas", "block",
+			ring(mvttest.Point{X: 512, Y: 2766}, mvttest.Point{X: 512, Y: 2161},
+				mvttest.Point{X: 1024, Y: 2161}, mvttest.Point{X: 1024, Y: 2766}))
+		at(t, mercator, "areas", "courtyard",
+			ring(mvttest.Point{X: 2560, Y: 3371}, mvttest.Point{X: 2560, Y: 2161},
+				mvttest.Point{X: 3584, Y: 2161}, mvttest.Point{X: 3584, Y: 3371}),
+			ring(mvttest.Point{X: 3328, Y: 2463}, mvttest.Point{X: 2816, Y: 2463},
+				mvttest.Point{X: 2816, Y: 3068}, mvttest.Point{X: 3328, Y: 3068}))
 	})
 
 	t.Run("x is shared and y is not", func(t *testing.T) {
@@ -408,6 +447,8 @@ func TestTileContentBothSchemes(t *testing.T) {
 		assertTags(t, mercator, "places", "outside", outsideTags)
 		assertTags(t, mercator, "roads", "crossing", crossingTags)
 		assertTags(t, mercator, "roads", "inside", insideTags)
+		assertTags(t, mercator, "areas", "block", blockTags)
+		assertTags(t, mercator, "areas", "courtyard", courtyardTags)
 	})
 
 	t.Run("each scheme excludes ground the other serves", func(t *testing.T) {

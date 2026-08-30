@@ -1,6 +1,6 @@
 -- Fixture for the tile-content checks (MAPCO-11547, and the tickets built on it).
 --
--- Three layers, nine features. Every coordinate was chosen backwards: from the
+-- Four layers, eleven features. Every coordinate was chosen backwards: from the
 -- tile-space integer it should produce, to the longitude and latitude that
 -- produce it. That is what makes the expected values in the tests arithmetic a
 -- reviewer can check rather than numbers a generator emitted.
@@ -33,6 +33,7 @@
 
 DROP TABLE IF EXISTS tile_content_places;
 DROP TABLE IF EXISTS tile_content_roads;
+DROP TABLE IF EXISTS tile_content_areas;
 DROP TABLE IF EXISTS tile_content_far;
 
 -- One column of each MVT value type, with the values distinct between features,
@@ -103,6 +104,30 @@ INSERT INTO tile_content_roads (fid, name, lanes, geom) VALUES
         ST_SetSRID(ST_MakeLine(ST_MakePoint(50.625, 39.375), ST_MakePoint(56.25, 39.375)), 4326));
 
 CREATE INDEX tile_content_roads_geom_idx ON tile_content_roads USING GIST (geom);
+
+-- Polygons exercise ring grouping and the implicit closing vertex in the MVT
+-- command stream. The first has one ring; the second has an interior ring. As
+-- with the points and lines, every vertex starts from an exact tile-space
+-- integer in the WorldCRS84Quad tile under test.
+CREATE TABLE tile_content_areas (
+    fid    integer PRIMARY KEY,
+    name   text NOT NULL,
+    floors integer NOT NULL,
+    geom   geometry(Polygon, 4326) NOT NULL
+);
+
+INSERT INTO tile_content_areas (fid, name, floors, geom) VALUES
+    -- Tile-space envelope: x 512..1024, y 2560..3072.
+    (1, 'block', 3, ST_GeomFromText(
+        'POLYGON((47.8125 28.125, 50.625 28.125, 50.625 30.9375, 47.8125 30.9375, 47.8125 28.125))', 4326)),
+
+    -- Outer ring: x 2560..3584, y 2560..3584.
+    -- Inner ring: x 2816..3328, y 2816..3328.
+    (2, 'courtyard', 6, ST_GeomFromText(
+        'POLYGON((59.0625 25.3125, 64.6875 25.3125, 64.6875 30.9375, 59.0625 30.9375, 59.0625 25.3125),
+                 (60.46875 26.71875, 60.46875 29.53125, 63.28125 29.53125, 63.28125 26.71875, 60.46875 26.71875))', 4326));
+
+CREATE INDEX tile_content_areas_geom_idx ON tile_content_areas USING GIST (geom);
 
 -- Every row is outside the requested tile, so a layer that should not appear at
 -- all has something to fail against.

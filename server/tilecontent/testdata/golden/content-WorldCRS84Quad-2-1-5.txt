@@ -1,3 +1,6 @@
+layer "areas" extent=4096 keys=[floors name]
+  id=1 POLYGON tags={floors=uint(3) name=string("block")} [(256,1536) (256,1280) (512,1280) (512,1536) closed]
+  id=2 POLYGON tags={floors=uint(6) name=string("courtyard")} [(1280,1792) (1280,1280) (1792,1280) (1792,1792) closed] [(1664,1408) (1408,1408) (1408,1664) (1664,1664) closed]
 layer "places" extent=4096 keys=[active name note rank score]
   id=1 POINT tags={active=bool(true) name=string("centre") note=string("centre note") rank=uint(10) score=double(1.5)} [(1024,1024)]
   id=2 POINT tags={active=bool(false) name=string("probe") note=string("probe note") rank=uint(20) score=double(2.25)} [(1124,708)]
