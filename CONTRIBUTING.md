@@ -150,8 +150,8 @@ whole decoded tile and catch changes nobody thought to assert; `-update-golden` 
 second set of assertions is written literally in the test and does **not** move when a golden is
 rewritten, so a golden regenerated in error still fails.
 
-That split is the only thing keeping the goldens honest, and it works because they are small — 25
-lines across five files, over two fixtures of four and eight features. Read the diff when you
+That split is the only thing keeping the goldens honest, and it works because they are small — 26
+lines across five files, over two fixtures of four and nine features. Read the diff when you
 regenerate one. If a golden ever grows past what a reviewer will actually read, it has stopped being
 an assertion: the Athens fixture next door would put 633 features and about 4300 coordinate pairs in
 a single one.
@@ -159,7 +159,7 @@ a single one.
 Two fixtures, because they answer different questions. `postgis-scheme-edges.sql` is four points
 placed where a 4326 layer is exact in *both* tiling schemes — on a tile edge or the equator — which
 is what the poles, the antimeridian and the tile-corner cases need.
-`postgis-tile-content.sql` is three layers and eight features inside one WorldCRS84Quad tile, with
+`postgis-tile-content.sql` is three layers and nine features around one WorldCRS84Quad tile, with
 one column of each MVT value type, a null attribute, a road clipped at the tile edge, a feature
 outside the tile and a layer outside it entirely.
 
@@ -227,4 +227,3 @@ go run -mod vendor ./ci/coverage -write
 Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
 explicit edit you justify in the pull request, not a side effect of running `-write` on a machine
 with fewer services running.
-

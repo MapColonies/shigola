@@ -13,7 +13,7 @@ import (
 )
 
 // The tile-content fixture, as testdata/postgis/postgis-tile-content.sql places
-// it: three layers, eight features, one column of each MVT value type.
+// it: three layers, nine features, one column of each MVT value type.
 const contentCollection = "content"
 
 // The tile under test: WorldCRS84Quad zoom 3, row 2, column 10, spanning
@@ -53,6 +53,47 @@ var centreTags = map[string]mvttest.Value{
 	"score":  mvttest.Double(1.5),
 	"active": mvttest.Bool(true),
 	"note":   mvttest.String("centre note"),
+}
+
+var probeTags = map[string]mvttest.Value{
+	"name":   mvttest.String("probe"),
+	"rank":   mvttest.Uint(20),
+	"score":  mvttest.Double(2.25),
+	"active": mvttest.Bool(false),
+	"note":   mvttest.String("probe note"),
+}
+
+var nulltagTags = map[string]mvttest.Value{
+	"name":   mvttest.String("nulltag"),
+	"rank":   mvttest.Uint(30),
+	"score":  mvttest.Double(3.75),
+	"active": mvttest.Bool(true),
+}
+
+var outsideTags = map[string]mvttest.Value{
+	"name":   mvttest.String("outside"),
+	"rank":   mvttest.Uint(40),
+	"score":  mvttest.Double(4.5),
+	"active": mvttest.Bool(false),
+	"note":   mvttest.String("outside note"),
+}
+
+var midbandTags = map[string]mvttest.Value{
+	"name":   mvttest.String("midband"),
+	"rank":   mvttest.Uint(50),
+	"score":  mvttest.Double(5.25),
+	"active": mvttest.Bool(true),
+	"note":   mvttest.String("midband note"),
+}
+
+var crossingTags = map[string]mvttest.Value{
+	"name":  mvttest.String("crossing"),
+	"lanes": mvttest.Uint(2),
+}
+
+var insideTags = map[string]mvttest.Value{
+	"name":  mvttest.String("inside"),
+	"lanes": mvttest.Uint(4),
 }
 
 func point(x, y int32) mvttest.Part {
@@ -171,25 +212,17 @@ func TestTileContent(t *testing.T) {
 
 	t.Run("attribute values are what the rows hold", func(t *testing.T) {
 		assertTags(t, tile, "places", "centre", centreTags)
-		assertTags(t, tile, "places", "probe", map[string]mvttest.Value{
-			"name": mvttest.String("probe"), "rank": mvttest.Uint(20),
-			"score": mvttest.Double(2.25), "active": mvttest.Bool(false),
-			"note": mvttest.String("probe note"),
-		})
-		assertTags(t, tile, "roads", "crossing", map[string]mvttest.Value{
-			"name": mvttest.String("crossing"), "lanes": mvttest.Uint(2),
-		})
+		assertTags(t, tile, "places", "probe", probeTags)
+		assertTags(t, tile, "places", "nulltag", nulltagTags)
+		assertTags(t, tile, "places", "midband", midbandTags)
+		assertTags(t, tile, "roads", "crossing", crossingTags)
+		assertTags(t, tile, "roads", "inside", insideTags)
 	})
 
 	t.Run("a null attribute is omitted from the feature, not from the layer", func(t *testing.T) {
 		// ST_AsMVT drops a null-valued tag from the feature that holds the null,
 		// while the key stays in the layer's dictionary because other features
 		// still carry it. Pinned rather than discovered.
-		assertTags(t, tile, "places", "nulltag", map[string]mvttest.Value{
-			"name": mvttest.String("nulltag"), "rank": mvttest.Uint(30),
-			"score": mvttest.Double(3.75), "active": mvttest.Bool(true),
-		})
-
 		places, ok := tile.Layer("places")
 		if !ok {
 			t.Fatal("layer places is missing")
@@ -324,7 +357,7 @@ func TestTileContentBothSchemes(t *testing.T) {
 		assertLayers(t, mercator, "places", "roads")
 		// midband is missing here and present in the geographic tile: that is
 		// the exclusion this pairing exists to produce, asserted below.
-		assertFeatureIDs(t, mercator, "places", 1, 2, 3)
+		assertFeatureIDs(t, mercator, "places", 1, 2, 3, 4)
 		assertFeatureIDs(t, mercator, "roads", 1, 2)
 	})
 
@@ -342,6 +375,11 @@ func TestTileContentBothSchemes(t *testing.T) {
 		at(t, mercator, "places", "centre", point(2048, 1556))
 		at(t, mercator, "places", "probe", point(2248, 809))
 		at(t, mercator, "places", "nulltag", point(3072, 345))
+		at(t, mercator, "places", "outside", point(2048, 4030))
+		at(t, mercator, "roads", "inside",
+			line(mvttest.Point{X: 1024, Y: 345}, mvttest.Point{X: 2048, Y: 345}))
+		at(t, mercator, "roads", "crossing",
+			line(mvttest.Point{X: 3072, Y: 1556}, mvttest.Point{X: extent + mvtBuffer, Y: 1556}))
 	})
 
 	t.Run("x is shared and y is not", func(t *testing.T) {
@@ -365,6 +403,11 @@ func TestTileContentBothSchemes(t *testing.T) {
 	t.Run("tags do not change with the scheme", func(t *testing.T) {
 		// The same row, read through a different grid, is the same row.
 		assertTags(t, mercator, "places", "centre", centreTags)
+		assertTags(t, mercator, "places", "probe", probeTags)
+		assertTags(t, mercator, "places", "nulltag", nulltagTags)
+		assertTags(t, mercator, "places", "outside", outsideTags)
+		assertTags(t, mercator, "roads", "crossing", crossingTags)
+		assertTags(t, mercator, "roads", "inside", insideTags)
 	})
 
 	t.Run("each scheme excludes ground the other serves", func(t *testing.T) {
@@ -380,10 +423,10 @@ func TestTileContentBothSchemes(t *testing.T) {
 		at(t, crs84, "places", "midband", point(2048, 512))
 
 		// And the other way: the mercator tile reaches south past the
-		// geographic tile's lower edge of 22.5, down to 21.9430455334. Nothing
-		// in the fixture sits in that band, so the pairing's asymmetry is shown
-		// by the band above rather than duplicated below -- stated so the gap
-		// is deliberate rather than overlooked.
+		// geographic tile's lower edge of 22.5, down to 21.9430455334. outside
+		// sits at 22.25, between the two.
+		absent(t, crs84, "places", "outside")
+		at(t, mercator, "places", "outside", point(2048, 4030))
 	})
 
 	mvttest.AssertGolden(t, "testdata/golden/content-WebMercatorQuad-4-6-10.txt", mercator.Render())

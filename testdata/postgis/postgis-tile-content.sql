@@ -66,10 +66,12 @@ INSERT INTO tile_content_places (fid, name, rank, score, active, note, geom) VAL
     (3, 'nulltag', 30, 3.75, true,  NULL,
         ST_SetSRID(ST_MakePoint( 61.875,         39.375),        4326)),
 
-    -- East of the requested tile, so "no more" has something to fail against.
+    -- South of the requested geographic tile, so "no more" has something to
+    -- fail against. It is still inside the aligned mercator tile, whose lower
+    -- edge is 21.9430455334, which makes the schemes' exclusions reciprocal.
     -- The layer SQL filters on the unbuffered envelope, so no margin is needed.
     (4, 'outside', 40, 4.5,  false, 'outside note',
-        ST_SetSRID(ST_MakePoint( 70.0,           33.75),         4326)),
+        ST_SetSRID(ST_MakePoint( 56.25,          22.25),         4326)),
 
     -- Between the two schemes' paired tiles in latitude. The geographic tile
     -- reaches 45; the mercator tile it pairs with stops at 40.9798980696,
