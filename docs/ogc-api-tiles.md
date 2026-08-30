@@ -44,8 +44,7 @@ before:
 ```toml
 [[maps]]
   name = "parks"
-  # Omit for every scheme this build serves. The first entry is the map's
-  # default: WebMercatorQuad.
+  # Omit for every scheme this build serves.
   tile_matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"]
 ```
 
@@ -186,7 +185,7 @@ parameter.
 single tile pyramid, so a run cannot cover two schemes at once.
 
 ```sh
-# defaults to the map's own scheme
+# defaults to the first scheme the map lists
 shigola cache seed --config=config.toml --map=parks --bounds=…
 
 # or name one explicitly

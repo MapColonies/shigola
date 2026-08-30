@@ -206,11 +206,11 @@ func (r *Registry) Available(id string) bool {
 // AvailableIDs returns the ids of every grid this build can serve, with
 // WebMercatorQuad first and the rest sorted.
 //
-// The order is part of the contract, not a detail: a caller that takes "every
-// available grid" as a default — a map's tiling schemes, say — treats the first
-// entry as the default one, and tegola's default grid has always been
-// WebMercatorQuad. Sorting alone would put WGS1984Quad there, since 'G' sorts
-// before 'e'.
+// The order is part of the contract, not a detail. A map that names no schemes
+// is registered with all of them, and `cache seed --map` then takes the first
+// as the run's scheme — so this order decides what a seed run of an
+// unconfigured map covers, and tegola's grid has always been WebMercatorQuad.
+// Sorting alone would put WGS1984Quad there, since 'G' sorts before 'e'.
 func (r *Registry) AvailableIDs() []string {
 	var out []string
 
