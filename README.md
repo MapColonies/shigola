@@ -16,8 +16,10 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 >
 > Shigola adds three things Tegola does not have — [OGC API - Tiles](docs/ogc-api-tiles.md),
 > multiple [tile matrix sets](docs/ogc-api-tiles.md#configuration), and a
-> [layered cache](#layered-cache) — and is otherwise additive. For anything not listed as a Shigola
-> feature, upstream behaviour and the [official Tegola docs](https://tegola.io) apply.
+> [layered cache](#layered-cache) — on a deliberately narrower server. It is **not a superset of
+> Tegola**: it removes more than it adds, and [What Shigola removes](#what-shigola-removes) lists
+> what. For behaviour it kept and did not change, upstream behaviour and the [official Tegola
+> docs](https://tegola.io) apply.
 >
 > **Bug reports about behaviour this fork did not change belong
 > [upstream](https://github.com/go-spatial/tegola/issues).** See [Relationship to
@@ -459,8 +461,9 @@ go build -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevi
 
 ## Relationship to Tegola
 
-Shigola is a fork of [go-spatial/tegola](https://github.com/go-spatial/tegola). It is additive
-except where noted below.
+Shigola is a fork of [go-spatial/tegola](https://github.com/go-spatial/tegola). It is **not a
+superset of it**: three things were added, rather more was taken away, and four remaining behaviours
+changed incompatibly. All three lists are below.
 
 ### What Shigola adds
 
@@ -471,6 +474,21 @@ except where noted below.
   per map with `tile_matrix_sets`, where Tegola serves one implicit scheme.
 - **[Layered cache](#layered-cache)** — `type = "multi"`: an ordered chain of cache backends with
   read-through promotion, per-tier read deadlines and non-blocking writes.
+
+### What Shigola removes
+
+Removed on purpose, and not coming back: this is a server aimed at one job, and each of these was a
+surface that had to be kept working, documented and tested for no user of it here.
+
+| Removed | Instead |
+|:---|:---|
+| The built-in map viewer | Nothing. Point your own client at the tile endpoints. |
+| The native `/maps/...` tile routes | OGC API - Tiles is the only tile surface, and `/` is its landing page. |
+| The [GeoPackage](https://www.geopackage.org/) and [SAP HANA](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) providers | PostGIS. A config naming `gpkg` or `hana` is rejected at startup. |
+| The `postgis` provider type | [`mvt_postgis`](provider/postgis), which encodes the tile in the database with `ST_AsMVT`. A config naming `postgis` is rejected at startup with a message naming its replacement. |
+
+Removing the GeoPackage provider also took the last cgo out of the tree, so `CGO_ENABLED` no longer
+decides what a shigola binary can do.
 
 ### Breaking changes vs Tegola
 
