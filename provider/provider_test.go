@@ -11,9 +11,7 @@ import (
 )
 
 func TestProviderInterface(t *testing.T) {
-	mvtName := provider.MVTPrefix + test.Name
-
-	if _, err := provider.For(mvtName, nil, nil); err != nil {
+	if _, err := provider.For(test.MVTProviderType, nil, nil); err != nil {
 		t.Errorf("retrieve provider err , expected nil got %v", err)
 		return
 	}
@@ -42,8 +40,8 @@ func TestForUnknownProvider(t *testing.T) {
 	if !errors.As(err, &unknown) {
 		t.Fatalf("For(nope) err, expected ErrUnknownProvider got %T", err)
 	}
-	if !slices.Contains(unknown.KnownProviders, provider.MVTPrefix+test.Name) {
-		t.Errorf("known providers %v, expected it to name %v", unknown.KnownProviders, provider.MVTPrefix+test.Name)
+	if !slices.Contains(unknown.KnownProviders, test.MVTProviderType) {
+		t.Errorf("known providers %v, expected it to name %v", unknown.KnownProviders, test.MVTProviderType)
 	}
 }
 

@@ -100,15 +100,8 @@ func atlasLayerFromConfigLayer(cfg *provider.MapLayer, mapName string, layerProv
 	}
 	layer.GeomType = layerInfo.GeomType()
 
-	if cfg.DefaultTags != nil {
-		layer.DefaultTags = cfg.DefaultTags
-	}
-
 	layer.Name = string(cfg.Name)
 	layer.ProviderLayerName = layerName
-	layer.DontSimplify = bool(cfg.DontSimplify)
-	layer.DontClip = bool(cfg.DontClip)
-	layer.DontClean = bool(cfg.DontClean)
 
 	if cfg.MinZoom != nil {
 		layer.MinZoom = uint(*cfg.MinZoom)
@@ -119,7 +112,7 @@ func atlasLayerFromConfigLayer(cfg *provider.MapLayer, mapName string, layerProv
 	return layer, nil
 }
 
-func selectProvider(name string, mapName string, newMap *atlas.Map, providers map[string]provider.MVTTiler) (provider.Layerer, error) {
+func selectProvider(name string, newMap *atlas.Map, providers map[string]provider.MVTTiler) (provider.Layerer, error) {
 	if newMap.HasMVTProvider() {
 		if newMap.MVTProviderName() != name {
 			return nil, config.ErrMVTDifferentProviders{
@@ -134,12 +127,10 @@ func selectProvider(name string, mapName string, newMap *atlas.Map, providers ma
 	if !ok {
 		return nil, ErrProviderNotFound{name}
 	}
-	if len(newMap.Layers) != 0 {
-		return nil, config.ErrMixedProviders{
-			Map: string(mapName),
-		}
-	}
 
+	// No check that the map is still empty: a map takes its provider from its
+	// first layer, and every later layer goes through the branch above. Mixing
+	// is caught in config.Validate, which sees all the layers at once.
 	return newMap.SetMVTProvider(name, prvd), nil
 }
 
@@ -168,7 +159,7 @@ func Maps(a *atlas.Atlas, maps []provider.Map, providers map[string]provider.MVT
 			}
 
 			// find our layer provider
-			layerer, err = selectProvider(providerName, string(m.Name), &newMap, providers)
+			layerer, err = selectProvider(providerName, &newMap, providers)
 			if err != nil {
 				return err
 			}

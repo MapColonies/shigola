@@ -29,6 +29,9 @@ var removedProviderTypes = []string{
 	"debug",
 	"test",
 	"emptycollection",
+	// Note "test", not "mvt_test": the standard registration is what was
+	// removed from provider/test. Its MVT half is still registered, and is in
+	// the expected list below.
 }
 
 // TestRemovedProviderTypes is what makes a provider removal stick.

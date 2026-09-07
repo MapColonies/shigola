@@ -160,9 +160,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water",
 								MinZoom:       env.UintPtr(10),
 								MaxZoom:       env.UintPtr(20),
-								DontSimplify:  true,
-								DontClip:      true,
-								DontClean:     true,
 							},
 						},
 						Parameters: []provider.QueryParameter{
@@ -268,9 +265,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water_0_5",
 								MinZoom:       env.UintPtr(0),
 								MaxZoom:       env.UintPtr(5),
-								DefaultTags: env.Dict{
-									"provider": ENV_TEST_MAP_LAYER_DEFAULT_TAG,
-								},
 							},
 							{
 								Name:          "water",
@@ -365,9 +359,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water_0_5",
 								MinZoom:       env.UintPtr(0),
 								MaxZoom:       env.UintPtr(5),
-								DefaultTags: env.Dict{
-									"provider": ENV_TEST_MAP_LAYER_DEFAULT_TAG,
-								},
 							},
 							{
 								Name:          "water",
@@ -1026,7 +1017,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 		},
-		"happy 1 mvt, 1 std provider only 1 layer": {
+		"one mvt provider, one layer": {
 			config: config.Config{
 				Providers: []env.Dict{
 					{
@@ -1082,7 +1073,7 @@ func TestValidate(t *testing.T) {
 		"mvt_provider comingle": {
 			expectedErr: config.ErrMVTDifferentProviders{
 				Original: "provider1",
-				Current:  "stdprovider1",
+				Current:  "provider2",
 			},
 			config: config.Config{
 				Providers: []env.Dict{
@@ -1091,7 +1082,7 @@ func TestValidate(t *testing.T) {
 						"type": "mvt_test",
 					},
 					{
-						"name": "stdprovider1",
+						"name": "provider2",
 						"type": "mvt_test",
 					},
 				},
@@ -1104,7 +1095,7 @@ func TestValidate(t *testing.T) {
 								ProviderLayer: "provider1.water_default_z",
 							},
 							{
-								ProviderLayer: "stdprovider1.water_default_z",
+								ProviderLayer: "provider2.water_default_z",
 							},
 						},
 					},
@@ -1113,13 +1104,13 @@ func TestValidate(t *testing.T) {
 		},
 		"mvt_provider comingle; flip": {
 			expectedErr: config.ErrMVTDifferentProviders{
-				Original: "stdprovider1",
+				Original: "provider2",
 				Current:  "provider1",
 			},
 			config: config.Config{
 				Providers: []env.Dict{
 					{
-						"name": "stdprovider1",
+						"name": "provider2",
 						"type": "mvt_test",
 					},
 					{
@@ -1133,7 +1124,7 @@ func TestValidate(t *testing.T) {
 						Attribution: "Test Attribution",
 						Layers: []provider.MapLayer{
 							{
-								ProviderLayer: "stdprovider1.water_default_z",
+								ProviderLayer: "provider2.water_default_z",
 							},
 							{
 								ProviderLayer: "provider1.water_default_z",

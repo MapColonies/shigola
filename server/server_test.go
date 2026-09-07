@@ -41,9 +41,6 @@ var testLayer1 = atlas.Layer{
 	MinZoom:           4,
 	MaxZoom:           9,
 	GeomType:          geom.Point{},
-	DefaultTags: map[string]any{
-		"foo": "bar",
-	},
 }
 
 var testLayer2 = atlas.Layer{
@@ -52,9 +49,6 @@ var testLayer2 = atlas.Layer{
 	MinZoom:           10,
 	MaxZoom:           15,
 	GeomType:          geom.Line{},
-	DefaultTags: map[string]any{
-		"foo": "bar",
-	},
 }
 
 var testLayer3 = atlas.Layer{
@@ -63,7 +57,6 @@ var testLayer3 = atlas.Layer{
 	MinZoom:           10,
 	MaxZoom:           20,
 	GeomType:          geom.Point{},
-	DefaultTags:       map[string]any{},
 }
 
 // testTile is what the test map's provider serves for every tile.

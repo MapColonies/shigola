@@ -15,16 +15,27 @@ type MapLayer struct {
 	ProviderLayer env.String `toml:"provider_layer"`
 	MinZoom       *env.Uint  `toml:"min_zoom"`
 	MaxZoom       *env.Uint  `toml:"max_zoom"`
-	DefaultTags   env.Dict   `toml:"default_tags"`
-	// DontSimplify indicates whether feature simplification should be applied.
-	// We use a negative in the name so the default is to simplify
-	DontSimplify env.Bool `toml:"dont_simplify"`
-	// DontClip indicates whether feature clipping should be applied.
-	// We use a negative in the name so the default is to clipping
-	DontClip env.Bool `toml:"dont_clip"`
-	// DontClip indicates whether feature cleaning (e.g. make valid) should be applied.
-	// We use a negative in the name so the default is to clean
-	DontClean env.Bool `toml:"dont_clean"`
+}
+
+// RemovedMapLayerKeys are per-layer config keys this build no longer honours.
+//
+// They switched off, or fed, a step of the Go-side encode path -- simplify, clip,
+// make-valid, tag -- which ran over features a standard provider handed back. That
+// path is gone (MAPCO-11491), and an MVT provider returns a tile that PostGIS
+// has already simplified and clipped, so there is no step left to switch off.
+//
+// They are listed rather than simply dropped because an unknown TOML key is
+// silently ignored: a config still setting one would otherwise keep loading
+// while quietly meaning nothing, which is the failure this list exists to
+// prevent. Unlike a removed provider type there is no replacement to name --
+// the honest instruction is to delete the line.
+var RemovedMapLayerKeys = []string{
+	"dont_simplify",
+	"dont_clip",
+	"dont_clean",
+	// default_tags merged tags into each feature as it was encoded, which is
+	// the same step, in the same loop, as the three above.
+	"default_tags",
 }
 
 // ProviderLayerName returns the names of the layer and provider or an error

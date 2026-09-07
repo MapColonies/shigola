@@ -169,15 +169,6 @@ func (e ErrMVTDifferentProviders) Error() string {
 	)
 }
 
-// ErrMixedProviders represents the user configuration issue of using an MVT provider with another provider
-type ErrMixedProviders struct {
-	Map string
-}
-
-func (e ErrMixedProviders) Error() string {
-	return fmt.Sprintf("config: can not mix MVT providers with normal providers for map %s", e.Map)
-}
-
 // ErrMissingEnvVar represents an environmental variable the system was unable to find in the environment
 type ErrMissingEnvVar struct {
 	EnvVar string
@@ -228,6 +219,16 @@ func (e ErrUnknownProviderType) Is(err error) bool {
 // the world, it is a working config written against an older build, and the
 // operator's next move is to change one word rather than to work out which of
 // the known types is the one they wanted.
+// ErrRemovedMapLayerKey is returned for a config key this build has stopped
+// honouring, in place of loading and ignoring it.
+type ErrRemovedMapLayerKey struct {
+	Key string // Key is the full dotted path of the offending key
+}
+
+func (e ErrRemovedMapLayerKey) Error() string {
+	return fmt.Sprintf("config: %s has been removed and no longer does anything; delete it", e.Key)
+}
+
 type ErrRemovedProviderType struct {
 	Name        string // Name is the name of the entry in the config
 	Type        string // Type is the removed data provider type

@@ -7,7 +7,6 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cmd/internal/register"
 	"github.com/MapColonies/shigola/dict"
-	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/provider"
 	_ "github.com/MapColonies/shigola/provider/test"
 )
@@ -105,16 +104,13 @@ func TestMaps(t *testing.T) {
 				Provider:      "test",
 			},
 		},
-		"default tags": {
+		"a map with a layer": {
 			maps: []provider.Map{
 				{
 					Name: "foo",
 					Layers: []provider.MapLayer{
 						{
 							ProviderLayer: "test.test-layer",
-							DefaultTags: env.Dict{
-								"test": "test",
-							},
 						},
 					},
 				},

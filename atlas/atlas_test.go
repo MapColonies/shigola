@@ -2,7 +2,6 @@ package atlas_test
 
 import (
 	"github.com/MapColonies/shigola/atlas"
-	"github.com/MapColonies/shigola/internal/env"
 	"github.com/go-spatial/geom"
 )
 
@@ -12,9 +11,6 @@ var testLayer1 = atlas.Layer{
 	MinZoom:           4,
 	MaxZoom:           9,
 	GeomType:          geom.Point{},
-	DefaultTags: env.Dict{
-		"foo": "bar",
-	},
 }
 
 var testLayer2 = atlas.Layer{
@@ -23,9 +19,6 @@ var testLayer2 = atlas.Layer{
 	MinZoom:           10,
 	MaxZoom:           20,
 	GeomType:          geom.LineString{},
-	DefaultTags: env.Dict{
-		"foo": "bar",
-	},
 }
 
 var testLayer3 = atlas.Layer{
@@ -34,7 +27,6 @@ var testLayer3 = atlas.Layer{
 	MinZoom:           10,
 	MaxZoom:           20,
 	GeomType:          geom.Point{},
-	DefaultTags:       env.Dict{},
 }
 
 var testMap = atlas.Map{

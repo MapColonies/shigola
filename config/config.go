@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,7 +66,6 @@ type Config struct {
 	// the maps section
 	// 2. type -- this is the name the provider modules register
 	// themselves under. (e.g. mvt_postgis)
-	// Note: Use the type to figure out if the provider is a mvt or std provider
 	Providers []env.Dict     `toml:"providers"`
 	Maps      []provider.Map `toml:"maps"`
 }
@@ -160,10 +160,6 @@ func ValidateAndRegisterParams(mapName string, params []provider.QueryParameter)
 func (c *Config) Validate() error {
 
 	knownTypes := provider.Drivers()
-	drivers := make(map[string]struct{}, len(knownTypes))
-	for _, name := range knownTypes {
-		drivers[name] = struct{}{}
-	}
 
 	// configuredProviders is the set of provider names this config declares,
 	// which is what the map section below is checked against.
@@ -185,7 +181,7 @@ func (c *Config) Validate() error {
 		if _, ok := configuredProviders[name]; ok {
 			return ErrProviderNameDuplicate{Pos: i}
 		}
-		if _, ok := drivers[typ]; !ok {
+		if !slices.Contains(knownTypes, typ) {
 			// A type with a named successor is reported as removed rather than
 			// as unknown, so the operator is told what to write instead of
 			// being handed the list to choose from.
@@ -371,11 +367,39 @@ func (c *Config) ConfigureTileBuffers() {
 	}
 }
 
+// checkRemovedKeys reports a config still setting a key this build has stopped
+// honouring.
+//
+// It looks only for keys that were removed on purpose. Every other unrecognised
+// key is still ignored: rejecting those would make an unrelated typo, or a key
+// added by a newer shigola, fail a config that is otherwise fine.
+func checkRemovedKeys(md toml.MetaData) error {
+	for _, key := range md.Undecoded() {
+		// Any segment, not just the last: default_tags is a table, so its
+		// undecoded keys are reported one level below it as
+		// maps.layers.default_tags.<tag>. Matching too eagerly here is the safe
+		// direction -- it reports a key rather than ignoring one.
+		for _, part := range []string(key) {
+			if slices.Contains(provider.RemovedMapLayerKeys, part) {
+				return ErrRemovedMapLayerKey{Key: key.String()}
+			}
+		}
+	}
+
+	return nil
+}
+
 // Parse will parse the Tegola config file provided by the io.Reader.
 func Parse(reader io.Reader, location string) (conf Config, err error) {
-	// decode conf file, don't care about the meta data.
-	_, err = toml.NewDecoder(reader).Decode(&conf)
+	md, err := toml.NewDecoder(reader).Decode(&conf)
 	if err != nil {
+		return conf, err
+	}
+
+	// The decoder ignores keys it has no field for, which is what makes a
+	// removed key dangerous: the config keeps loading and the setting quietly
+	// stops meaning anything. The metadata is the only place that is visible.
+	if err := checkRemovedKeys(md); err != nil {
 		return conf, err
 	}
 

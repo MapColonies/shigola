@@ -13,15 +13,6 @@ import (
 	"github.com/go-spatial/geom/slippy"
 )
 
-// MVTPrefix is the prefix every registered provider name carries.
-//
-// It survives the retirement of the standard provider interface (MAPCO-11491)
-// because it is baked into released configuration: a config names mvt_postgis,
-// and that spelling has to keep resolving. It no longer distinguishes anything
-// -- there is one kind of provider now -- so it is a naming convention rather
-// than a type tag, which is why it is a constant and not a method on an enum.
-const MVTPrefix = "mvt_"
-
 // defaultGridForSRID maps a bare tile SRID onto the TileMatrixSet tegola has
 // historically meant by it.
 //

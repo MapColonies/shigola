@@ -13,7 +13,12 @@ import (
 	"github.com/MapColonies/shigola/dict"
 )
 
-const Name = "test"
+const (
+	Name = "test"
+	// MVTProviderType is the name this provider registers under, spelled out
+	// the way provider/postgis spells its own.
+	MVTProviderType = "mvt_test"
+)
 
 var (
 	lock     sync.Mutex
@@ -21,7 +26,7 @@ var (
 )
 
 func init() {
-	provider.MVTRegister(provider.MVTPrefix+Name, NewMVTTileProvider, Cleanup)
+	provider.MVTRegister(MVTProviderType, NewMVTTileProvider, Cleanup)
 }
 
 // NewMVTTileProvider sets up a test provider for mvt tile providers. The only
