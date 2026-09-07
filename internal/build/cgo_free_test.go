@@ -132,9 +132,10 @@ var (
 // cgoEnabledValue returns the value a line sets CGO_ENABLED to, and whether the
 // line sets it at all.
 func cgoEnabledValue(line string) (string, bool) {
-	if m := cgoBuildArg.FindStringSubmatch(line); m != nil {
+	if cgoBuildArg.MatchString(line) {
 		// Named so the failure message reads as what it is rather than as an
-		// empty value.
+		// empty value. The regexp captures nothing: there is no value to read,
+		// which is the whole problem with the form.
 		return "(from --build-arg)", true
 	}
 	if m := cgoEnvDirective.FindStringSubmatch(line); m != nil {
@@ -171,9 +172,11 @@ func buildConfig(name string) bool {
 // uses, so prose about a setting is not mistaken for the setting.
 //
 // devcontainer.json is JSONC and genuinely carries `//` comments; everything
-// else here is `#`.
+// else here is `#`. Matched by name rather than by the .json extension because
+// it is the only .json buildConfig admits -- keying off the extension implied a
+// breadth this cannot reach.
 func commentPrefix(name string) string {
-	if filepath.Ext(name) == ".json" {
+	if name == "devcontainer.json" {
 		return "//"
 	}
 	return "#"
