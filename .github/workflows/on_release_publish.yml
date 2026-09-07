@@ -110,7 +110,7 @@ jobs:
         release_archive_name: "shigola_linux_arm64"
 
   build_shigola_lambda_amd64:
-    name: Build shigola_lambda on Amazon Linux (amd64)
+    name: Build shigola_lambda (amd64)
     needs: [gen_version]
     runs-on: ubuntu-22.04
 
@@ -123,12 +123,23 @@ jobs:
       with:
         go: true
 
+    # Built on the runner like every other artifact. This used to go through a
+    # docker action that built inside an Amazon Linux image, so a cgo-linked
+    # binary would match the Lambda runtime's glibc. The build is cgo-free now
+    # (MAPCO-11489), so the binary is static and where it is compiled no longer
+    # changes it -- and the image cost a yum install and a container start per
+    # architecture to prove it.
     - name: Build shigola_lambda
-      uses: ./.github/actions/amazon-linux-build-action
       env:
-        GOARCH: amd64 # set the target build architecture
-      with:
-        args: '...'
+        # Pinned for the reason given on build_linux_amd64 above.
+        CGO_ENABLED: 0
+        GOOS: linux
+        GOARCH: amd64
+      run: |
+          cd cmd/shigola_lambda
+          go build -mod vendor -tags lambda.norpc \
+            -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}" \
+            -o bootstrap
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
@@ -139,7 +150,7 @@ jobs:
         release_archive_name: "shigola_lambda_amd64"
 
   build_shigola_lambda_arm64:
-    name: Build shigola_lambda on Amazon Linux (arm64)
+    name: Build shigola_lambda (arm64)
     needs: [gen_version]
     runs-on: ubuntu-22.04
 
@@ -152,12 +163,23 @@ jobs:
       with:
         go: true
 
+    # Built on the runner like every other artifact. This used to go through a
+    # docker action that built inside an Amazon Linux image, so a cgo-linked
+    # binary would match the Lambda runtime's glibc. The build is cgo-free now
+    # (MAPCO-11489), so the binary is static and where it is compiled no longer
+    # changes it -- and the image cost a yum install and a container start per
+    # architecture to prove it.
     - name: Build shigola_lambda
-      uses: ./.github/actions/amazon-linux-build-action
       env:
-        GOARCH: arm64 # set the target build architecture
-      with:
-        args: '...'
+        # Pinned for the reason given on build_linux_amd64 above.
+        CGO_ENABLED: 0
+        GOOS: linux
+        GOARCH: arm64
+      run: |
+          cd cmd/shigola_lambda
+          go build -mod vendor -tags lambda.norpc \
+            -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}" \
+            -o bootstrap
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
