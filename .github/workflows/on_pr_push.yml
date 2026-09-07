@@ -22,6 +22,29 @@ jobs:
           echo ${HOME}
           echo ${GITHUB_WORKSPACE}
 
+      # The tree is cgo-free (internal/build.TestNoCgoConstraints), and the
+      # release builds pin CGO_ENABLED=0 on the strength of that. The suite
+      # cannot check it: `go test -race` links a C runtime for its detector and
+      # so needs cgo, which is why the tests below run with CGO_ENABLED unset.
+      #
+      # So compile the tree once with cgo off -- the packages and every test
+      # binary. `go build ./...` alone would not: it never compiles a _test.go
+      # file, so a cgo dependency reachable only from a test would pass here and
+      # then break anyone building the suite without a C toolchain. `-run '^$'`
+      # matches no test, so the second command links each test binary and runs
+      # none of them; seconds against the suite's minutes.
+      #
+      # This is what keeps "shigola builds with no C toolchain" a checked fact
+      # rather than an assumption the release workflow rests on (MAPCO-11489).
+      # Before the fixture comes up, because it needs no fixture and a break
+      # here should not wait on a database restore.
+      - name: Check the tree builds without cgo
+        env:
+          CGO_ENABLED: 0
+        run: |
+          go build -mod vendor ./...
+          go test -run '^$' -mod vendor ./...
+
       # `up -d` returns as soon as the containers start, not when the fixture is
       # loaded, so the suite could begin against a half-restored database. The
       # devcontainer gates on migration's service_completed_successfully; this is

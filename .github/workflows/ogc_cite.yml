@@ -75,13 +75,20 @@ jobs:
             exit 1
           fi
 
-      # No build flags: there is no GeoPackage provider to exclude any more, and
-      # nothing left in the tree that cgo changes, so this is the ordinary
-      # build. "Conformance passes with no GeoPackage present" is now a fact
-      # about every shigola binary rather than about this one -- which is what
+      # No build tags: there is no GeoPackage provider to exclude any more, so
+      # "conformance passes with no GeoPackage present" is now a fact about
+      # every shigola binary rather than about this one -- which is what
       # deleting the provider bought, and why the flags that used to stand in
       # for it are not worth keeping as decoration.
+      #
+      # CGO_ENABLED is pinned rather than left unset, which is the one flag that
+      # does still earn its keep (MAPCO-11489). Nothing in the tree depends on
+      # cgo, but unset on a runner that ships a C compiler still selects a
+      # cgo-enabled build -- so the binary this evidence is about would be
+      # linked unlike the one shigola releases, which pins it to 0 everywhere.
       - name: Build shigola
+        env:
+          CGO_ENABLED: 0
         run: go build -mod vendor -o "${{ runner.temp }}/shigola" ./cmd/shigola
 
       # Pulled before shigola starts so the ~1 GB download is not counted against

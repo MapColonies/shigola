@@ -24,8 +24,7 @@
 #
 # The Go version must track the go directive in go.mod: the module sets no
 # toolchain directive, so a lower Go fails with "go.mod requires go >= ..."
-# rather than downloading one. Also pinned in .devcontainer/Dockerfile and
-# .github/actions/amazon-linux-build-action/Dockerfile.
+# rather than downloading one. Also pinned in .devcontainer/Dockerfile.
 FROM golang:1.26.6-alpine3.23 AS build
 
 ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"
@@ -37,11 +36,12 @@ ENV GIT_BRANCH="${BRANCH}"
 ENV GIT_REVISION="${REVISION}"
 ENV BUILD_PKG="${BUILDPKG}"
 
-# Only needed for CGO support at time of build, results in no noticable change in binary size
-# incurs approximately 1:30 extra build time (1:54 vs 0:27) to install packages.  Doesn't impact
-# development as these layers are drawn from cache after the first build.
-RUN apk update \
-	&& apk add build-base
+# Explicit rather than inherited: with no cgo-dependent package left
+# (MAPCO-11489), leaving this to the default would decide the binary's linkage
+# by whether the builder happens to have a C compiler. Pinning it to 0 makes the
+# image's binary statically linked and reproducible, and removes the build-base
+# install that used to precede this build for roughly 1:30.
+ENV CGO_ENABLED=0
 
 # Set up source for compilation
 RUN mkdir -p /go/src/github.com/mapcolonies/shigola

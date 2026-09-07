@@ -21,7 +21,11 @@ services:
       - go-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:
-      CGO_ENABLED: "1"
+      # No CGO_ENABLED here on purpose. Nothing in the tree depends on cgo
+      # (MAPCO-11489), but `go test -race` links a C runtime for its detector,
+      # so this is the one place the setting is left alone rather than pinned
+      # to 0 as the release builds pin it. build-essential stays in the image
+      # for the same reason.
       PGHOST: postgis
       PGPORT: "5432"
       PGUSER: postgres
