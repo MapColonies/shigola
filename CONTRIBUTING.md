@@ -1,124 +1,200 @@
-# Welcome
+# Contributing to Shigola
 
-> **Shigola is a fork of [Tegola](https://github.com/go-spatial/tegola).** This file is upstream's
-> contribution guide, kept because its conventions still govern this codebase — the `gofmt -s` rule,
-> the error-variable form, and running the tests with CGO both enabled and disabled all still apply.
+Shigola is a Go vector tile server that serves [OGC API - Tiles](https://ogcapi.ogc.org/tiles/).
+Thank you for thinking about contributing — this guide assumes a basic working knowledge of Git and
+Go, and covers how to get a change reviewed and merged.
+
+> **Provenance.** Shigola began as a fork of [Tegola](https://github.com/go-spatial/tegola), and most
+> of this codebase still descends from it under the MIT licence. `LICENSE.md`, `NOTICE.md`, the
+> copyright notice and the inherited `CHANGELOG.md` history stay as they are: that attribution is a
+> licence obligation, not a leftover, and it is never removed as part of a cleanup.
 >
-> **Where to send a change:**
+> It is no longer a fork that tracks upstream, and it is **not a superset of Tegola**. Four
+> behaviours changed incompatibly — `/` is the OGC landing page, cache keys gained a leading
+> `{tileMatrixSetId}`, the binary was renamed, and metrics went from `tegola_*` to `shigola_*` — and
+> rather more was removed than added: the viewer, the native `/maps/...` tile routes, and the
+> GeoPackage, SAP HANA and standard `postgis` providers. Behaviour this fork kept and did not change
+> is upstream's, and [tegola.io](https://tegola.io) still documents that part.
 >
-> - A fix or feature that is **generally useful** belongs **upstream**, at
->   [go-spatial/tegola](https://github.com/go-spatial/tegola). Follow this guide as written: base the
->   PR on the release-candidate branch named for the next version, not `master`.
-> - A change to what **Shigola adds** — OGC API - Tiles, tile matrix sets, the layered cache — or to
->   this fork's build and branding, belongs here, at
->   [MapColonies/shigola](https://github.com/MapColonies/shigola).
->
-> Links below point at upstream's issue tracker and Slack, and are correct for upstream
-> contributions. For Shigola-specific work, use this repository's issues instead. The build commands
-> below refer to `cmd/shigola` in this fork.
+> **Every change belongs here.** There is no upstream to forward a generally useful fix to any more,
+> and no reason to keep one out of this tree.
 
----
+## Where things live
 
-Thank you for even thinking about contributing! We are excited to have you. This document is intended as a guide to help your through the contribution process. This guide assumes a you have a basic understanding of Git and Go.
+| | Where |
+|:---|:---|
+| The server | [MapColonies/shigola](https://github.com/MapColonies/shigola) — this repository |
+| The docs site | [MapColonies/shigola-docs](https://github.com/MapColonies/shigola-docs), published to [GitHub Pages](https://mapcolonies.github.io/shigola-docs/) |
+| Released binaries | the [releases page](https://github.com/MapColonies/shigola/releases) |
 
-For sensitive security-related issue please start a conversation with a core contributor on the [#go-spatial](https://invite.slack.golangbridge.org/) channel in the [gophers slack](https://invite.slack.golangbridge.org/) organization.
+## Found a bug, or want a feature?
 
-This project and everyone who is participating in it is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
-By participating, you are expected to uphold this code. Please report unacceptable behavior to the [#go-spatial](https://invite.slack.golangbridge.org/) channel in the [gophers slack](https://invite.slack.golangbridge.org/) organization or to one of the Core Contributors.
+Everything starts with an [issue](https://github.com/MapColonies/shigola/issues). Search the open
+ones first: if something close already exists, add what you know to it rather than opening a
+duplicate — and if you have nothing to add, a 👍 is a useful signal on its own.
 
-## There are several places where you can contribute. 
+* File a bug with the [bug template](https://github.com/MapColonies/shigola/issues/new?template=bug.md).
+  For anything about the tiles that come back, include the configuration file and enough of the data
+  to reproduce it — a tile that looks wrong is not reproducible without the rows behind it.
+* File a feature request with the
+  [feature template](https://github.com/MapColonies/shigola/issues/new?template=feature.md), and say
+  what the use case is, not only what the feature is.
 
-### Found a bug or something does not feel right?
+The issue is where the design gets discussed, so keep the discussion there rather than in a chat
+channel — and if a decision does get made somewhere else, write it back onto the issue. A pull
+request that fixes a bug or adds a feature references its issue.
 
-Everything we do is done through [issues](https://github.com/go-spatial/tegola/issues). The first thing to do is to search the current issues to see if it is something that has been reported or requested already. If you are unable to find an issue that is similar or are unsure just file a new issue. If you find one that is similar, you can add a comment to add additional details, or if you have nothing new to add you can “+1” the issue.
+**Security issues do not go in a public issue.** Report a suspected vulnerability privately through
+this repository's GitHub security advisories (*Security* → *Report a vulnerability*), or by
+contacting a maintainer directly.
 
-* If you are unable to find an issue that is similar or are unsure go ahead and file a new one. 
-* If it is a bug your can use the following [template](https://github.com/go-spatial/tegola/issues/new?template=bug.md). 
-* If this is a rendering bug, please include the relevant data set and configuration file. 
-* If it is a feature request use the following [template](https://github.com/go-spatial/tegola/issues/new?template=feature.md).
-* If this is a feature request, please include a description of what the feature is, and the use case for the feature.
+Everyone taking part is governed by the [Code of Conduct](CODE_OF_CONDUCT.md); report unacceptable
+behaviour to this repository's maintainers.
 
-Once you have filed an issue, we will discuss it in the issue. If we need more information or you have further questions about that issue, this is the place to ask. This is the place where we will discuss the design of the fix or feature. Any pull request that adds a feature or fixes an issue should reference the issue number.
+## How work is tracked
 
-If you have changes to for the Tegola.io website — documentation on the website, tutorials, translation or anything else — the process is similar but on a different [repository](https://github.com/go-spatial/tegola-docs) (https://github.com/go-spatial/tegola-docs).
+MapColonies tracks work on Shigola in the **MAPCO** Jira project, and a pull request title carries
+its issue key in parentheses — that is what makes the ticket findable from the pull request list and
+from the squashed commit left on `master`. Contributors without access to that tracker should
+reference the GitHub issue number instead; nothing here requires a Jira account.
 
-Don’t be afraid to reach out if you have any questions.  You can reach us on the gophers Slack on the channel #tegola or #go-spatial. You can get an invite into the gophers Slack via (https://invite.slack.golangbridge.org/)
+## Making a change
 
-## Making a Contribution to the code base.
+`master` is always the most recent state of the code, and pull requests are opened against it. There
+is no release-candidate branch.
 
-For the Tegola project our master branch is always the most recent stable version of the code base. The current release candidate will be in a branch name for the next version of the software. For example if the current release is v0.6.1 the next release will be v0.7.0, the release candidate branch will be called “v0.7.0”. Please, base all of your pull requests on the release candidate branch.
+* **Never commit or push to `master`.** Branch as `<type>/<slug>` — `fix/cache-histogram-buckets`,
+  `feat/ogc-tiles` — push the branch, and open a pull request.
+* **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):**
+  `<type>(<optional scope>): <subject>`, where type is one of `feat`, `fix`, `docs`, `chore`,
+  `refactor`, `test`, `ci`, `perf`, `build`, `style`, `revert`. Subject in lowercase imperative, no
+  trailing period.
+* **Pull request titles use the same grammar and end with the issue key:**
+  `feat(server): remove the embedded viewer (MAPCO-11482)`.
+* **One logical change per commit.** Formatting-only churn goes in its own commit *and* its own pull
+  request — it keeps engineering changes reviewable separately from reflowed whitespace.
+* **The pull request body carries the reasoning**, not a list of files: what changed and why, how it
+  was verified, and anything deliberately left out.
+* **Update the docs in the same piece of work.** `shigola-docs` pages are derived from sources here,
+  and this repository is the source of truth. A change to any of these needs the matching docs page
+  updated, as a separate branch and pull request in `shigola-docs`, with the two cross-referencing
+  each other:
 
-### Discuss your design
+  | Docs page (`shigola-docs/`) | Source (here) |
+  |:---|:---|
+  | `docs/ogc-api-tiles.md` | `docs/ogc-api-tiles.md` |
+  | `docs/tile-matrix-sets.md` | `docs/ogc-api-tiles.md`, `tms/doc.go`, `tms/registry.go` |
+  | `docs/layered-cache.md` | `README.md` § "Layered cache" |
+  | `docs/configuration.md` § Redis | `cache/redis/README.md` |
 
-All contributions are welcome, but please let everyone know what you are working on. The way to do this is to first file an issue (or claim an existing issue). In this issue, please, discuss what your plan is to fix or add the feature. Also, all design discussions should happen on the issue. If design discussions happen in a channel, reconcile the decisions to the relevant issue(s). Once, your contribution is ready, create a pull request referencing the issue. Once, a pull request is created one or more of the Core Contributors will review the pull request and may request changes. Once the changes are approved, it will be merged into the current release candidate branch.
+Once the pull request is open a maintainer reviews it and may ask for changes. Keep it up to date as
+other work lands on `master` ahead of yours.
 
-Be sure to keep the pull request updated as merge conflicts may occur as other things get merged into the release branch before yours.
+### Not sure where to start?
 
-Please, note that we may push your pull request to the next release candidate at which point you will have to resolve any conflicts that occur.
+Look through the issues for one that interests you, and say on it that you are picking it up so two
+people do not write the same patch. An issue labelled `good first issue` is one a maintainer thinks
+is a reasonable place to start, but it is not the only place. If you are unsure how to approach one,
+ask on the issue.
 
-### Not sure where to contribute?
+## Building from source
 
-Want to contribute but not sure where? Not a problem, the best thing to do is look through the issues and find one that interests you. If the issue has the label `good first issue`, it means that one of the core contributors thinks this is a good issue to start with. But, this doesn’t mean that you have to start with these issues. Go through the issues and see if someone is already working on it. If no one is, state that you will be working on the issue to claim it. If you are unsure where to start on the issue, ask in the issue and one of the Core Contributors will help you out.
+`vendor/` is committed, so **always build and test with `-mod vendor`** — every command in this
+repository does.
 
-## How to build from source
+```bash
+git clone https://github.com/MapColonies/shigola
+cd shigola
 
-For Shigola, get a binary from the [releases page](https://github.com/MapColonies/shigola/releases), or use `go get -u github.com/MapColonies/shigola/cmd/shigola`. Upstream Tegola's binaries are on [its own releases page](https://github.com/go-spatial/tegola/releases).
+go build -mod vendor ./cmd/shigola
+./shigola serve --config=path/to/config.toml
+```
 
-If however you want to build the latest release candidate you will have to build from source. The first thing to do is to clone the repo (`MapColonies/shigola` for this fork, `go-spatial/tegola` for upstream) to your `GOPATH`. The simplest way to do this is to use `go get -u github.com/MapColonies/shigola`, navigate to the repository root then: 
+`internal/build/*.generated.go` records which build tags a binary was built with. It is generated,
+never hand-edited:
 
-* Checkout the current release candidate branch, (i.e. v0.15.0)
-	
-    (`git checkout v0.15.0`)
-	
-* Create a new feature branch. 
-	
-    (`git checkout -b issue-XXX-new_feature`)
-	
-* Work on the fix, and run all the tests. We need to run tests with CGO enabled and disabled.
+```bash
+cd internal/build && go generate
+```
 
-  (`go generate ./...`) # to regenerate any autogenerated assets
-  (`go test ./…`)
-    (`CGO_ENABLED=0 go test ./…`)
+Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache`, `noGCSCache`,
+`noPostgisProvider` and `noPrometheusObserver`; `pprof` opts in.
 
-* Make sure tegola can be built and run:
+## Code conventions
 
-    (`cd cmd/shigola`)
-    (`go build && ./tegola serve --config=path/to/config.toml`)
-	
-* Commit your changes (`git commit -am ‘Add some feature #XXX\n\nExtened description.'`)
-
-### Contribute upstream:
-
-* On github, fork the repo to into your account.
-* Add a new remote pointing to your fork. 
-
-	(`git remote add fork  git@github.com:yourname/rep.git`)
-	
-* Push to the branch 
-	
-	(`git push fork issue-XXX-new_feature`)
-	
-* Create a new Pull Request on GitHub against the Release Candidate branch.
-
-For more information about this work flow, please refer to this [great explanation by Katrina Owen](https://splice.com/blog/contributing-open-source-git-repositories-go/).
-
-## Conventions
-
-* All code should be formatted using:
-	
-	(`gofmt -s ./…`).
-
-	- if you find that running `gofmt` produces changes across parts of the code base you're not working on, submit the formatting change in a separate Pull Request. This helps decouple engineering changes from formatting changes and focused the code review efforts. 
-	
-* When declaring errors variables they should take the form of:
-	
-	(`var ErrErrorName  = errors.New("provider: canceled")`)
-	
-* The text should be all lowercase, and no punctuation at the end.
+* **`gofmt -s`.** If running it produces changes in parts of the tree you are not working on, send
+  those in a separate pull request.
+* **Error variables** take the form `var ErrErrorName = errors.New("provider: canceled")` — the text
+  all lowercase, with no punctuation at the end.
+* **Table-driven subtests keyed by name**, with a `fn := func(tc tcase) func(*testing.T)` closure.
+  The pattern is uniform across the repository; match it rather than inventing a variant.
+  `cache/memory/memory_test.go` is a short example.
+* **Comments here carry design rationale**, including ADR references (`ADR-0003`, `ADR-0007`, …) and
+  why an alternative was rejected. Preserve that when editing near them, and write new comments the
+  same way — a comment that only restates the code is not worth the line.
+* **Environment variables are `SHIGOLA_*`**, falling back to `TEGOLA_*` with a deprecation warning
+  (`internal/env/getenv.go`). Read them through `env.Getenv("OPTIONS")`, never `os.Getenv`.
+* **Anything new that is configurable is wired in two places:** `config/` parses and validates it,
+  and `cmd/internal/register/` turns the parsed config into something registered on the atlas. A
+  setting wired in only one of them is silently inert.
 
 ## Testing
 
-For tests we use go 1.7 sub tests. Please, look at the [cmp_test.go](https://github.com/go-spatial/tegola/blob/master/geom/cmp/cmp_test.go).
+### Running the suite
+
+Most of the suite needs the PostGIS and Redis fixtures. `docker compose up -d` returns as soon as the
+containers start rather than when the fixture is loaded, so wait for the one-shot `migration` service
+the way CI does — otherwise the tests run against a half-restored database and blame the server for
+it:
+
+```bash
+docker compose up -d
+docker wait migration        # must print 0 before going on
+
+go test -mod vendor -race ./...
+docker compose down
+```
+
+**One test mode, not two.** Nothing in this tree is compiled conditionally on cgo, so `CGO_ENABLED`
+no longer changes what is built or what is tested, and `internal/build` fails if that stops being
+true. Leave it unset: `go test -race` links a C runtime for its detector and needs cgo available.
+That the tree still *builds* without a C toolchain is checked separately, and CI checks it:
+
+```bash
+CGO_ENABLED=0 go build -mod vendor ./...
+CGO_ENABLED=0 go test -run '^$' -mod vendor ./...   # links every test binary, runs none
+```
+
+Two more gates worth running before you push:
+
+```bash
+gofmt -s -l . | grep -v '^vendor/'    # vendor/ is never -s clean; nothing else may appear
+govulncheck ./...
+```
+
+### Opt-in suites
+
+Provider- and backend-specific tests **skip unless you opt in** (`internal/ttools.ShouldSkip`), so a
+green `go test ./...` may have run almost nothing for those packages. Each gate takes the literal
+string `yes`:
+
+| Gate | Also needs |
+|:---|:---|
+| `RUN_POSTGIS_TESTS` | `PGURI`, `PGURI_NO_ACCESS`, `PGSSLMODE` |
+| `RUN_REDIS_TESTS` | — |
+| `RUN_DATA_TESTS` | the fixture stack; see below |
+| `RUN_S3_TESTS` | `AWS_TEST_BUCKET`, `AWS_REGION` — reaches a real bucket, so not reproducible locally |
+| `RUN_AZBLOB_TESTS` | — |
+
+`.github/workflows/on_pr_push.yml` has the exact values CI uses.
+
+### OGC conformance
+
+`.github/cite/run.sh <tileMatrixSetId> <tileMatrix> <tileRow> <tileCol>` runs the OGC CITE suite in
+TeamEngine against a running server. It is the only check here that catches conformance rules the
+code cannot check about itself, so CI runs it on changes to the server, `tms/`, `atlas/`, the PostGIS
+provider and its fixtures, and weekly. It serves the Athens layers out of the PostGIS fixture through
+`mvt_postgis`, so bring the fixture up first.
 
 ### Tile-content checks
 
