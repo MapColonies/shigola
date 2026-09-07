@@ -1,0 +1,155 @@
+{{- if .Values.enabled -}}
+{{- $registry := include "shigola.cloudProviderDockerRegistryUrl" . -}}
+{{- $pullSecret := include "shigola.cloudProviderImagePullSecretName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shigola.fullname" . }}
+  labels:
+    {{- include "shigola.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "shigola.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shigola.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if $pullSecret }}
+      imagePullSecrets:
+        - name: {{ $pullSecret | quote }}
+      {{- end }}
+      containers:
+        - name: shigola
+          image: {{ $registry }}{{ .Values.image.repository }}:{{ include "shigola.tag" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "shigola.fullname" . }}
+          env:
+            {{- $generatedSecret := printf "%s-generated" (include "shigola.fullname" .) }}
+            {{- if .Values.database.enabled }}
+            {{- if .Values.database.postgres.passwordSecret.name }}
+            - name: DATABASE_PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.passwordSecret.name | quote }}
+                  key: {{ .Values.database.postgres.passwordSecret.key | quote }}
+            {{- else if .Values.database.postgres.password }}
+            - name: DATABASE_PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $generatedSecret | quote }}
+                  key: database-db-password
+            {{- end }}
+            {{- end }}
+            {{- if .Values.osm.enabled }}
+            {{- if .Values.osm.postgres.passwordSecret.name }}
+            - name: OSM_PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.osm.postgres.passwordSecret.name | quote }}
+                  key: {{ .Values.osm.postgres.passwordSecret.key | quote }}
+            {{- else if .Values.osm.postgres.password }}
+            - name: OSM_PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $generatedSecret | quote }}
+                  key: osm-db-password
+            {{- end }}
+            {{- end }}
+            {{- if .Values.cache.redis.enabled }}
+            {{- if .Values.cache.redis.passwordSecret.name }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cache.redis.passwordSecret.name | quote }}
+                  key: {{ .Values.cache.redis.passwordSecret.key | quote }}
+            {{- else if .Values.cache.redis.password }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $generatedSecret | quote }}
+                  key: redis-password
+            {{- end }}
+            {{- end }}
+            {{- if .Values.cache.s3.enabled }}
+            {{- if .Values.cache.s3.credentialsSecret.name }}
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cache.s3.credentialsSecret.name | quote }}
+                  key: {{ .Values.cache.s3.credentialsSecret.accessKeyIdKey | quote }}
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cache.s3.credentialsSecret.name | quote }}
+                  key: {{ .Values.cache.s3.credentialsSecret.secretAccessKeyKey | quote }}
+            {{- else if or .Values.cache.s3.accessKeyId .Values.cache.s3.secretAccessKey }}
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $generatedSecret | quote }}
+                  key: s3-access-key-id
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $generatedSecret | quote }}
+                  key: s3-secret-access-key
+            {{- end }}
+            {{- end }}
+            {{- if .Values.caSecretName }}
+            - name: REQUESTS_CA_BUNDLE
+              value: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: {{ .Values.service.protocol }}
+          volumeMounts:
+            - name: shigola-config
+              mountPath: {{ .Values.config.mountPath | quote }}
+              subPath: {{ .Values.config.key | quote }}
+            {{- if .Values.caSecretName }}
+            - name: root-ca
+              mountPath: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+              subPath: {{ .Values.caKey | quote }}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: shigola-config
+          configMap:
+            name: {{ include "shigola.fullname" . }}
+        {{- if .Values.caSecretName }}
+        - name: root-ca
+          secret:
+            secretName: {{ .Values.caSecretName | quote }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

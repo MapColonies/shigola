@@ -1,0 +1,135 @@
+global:
+  cloudProvider:
+    dockerRegistryUrl: ''
+    imagePullSecretName: ''
+    flavor: kubernetes
+
+enabled: true
+replicaCount: 1
+revisionHistoryLimit: 5
+nameOverride: ''
+fullnameOverride: ''
+podAnnotations: {}
+extraEnvVars: []
+extraVolumes: []
+extraVolumeMounts: []
+caSecretName: ''
+caPath: /usr/local/share/ca-certificates
+caKey: ca.crt
+
+cloudProvider:
+  dockerRegistryUrl: ''
+  imagePullSecretName: ''
+  flavor: kubernetes
+
+image:
+  repository: shigola
+  tag: latest
+  pullPolicy: IfNotPresent
+
+command: []
+args:
+- serve
+- --config
+- /opt/config.toml
+
+service:
+  port: 8080
+  targetPort: 8080
+  protocol: TCP
+
+config:
+  mountPath: /opt/config.toml
+  key: config.toml
+
+cors:
+  allowedOrigin: '*'
+  allowedMethods: 'GET, OPTIONS'
+  allowedHeaders: '*'
+
+database:
+  enabled: true
+  postgres:
+    host: ''
+    port: '5432'
+    database: ''
+    user: ''
+    password: ''
+    passwordSecret:
+      name: ''
+      key: password
+  srid: 3857
+  schema: public
+  table:
+  geometryColumn: geomColumn
+  idColumn: idColumn
+  geometryType: polygon
+  extraColumns: []
+  attribution: 'Database'
+  minZoom: 14
+  maxZoom: 20
+
+osm:
+  enabled: true
+  postgres:
+    host: postgresHost
+    port: '5432'
+    database: DatabaseName
+    user: username
+    password: password
+    passwordSecret:
+      name: ''
+      key: password
+
+cache:
+  redis:
+    enabled: false
+    uri: ''
+    password: ''
+    passwordSecret:
+      name: ''
+      key: password
+    ttl: 3600
+  s3:
+    enabled: false
+    bucket: ''
+    endpoint: ''
+    region: region
+    forcePathStyle: true
+    accessKeyId: ''
+    secretAccessKey: ''
+    credentialsSecret:
+      name: ''
+      accessKeyIdKey: access-key-id
+      secretAccessKeyKey: secret-access-key
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 125m
+    memory: 512Mi
+
+route:
+  enabled: false
+  path: /
+  host: ''
+  timeout:
+    enabled: false
+    duration: 60s
+  tls:
+    enabled: true
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  labels: {}
+  path: /
+  pathType: Prefix
+  hosts: []
+  host: localhost
+  tls: []
