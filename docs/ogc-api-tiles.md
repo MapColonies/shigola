@@ -264,11 +264,6 @@ Each run prints `<scheme>: 15 passed, 1 untested` and then `<scheme>: OK`. `run.
 floor of 15 passed assertions (`MIN_PASSED`), because the EARL report has no summary line and a run
 that reached nothing at all reports no failures.
 
-An ordinary build, with no flags to make the binary special: the conformance the suite measures is
-a property of every shigola binary rather than of the one this run happened to compile. The fixture
-is served from PostGIS through `mvt_postgis`, so the evidence depends on nothing but the provider
-the server actually ships.
-
 The fixture's layers declare a **narrow zoom window** (13–15), which is deliberate and is about
 accuracy rather than about data volume: `ST_AsMVTGeom` maps the bounding box onto the tile grid
 affinely, and one SQL string cannot be affine-correct for a mercator grid and a geographic one at
