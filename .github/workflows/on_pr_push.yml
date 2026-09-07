@@ -29,6 +29,21 @@ jobs:
       # takes longer to restore. migration.sh runs under `set -eo pipefail`, so a
       # failed restore reaches us as a non-zero status rather than as an empty
       # database the tests then blame.
+      # The tree is cgo-free (internal/build.TestNoCgoConstraints), and the
+      # release builds pin CGO_ENABLED=0 on the strength of that. The suite
+      # cannot check it: `go test -race` links a C runtime for its detector and
+      # so needs cgo, which is why the tests below run with CGO_ENABLED unset.
+      #
+      # So compile the tree once with cgo off. Seconds against the suite's
+      # minutes, and it is what keeps "shigola builds with no C toolchain" a
+      # checked fact rather than an assumption the release workflow rests on
+      # (MAPCO-11489). Before the fixture comes up, because it needs no fixture
+      # and a break here should not wait on a database restore.
+      - name: Check the tree builds without cgo
+        env:
+          CGO_ENABLED: 0
+        run: go build -mod vendor ./...
+
       - name: Setup test environment
         run: |
           docker compose up -d
