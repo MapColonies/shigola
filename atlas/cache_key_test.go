@@ -11,6 +11,7 @@ import (
 	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
+	"github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/tms"
 )
 
@@ -100,6 +101,10 @@ func TestSeedAndPurgeKeys(t *testing.T) {
 			// collectionGrid and the CLI's resolveSeedPurgeGrid -- and not
 			// twice.
 			m := atlas.NewWebMercatorMap("osm")
+			// Seeding encodes, and encoding needs a provider to ask
+			// (MAPCO-11491). What it returns does not matter here: the keys are
+			// the assertion, not the bytes filed under them.
+			m.SetMVTProvider("mvt_test", &test.TileProvider{})
 
 			rec := &keyRecorder{}
 			a := &atlas.Atlas{}

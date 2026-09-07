@@ -9,6 +9,7 @@ import (
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/provider"
+	_ "github.com/MapColonies/shigola/provider/test"
 )
 
 func TestMaps(t *testing.T) {
@@ -58,7 +59,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 			expectedErr: register.ErrProviderLayerInvalid{
@@ -95,7 +96,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 			expectedErr: register.ErrProviderLayerNotRegistered{
@@ -110,7 +111,7 @@ func TestMaps(t *testing.T) {
 					Name: "foo",
 					Layers: []provider.MapLayer{
 						{
-							ProviderLayer: "test.debug-tile-outline",
+							ProviderLayer: "test.test-layer",
 							DefaultTags: env.Dict{
 								"test": "test",
 							},
@@ -121,7 +122,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 		},
@@ -130,7 +131,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 		},

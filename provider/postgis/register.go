@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	provider.MVTRegister(provider.TypeMvt.Prefix()+Name, NewMVTTileProvider, Cleanup)
+	provider.MVTRegister(MVTProviderType, NewMVTTileProvider, Cleanup)
 
 	// The standard type was this package's other half until MAPCO-11490: it
 	// pulled raw geometry into the process and encoded MVT in Go, where the

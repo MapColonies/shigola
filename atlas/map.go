@@ -4,30 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
-	"fmt"
 	"strings"
-	"sync"
-
-	"github.com/MapColonies/shigola/observability"
-
-	"github.com/golang/protobuf/proto"
 
 	"github.com/MapColonies/shigola"
-	"github.com/MapColonies/shigola/basic"
-	"github.com/MapColonies/shigola/dict"
-	"github.com/MapColonies/shigola/internal/convert"
-	"github.com/MapColonies/shigola/internal/log"
-	"github.com/MapColonies/shigola/maths/simplify"
-	"github.com/MapColonies/shigola/maths/validate"
+	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
-	"github.com/MapColonies/shigola/provider/debug"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom"
-	"github.com/go-spatial/geom/cmp"
-	"github.com/go-spatial/geom/encoding/mvt"
 	"github.com/go-spatial/geom/slippy"
-	"github.com/go-spatial/geom/winding"
 )
 
 // NewWebMercatorMap creates a new map with the necessary default values
@@ -136,237 +120,6 @@ func (m Map) SupportsTileGrid(id string) bool {
 	return false
 }
 
-func prepareGeometryForMVT(geo geom.Geometry, tileExtent *geom.Extent, pixelExtent float64) geom.Geometry {
-	switch g := geo.(type) {
-	case geom.Polygon:
-		return preparePolygonForMVT(g, tileExtent, pixelExtent)
-	case geom.MultiPolygon:
-		polys := g.Polygons()
-		prepared := make(geom.MultiPolygon, 0, len(polys))
-		for _, poly := range polys {
-			pp := preparePolygonForMVT(geom.Polygon(poly), tileExtent, pixelExtent)
-			if len(pp) > 0 {
-				prepared = append(prepared, pp)
-			}
-		}
-		if len(prepared) == 0 {
-			return nil
-		}
-		return prepared
-	default:
-		return mvt.PrepareGeo(geo, tileExtent, pixelExtent)
-	}
-}
-
-func preparePolygonForMVT(poly geom.Polygon, tileExtent *geom.Extent, pixelExtent float64) geom.Polygon {
-	rings := poly.LinearRings()
-	prepared := make(geom.Polygon, 0, len(rings))
-	for _, ring := range rings {
-		pr := prepareRingForMVT(ring, tileExtent, pixelExtent)
-		if len(pr) >= 3 {
-			prepared = append(prepared, pr)
-		}
-	}
-	if len(prepared) == 0 {
-		return nil
-	}
-
-	order := winding.Order{YPositiveDown: false}
-	return geom.Polygon(order.RectifyPolygon([][][2]float64(prepared)))
-}
-
-func prepareRingForMVT(ring [][2]float64, tileExtent *geom.Extent, pixelExtent float64) [][2]float64 {
-	if len(ring) < 3 {
-		return nil
-	}
-	prepared := make([][2]float64, 0, len(ring))
-	for _, pt := range ring {
-		npt := preparePointForMVT(pt, tileExtent, pixelExtent)
-		if len(prepared) > 0 && sameMVTPoint(prepared[len(prepared)-1], npt) {
-			continue
-		}
-		prepared = append(prepared, npt)
-	}
-	if len(prepared) > 1 && sameMVTPoint(prepared[0], prepared[len(prepared)-1]) {
-		prepared = prepared[:len(prepared)-1]
-	}
-	if len(prepared) < 3 {
-		return nil
-	}
-	return prepared
-}
-
-func preparePointForMVT(pt [2]float64, tileExtent *geom.Extent, pixelExtent float64) [2]float64 {
-	return [2]float64{
-		(pt[0] - tileExtent.MinX()) / tileExtent.XSpan() * pixelExtent,
-		(tileExtent.MaxY() - pt[1]) / tileExtent.YSpan() * pixelExtent,
-	}
-}
-
-func sameMVTPoint(a, b [2]float64) bool {
-	return int64(a[0]) == int64(b[0]) && int64(a[1]) == int64(b[1]) ||
-		cmp.HiCMP.PointEqual(a, b)
-}
-
-func pixelBufferedExtent(buffer uint64) *geom.Extent {
-	b := float64(buffer)
-	extent := float64(mvt.DefaultExtent)
-	return geom.NewExtent([2]float64{-b, -b}, [2]float64{extent + b, extent + b})
-}
-
-func clipGeometryToExtent(geo geom.Geometry, extent *geom.Extent) geom.Geometry {
-	switch g := geo.(type) {
-	case geom.Polygon:
-		return clipPolygonToExtent(g, extent)
-	case geom.MultiPolygon:
-		polys := g.Polygons()
-		clipped := make(geom.MultiPolygon, 0, len(polys))
-		for _, poly := range polys {
-			cp := clipPolygonToExtent(geom.Polygon(poly), extent)
-			if len(cp) > 0 {
-				clipped = append(clipped, cp)
-			}
-		}
-		if len(clipped) == 0 {
-			return nil
-		}
-		return clipped
-	default:
-		return geo
-	}
-}
-
-func clipPolygonToExtent(poly geom.Polygon, extent *geom.Extent) geom.Polygon {
-	rings := poly.LinearRings()
-	clipped := make(geom.Polygon, 0, len(rings))
-	for _, ring := range rings {
-		cr := clipRingToExtent(ring, extent)
-		if len(cr) >= 4 {
-			clipped = append(clipped, cr)
-		}
-	}
-	if len(clipped) == 0 {
-		return nil
-	}
-	return clipped
-}
-
-type clipEdge uint8
-
-const (
-	clipLeft clipEdge = iota
-	clipRight
-	clipBottom
-	clipTop
-)
-
-func clipRingToExtent(ring [][2]float64, extent *geom.Extent) [][2]float64 {
-	pts := openRing(ring)
-	for _, edge := range []clipEdge{clipLeft, clipRight, clipBottom, clipTop} {
-		pts = clipRingToEdge(pts, extent, edge)
-		if len(pts) == 0 {
-			return nil
-		}
-	}
-	if len(pts) < 3 {
-		return nil
-	}
-	return closeRing(pts)
-}
-
-func openRing(ring [][2]float64) [][2]float64 {
-	if len(ring) == 0 {
-		return nil
-	}
-	pts := append([][2]float64(nil), ring...)
-	last := len(pts) - 1
-	if pts[0] == pts[last] {
-		pts = pts[:last]
-	}
-	return pts
-}
-
-func closeRing(ring [][2]float64) [][2]float64 {
-	if len(ring) == 0 {
-		return nil
-	}
-	if ring[0] != ring[len(ring)-1] {
-		ring = append(ring, ring[0])
-	}
-	return ring
-}
-
-func clipRingToEdge(ring [][2]float64, extent *geom.Extent, edge clipEdge) [][2]float64 {
-	if len(ring) == 0 {
-		return nil
-	}
-	out := make([][2]float64, 0, len(ring)+1)
-	prev := ring[len(ring)-1]
-	prevInside := pointInsideEdge(prev, extent, edge)
-	for _, curr := range ring {
-		currInside := pointInsideEdge(curr, extent, edge)
-		switch {
-		case currInside && !prevInside:
-			out = append(out, intersectClipEdge(prev, curr, extent, edge), curr)
-		case currInside && prevInside:
-			out = append(out, curr)
-		case !currInside && prevInside:
-			out = append(out, intersectClipEdge(prev, curr, extent, edge))
-		}
-		prev = curr
-		prevInside = currInside
-	}
-	return out
-}
-
-func pointInsideEdge(pt [2]float64, extent *geom.Extent, edge clipEdge) bool {
-	switch edge {
-	case clipLeft:
-		return pt[0] >= extent.MinX()
-	case clipRight:
-		return pt[0] <= extent.MaxX()
-	case clipBottom:
-		return pt[1] >= extent.MinY()
-	case clipTop:
-		return pt[1] <= extent.MaxY()
-	default:
-		return false
-	}
-}
-
-func intersectClipEdge(a, b [2]float64, extent *geom.Extent, edge clipEdge) [2]float64 {
-	dx := b[0] - a[0]
-	dy := b[1] - a[1]
-	switch edge {
-	case clipLeft:
-		return intersectVertical(a, dx, dy, extent.MinX())
-	case clipRight:
-		return intersectVertical(a, dx, dy, extent.MaxX())
-	case clipBottom:
-		return intersectHorizontal(a, dx, dy, extent.MinY())
-	case clipTop:
-		return intersectHorizontal(a, dx, dy, extent.MaxY())
-	default:
-		return b
-	}
-}
-
-func intersectVertical(a [2]float64, dx, dy, x float64) [2]float64 {
-	if dx == 0 {
-		return [2]float64{x, a[1]}
-	}
-	t := (x - a[0]) / dx
-	return [2]float64{x, a[1] + t*dy}
-}
-
-func intersectHorizontal(a [2]float64, dx, dy, y float64) [2]float64 {
-	if dy == 0 {
-		return [2]float64{a[0], y}
-	}
-	t := (y - a[1]) / dy
-	return [2]float64{a[0] + t*dx, y}
-}
-
 // HasMVTProvider indicates if map is a mvt provider based map
 func (m Map) HasMVTProvider() bool { return m.mvtProvider != nil }
 
@@ -383,63 +136,18 @@ func (m *Map) SetMVTProvider(name string, p provider.MVTTiler) provider.MVTTiler
 	return p
 }
 
+// Collectors returns the map's provider-level metrics collectors.
+//
+// It asked each layer for its own until MAPCO-11491: layers carried a provider
+// then, and a map without an MVT provider was assembled from several. A map has
+// exactly one provider now, so there is one place to ask.
 func (m Map) Collectors(prefix string, config func(configKey string) map[string]interface{}) ([]observability.Collector, error) {
-	if m.mvtProviderName != "" {
-		collect, ok := m.mvtProvider.(observability.Observer)
-		if !ok {
-			return nil, nil
-		}
-		return collect.Collectors(prefix, config)
-	}
-	// not an mvtProvider, so need to ask each layer instead
-	var collection []observability.Collector
-	for i := range m.Layers {
-		aCollection, err := m.Layers[i].Collectors(prefix, config)
-		if err != nil {
-			return nil, err
-		}
-		if len(aCollection) != 0 {
-			collection = append(collection, aCollection...)
-		}
-	}
-	return collection, nil
-}
-
-// AddDebugLayers returns a copy of a Map with the debug layers appended to the layer list
-func (m Map) AddDebugLayers() Map {
-	// can not modify the layers of an mvt provider based map
-	if m.mvtProvider != nil {
-		return m
+	collect, ok := m.mvtProvider.(observability.Observer)
+	if !ok {
+		return nil, nil
 	}
 
-	// make an explicit copy of the layers
-	layers := make([]Layer, len(m.Layers))
-	copy(layers, m.Layers)
-	m.Layers = layers
-
-	// setup a debug provider
-	debugProvider, _ := debug.NewTileProvider(dict.Dict{}, nil)
-
-	m.Layers = append(layers, []Layer{
-		{
-			Name:              debug.LayerDebugTileOutline,
-			ProviderLayerName: debug.LayerDebugTileOutline,
-			Provider:          debugProvider,
-			GeomType:          geom.LineString{},
-			MinZoom:           0,
-			MaxZoom:           MaxZoom,
-		},
-		{
-			Name:              debug.LayerDebugTileCenter,
-			ProviderLayerName: debug.LayerDebugTileCenter,
-			Provider:          debugProvider,
-			GeomType:          geom.Point{},
-			MinZoom:           0,
-			MaxZoom:           MaxZoom,
-		},
-	}...)
-
-	return m
+	return collect.Collectors(prefix, config)
 }
 
 // FilterLayersByZoom returns a copy of a Map with a subset of layers that match the given zoom
@@ -496,199 +204,6 @@ func (m Map) encodeMVTProviderTile(ctx context.Context, grid *tms.TileMatrixSet,
 
 }
 
-// encodeMVTTile will encode the given tile into mvt format
-// TODO (arolek): support for max zoom
-func (m Map) encodeMVTTile(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Tile, params provider.Params) ([]byte, error) {
-
-	// tile container
-	var mvtTile mvt.Tile
-	// wait group for concurrent layer fetching
-	var wg sync.WaitGroup
-
-	// layer stack
-	mvtLayers := make([]*mvt.Layer, len(m.Layers))
-
-	// the CRS features are reprojected into before they are clipped and
-	// encoded. It belongs to the grid, not to a layer, so it is resolved once
-	// here rather than per layer.
-	tileSRID, sridErr := grid.NativeSRID()
-	if sridErr != nil {
-		return nil, fmt.Errorf("tile grid %v has no SRID to encode in: %w", grid.ID(), sridErr)
-	}
-
-	// set our WaitGroup count
-	wg.Add(len(m.Layers))
-
-	// iterate our layers
-	for i, layer := range m.Layers {
-
-		// go routine for fetching the layer concurrently
-		go func(i int, l Layer) {
-			mvtLayer := mvt.Layer{
-				Name: l.MVTName(),
-			}
-
-			// on completion let the wait group know
-			defer wg.Done()
-
-			ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y,
-				uint(m.TileBuffer), grid)
-
-			// fetch layer from data provider
-			err := l.Provider.TileFeatures(ctx, l.ProviderLayerName, ptile, params, func(f *provider.Feature) error {
-				// skip row if geometry collection empty.
-				g, ok := f.Geometry.(geom.Collection)
-				if ok && len(g.Geometries()) == 0 {
-					return nil
-				}
-
-				geo := f.Geometry
-
-				// check if the feature SRID and tile SRID are different. If they are then reproject.
-				if f.SRID != tileSRID {
-					g, err := basic.Transform(f.SRID, tileSRID, geo)
-					if err != nil {
-						return fmt.Errorf("unable to transform geometry from SRID (%v) to tile SRID (%v) for feature %v due to error: %w", f.SRID, tileSRID, f.ID, err)
-					}
-					geo = g
-				}
-
-				// TODO: remove this geom conversion step once the simplify function uses geom types
-				tegolaGeo, err := convert.ToTegola(geo)
-				if err != nil {
-					return err
-				}
-
-				// add default tags, but don't overwrite a tag that already exists
-				for k, v := range l.DefaultTags {
-					if _, ok := f.Tags[k]; !ok {
-						f.Tags[k] = v
-					}
-				}
-
-				sg := tegolaGeo
-				// multiple ways to turn off simplification. check the atlas init() function
-				// for how the second two conditions are set
-				if !l.DontSimplify && simplifyGeometries && tile.Z < slippy.Zoom(simplificationMaxZoom) {
-					// TODO (arolek): change out the tile type for VTile. shigola.Tile will be deprecated
-					tegolaTile := shigola.TileFromSlippyTile(tile)
-					sg = simplify.SimplifyGeometry(tegolaGeo, tegolaTile.ZEpislon())
-				}
-
-				// check if we need to clip and if we do build the clip region (tile extent)
-				var clipRegion *geom.Extent
-				if !l.DontClip {
-					// CleanGeometry is expecting to operate in pixel coordinates so the clipRegion
-					// will need to be in this same coordinate system. this will change when the new
-					// make valid routing is implemented
-					clipRegion = pixelBufferedExtent(m.TileBuffer)
-				}
-
-				// TODO: remove this geom conversion step once the simplify function uses geom types
-				geo, err = convert.ToGeom(sg)
-				if err != nil {
-					return err
-				}
-
-				if !l.DontClip {
-					clipExtent, _ := ptile.BufferedExtent()
-					geo = clipGeometryToExtent(geo, clipExtent)
-					if geo == nil {
-						return nil
-					}
-				}
-
-				// TODO(arolek): currently the validate.CleanGeometry method does not operate
-				// well on geometries that are not scaled to tile coordinate space. this will change
-				// with the adoption of the new make valid routine. once implemented, the clipRegion
-				// calculation will need to be in the same coordinate space as the geometry the
-				// make valid function will be operating on.
-				ext, _ := ptile.Extent()
-				geo = prepareGeometryForMVT(geo, ext, float64(mvt.DefaultExtent))
-				if geo == nil {
-					return nil
-				}
-
-				// TODO: remove this geom conversion step once the validate function uses geom types
-				sg, err = convert.ToTegola(geo)
-				if err != nil {
-					return err
-				}
-
-				if !l.DontClean {
-					tegolaGeo, err = validate.CleanGeometry(ctx, sg, clipRegion)
-					if err != nil {
-						return fmt.Errorf("err making geometry valid: %w", err)
-					}
-				} else {
-					tegolaGeo = sg
-				}
-
-				geo, err = convert.ToGeom(tegolaGeo)
-				if err != nil {
-					return nil
-				}
-
-				mvtLayer.AddFeatures(mvt.Feature{
-					ID:       &f.ID,
-					Tags:     f.Tags,
-					Geometry: geo,
-				})
-
-				return nil
-			})
-			if err != nil {
-				switch {
-				case errors.Is(err, context.Canceled):
-					// Do nothing if we were cancelled.
-
-				// the underlying net.Dial function is not properly reporting
-				// context.Canceled errors. Because of this, a string check on the error is performed.
-				// there's an open issue for this and it appears it will be fixed eventually
-				// but for now we have this check to avoid unnecessary logs
-				// https://github.com/golang/go/issues/36208
-				case strings.Contains(err.Error(), "operation was canceled"):
-					// Do nothing, context was canceled
-
-				default:
-					// TODO (arolek): should we return an error to the response or just log the error?
-					// we can't just write to the response as the WaitGroup is going to write to the response as well
-					log.Errorf("err fetching tile (%v) features: %v", tile, err)
-				}
-				return
-			}
-
-			// add the layer to the slice position
-			mvtLayers[i] = &mvtLayer
-		}(i, layer)
-	}
-
-	// wait for the WaitGroup to finish
-	wg.Wait()
-
-	// stop processing if the context has an error. this check is necessary
-	// otherwise the server continues processing even if the request was canceled
-	// as the WaitGroup was not notified of the cancel
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	// add layers to our tile
-	err := mvtTile.AddLayers(mvtLayers...)
-	if err != nil {
-		return nil, err
-	}
-
-	// generate the MVT tile
-	vtile, err := mvtTile.VTile(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// encode our mvt tile
-	return proto.Marshal(vtile)
-}
-
 // Encode will encode the given tile, cut in grid, into mvt format.
 //
 // grid is required. It decides the tile's ground extent and the CRS features
@@ -702,15 +217,11 @@ func (m Map) Encode(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Ti
 		return nil, ErrNilGrid
 	}
 
-	var (
-		tileBytes []byte
-		err       error
-	)
-	if m.HasMVTProvider() {
-		tileBytes, err = m.encodeMVTProviderTile(ctx, grid, tile, params)
-	} else {
-		tileBytes, err = m.encodeMVTTile(ctx, grid, tile, params)
+	if !m.HasMVTProvider() {
+		return nil, ErrNoMVTProvider{Map: m.Name}
 	}
+
+	tileBytes, err := m.encodeMVTProviderTile(ctx, grid, tile, params)
 	if err != nil {
 		return nil, err
 	}

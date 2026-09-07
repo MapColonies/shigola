@@ -3,7 +3,6 @@ package test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 
@@ -18,44 +17,41 @@ const Name = "test"
 
 var (
 	lock     sync.Mutex
-	Count    int
 	MVTCount int
 )
 
 func init() {
-	provider.Register(provider.TypeStd.Prefix()+Name, NewTileProvider, Cleanup)
-	provider.MVTRegister(provider.TypeMvt.Prefix()+Name, NewMVTTileProvider, Cleanup)
+	provider.MVTRegister(provider.MVTPrefix+Name, NewMVTTileProvider, Cleanup)
 }
 
-// NewTileProvider setups a test provider. there are not currently any config params supported
-func NewTileProvider(config dict.Dicter, maps []provider.Map) (provider.Tiler, error) {
-	lock.Lock()
-	Count++
-	lock.Unlock()
-	return &TileProvider{}, nil
-}
-
-// NewMVTTileProvider setups a test provider for mvt tiles providers. The only supported parameter is
-// "test_file", which should point to a mvt tile file to return for MVTForLayers
+// NewMVTTileProvider sets up a test provider for mvt tile providers. The only
+// supported parameter is "test_file", which should point to an mvt tile file to
+// return for MVTForLayers.
+//
+// It is optional. Omitting it yields a provider that serves no bytes, which is
+// what a test wanting a registrable provider rather than a particular tile
+// needs -- and since MAPCO-11491 that is every test that used to reach for the
+// debug or standard test provider.
 func NewMVTTileProvider(config dict.Dicter, maps []provider.Map) (provider.MVTTiler, error) {
 	lock.Lock()
 	MVTCount++
 	lock.Unlock()
+
 	var mvtTile []byte
 	if config != nil {
-		path, err := config.String("test_file", nil)
+		none := ""
+		path, err := config.String("test_file", &none)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get test_file key: %w", err)
 		}
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open test_file: %w", err)
-		}
-		mvtTile, err = ioutil.ReadAll(file)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read test_file: %w", err)
+		if path != "" {
+			mvtTile, err = os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read test_file: %w", err)
+			}
 		}
 	}
+
 	return &TileProvider{
 		MVTTile: mvtTile,
 	}, nil
@@ -64,12 +60,17 @@ func NewMVTTileProvider(config dict.Dicter, maps []provider.Map) (provider.MVTTi
 // Cleanup cleans up all the test providers.
 func Cleanup() {
 	lock.Lock()
-	Count = 0
 	MVTCount = 0
 	lock.Unlock()
 }
 
-// TileProvider mocks out a tile provider
+// TileProvider mocks out an MVT tile provider.
+//
+// MVTTile is the tile it serves for every request. Left nil it serves no bytes,
+// which is what an empty tile looks like on the wire -- enough for the tests
+// that care about status, headers and framing rather than about content. Tests
+// that need a tile's content to depend on the ground it covers use the PostGIS
+// fixture instead (see server/tilecontent).
 type TileProvider struct {
 	MVTTile []byte
 }
@@ -85,26 +86,8 @@ func (tp *TileProvider) Layers() ([]provider.LayerInfo, error) {
 	}, nil
 }
 
-// TileFeatures always returns a feature with a polygon outlining the tile's Extent (not Buffered Extent)
-func (tp *TileProvider) TileFeatures(ctx context.Context, layer string, t provider.Tile, queryParams provider.Params, fn func(f *provider.Feature) error) error {
-	// get tile bounding box
-	ext, srid := t.Extent()
-
-	debugTileOutline := provider.Feature{
-		ID:       0,
-		Geometry: ext.AsPolygon(),
-		SRID:     srid,
-		Tags: map[string]interface{}{
-			"type": "debug_buffer_outline",
-		},
-	}
-
-	return fn(&debugTileOutline)
-}
-
 // MVTForLayers mocks out MVTForLayers by just returning the MVTTile bytes, this will never error
 func (tp *TileProvider) MVTForLayers(ctx context.Context, _ provider.Tile, _ provider.Params, _ []provider.Layer) ([]byte, error) {
-	// TODO(gdey): fill this out.
 	if tp == nil {
 		return nil, nil
 	}

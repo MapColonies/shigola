@@ -19,10 +19,6 @@ const (
 	// MaxTileSize is 500k. Currently, just throws a warning when tile
 	// is larger than MaxTileSize
 	MaxTileSize = 500000
-
-	// QueryKeyDebug is a common query string key used throughout the pacakge
-	// the value should always be a boolean
-	QueryKeyDebug = "debug"
 )
 
 var (

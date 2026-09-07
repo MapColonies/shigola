@@ -384,38 +384,6 @@ The following environment variables can be used for debugging:
 $ SHIGOLA_SQL_DEBUG=LAYER_SQL shigola serve --config=/path/to/conf.toml
 ```
 
-The following environment variables can be used to control various runtime options on dataproviders that are **NOT** `mvt_postgis`:
-
-`SHIGOLA_OPTIONS` specify a set of options comma or space delimited. Supports the following options
-
-- `DontSimplifyGeo` to turn off simplification for all layers.
-- `SimplifyMaxZoom={{int}}` to set the max zoom that simplification will apply to. (14 is default)
-
-## Client side debugging
-
-When debugging client side, it's often helpful to see an outline of a tile along with its Z/X/Y values.
-
-There is no query parameter for this: a debug layer is not part of any tileset the service advertises, so a tile carrying one would not match the tileset metadata describing it. Configure the `debug` provider's layers explicitly instead, on a map kept for debugging:
-
-```toml
-[[providers]]
-name = "debug"
-type = "debug"
-
-[[maps]]
-name = "mymap_debug"
-  [[maps.layers]]
-  provider_layer = "debug.debug-tile-outline"
-  [[maps.layers]]
-  provider_layer = "debug.debug-tile-center"
-```
-
-Those layers have the `name` values `debug-tile-outline` and `debug-tile-center`, and include the three following features.
-
-- `debug_outline` is a line feature that traces the border of the tile
-- `debug_text` is a point feature in the middle of the tile with the following tags:
-- `zxy` is a string with the `Z`, `X` and `Y` values formatted as: `Z:0, X:0, Y:0`
-
 ## Building from source
 
 Shigola is written in [Go](https://golang.org/) and requires [Go 1.26.2](https://go.dev/dl/) or higher to compile from the source.
