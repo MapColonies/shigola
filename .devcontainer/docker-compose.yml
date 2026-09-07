@@ -21,7 +21,6 @@ services:
       - go-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:
-      CGO_ENABLED: "1"
       PGHOST: postgis
       PGPORT: "5432"
       PGUSER: postgres

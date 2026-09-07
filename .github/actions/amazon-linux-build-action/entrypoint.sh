@@ -19,7 +19,12 @@
 cd cmd/shigola_lambda
 
 # build the binary
-GOARCH=${GOARCH} go build \
+#
+# CGO_ENABLED=0 explicitly: nothing in the tree depends on cgo (MAPCO-11489), so
+# a static binary is both what Lambda wants and what makes the amd64 and arm64
+# artifacts identical in linkage -- the arm64 build already had cgo off, because
+# cross-compiling disables it, and only the amd64 one did not.
+CGO_ENABLED=0 GOARCH=${GOARCH} go build \
 	-mod vendor \
 	-tags lambda.norpc \
 	-ldflags "-w -X ${BuildPkg}.Version=${VERSION} -X ${BuildPkg}.GitRevision=${GIT_REVISION} -X ${BuildPkg}.GitBranch=${GIT_BRANCH}" \

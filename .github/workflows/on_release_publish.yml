@@ -60,6 +60,12 @@ jobs:
 
     - name: Build for Linux
       env:
+        # Explicit rather than inherited (MAPCO-11489). Nothing in the tree
+        # depends on cgo, and leaving this unset decided linkage by whether the
+        # runner had a C compiler and whether the build was a cross-compile --
+        # which is why the arm64 artifact was already static and the amd64 one
+        # was not. Pinning it to 0 makes every published binary the same shape.
+        CGO_ENABLED: 0
         # build architecture
         GOOS: linux
       run: |
@@ -87,6 +93,12 @@ jobs:
 
     - name: Build for Linux
       env:
+        # Explicit rather than inherited (MAPCO-11489). Nothing in the tree
+        # depends on cgo, and leaving this unset decided linkage by whether the
+        # runner had a C compiler and whether the build was a cross-compile --
+        # which is why the arm64 artifact was already static and the amd64 one
+        # was not. Pinning it to 0 makes every published binary the same shape.
+        CGO_ENABLED: 0
         # build architecture
         GOOS: linux
         GOARCH: arm64
@@ -173,6 +185,12 @@ jobs:
 
     - name: Build for Darwin
       env:
+        # Explicit rather than inherited (MAPCO-11489). Nothing in the tree
+        # depends on cgo, and leaving this unset decided linkage by whether the
+        # runner had a C compiler and whether the build was a cross-compile --
+        # which is why the arm64 artifact was already static and the amd64 one
+        # was not. Pinning it to 0 makes every published binary the same shape.
+        CGO_ENABLED: 0
         GOOS: darwin
       run: |
           cd cmd/shigola
@@ -273,6 +291,13 @@ jobs:
       uses: ./.github/actions/shigola-setup-env
 
     - name: Build for Windows
+      env:
+        # Explicit rather than inherited (MAPCO-11489). Nothing in the tree
+        # depends on cgo, and leaving this unset decided linkage by whether the
+        # runner had a C compiler and whether the build was a cross-compile --
+        # which is why the arm64 artifact was already static and the amd64 one
+        # was not. Pinning it to 0 makes every published binary the same shape.
+        CGO_ENABLED: 0
       run: |
           cd cmd\shigola
           go build -ldflags "-w -X $Env:BUILD_PKG.Version=$Env:VERSION -X $Env:BUILD_PKG.GitRevision=$Env:GIT_REVISION -X $Env:BUILD_PKG.GitBranch=$Env:GIT_BRANCH"

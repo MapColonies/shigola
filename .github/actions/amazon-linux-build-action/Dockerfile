@@ -1,8 +1,13 @@
-# Amazon Linux is used to build shigola_linux so the CGO requirements are linked correctly
+# Amazon Linux was used so a cgo-linked binary matched the Lambda runtime's
+# glibc. Nothing in the tree depends on cgo any more (MAPCO-11489) and the build
+# sets CGO_ENABLED=0, so this image no longer earns its keep -- the binary it
+# produces is static and an ordinary runner would produce the same one. Retiring
+# the action is a change to the release job topology and belongs with the rest
+# of the release work.
 FROM amazonlinux:latest
 
-# install build deps
-RUN yum install -y tar gzip gcc
+# install build deps. No gcc: the build is cgo-free, so nothing links C.
+RUN yum install -y tar gzip
 
 # install Go
 # Must track the go directive in go.mod: the module sets no toolchain
