@@ -12,10 +12,8 @@ RUN apt-get update \
         curl \
         git \
         less \
-        libsqlite3-dev \
         make \
         postgresql-client \
-        sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/shigola
