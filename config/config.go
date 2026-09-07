@@ -367,39 +367,11 @@ func (c *Config) ConfigureTileBuffers() {
 	}
 }
 
-// checkRemovedKeys reports a config still setting a key this build has stopped
-// honouring.
-//
-// It looks only for keys that were removed on purpose. Every other unrecognised
-// key is still ignored: rejecting those would make an unrelated typo, or a key
-// added by a newer shigola, fail a config that is otherwise fine.
-func checkRemovedKeys(md toml.MetaData) error {
-	for _, key := range md.Undecoded() {
-		// Any segment, not just the last: default_tags is a table, so its
-		// undecoded keys are reported one level below it as
-		// maps.layers.default_tags.<tag>. Matching too eagerly here is the safe
-		// direction -- it reports a key rather than ignoring one.
-		for _, part := range []string(key) {
-			if slices.Contains(provider.RemovedMapLayerKeys, part) {
-				return ErrRemovedMapLayerKey{Key: key.String()}
-			}
-		}
-	}
-
-	return nil
-}
-
 // Parse will parse the Tegola config file provided by the io.Reader.
 func Parse(reader io.Reader, location string) (conf Config, err error) {
-	md, err := toml.NewDecoder(reader).Decode(&conf)
+	// decode conf file, don't care about the meta data.
+	_, err = toml.NewDecoder(reader).Decode(&conf)
 	if err != nil {
-		return conf, err
-	}
-
-	// The decoder ignores keys it has no field for, which is what makes a
-	// removed key dangerous: the config keeps loading and the setting quietly
-	// stops meaning anything. The metadata is the only place that is visible.
-	if err := checkRemovedKeys(md); err != nil {
 		return conf, err
 	}
 
