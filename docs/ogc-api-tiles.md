@@ -264,13 +264,10 @@ Each run prints `<scheme>: 15 passed, 1 untested` and then `<scheme>: OK`. `run.
 floor of 15 passed assertions (`MIN_PASSED`), because the EARL report has no summary line and a run
 that reached nothing at all reports no failures.
 
-That build line carried `CGO_ENABLED=0 -tags noGpkgProvider` until MAPCO-11488. The conformance
-fixture used to be a GeoPackage, which made this suite — the project's only external conformance
-evidence — an invisible dependency of the GeoPackage provider, and building without that provider
-was what turned "conformance passes with no GeoPackage present" into a fact about the binary rather
-than about the config. Moving the data into PostGIS first is what let the provider be deleted
-without taking the evidence with it; with no GeoPackage provider left to exclude, the flags describe
-nothing and the ordinary build is the honest one.
+An ordinary build, with no flags to make the binary special: the conformance the suite measures is
+a property of every shigola binary rather than of the one this run happened to compile. The fixture
+is served from PostGIS through `mvt_postgis`, so the evidence depends on nothing but the provider
+the server actually ships.
 
 The fixture's layers declare a **narrow zoom window** (13–15), which is deliberate and is about
 accuracy rather than about data volume: `ST_AsMVTGeom` maps the bounding box onto the tile grid
