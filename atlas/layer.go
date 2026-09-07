@@ -10,8 +10,7 @@ type Layer struct {
 	ProviderLayerName string
 	MinZoom           uint
 	MaxZoom           uint
-	// default tags to include when encoding the layer. provider tags take precedence
-	GeomType geom.Geometry
+	GeomType          geom.Geometry
 }
 
 // MVTName will return the value that will be encoded in the Name field when the layer is encoded as MVT
