@@ -271,3 +271,34 @@ func TestEncodeServesTheMVTProvidersBytes(t *testing.T) {
 		t.Errorf("tile bytes = %q, want %q", got, want)
 	}
 }
+
+// TestMapServesLayerCollections pins the reason the field is a pointer: a Map
+// built as a literal, which is how most of this tree builds one, says nothing
+// about the flag and must still serve its layer collections (MAPCO-11493).
+func TestMapServesLayerCollections(t *testing.T) {
+	type tcase struct {
+		atlasMap atlas.Map
+		expected bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			if got := tc.atlasMap.ServesLayerCollections(); got != tc.expected {
+				t.Errorf("ServesLayerCollections() = %v, want %v", got, tc.expected)
+			}
+		}
+	}
+
+	serve, decline := true, false
+
+	tests := map[string]tcase{
+		"a zero map":                {atlasMap: atlas.Map{}, expected: true},
+		"the constructor's map":     {atlasMap: atlas.NewWebMercatorMap("osm"), expected: true},
+		"explicitly serving":        {atlasMap: atlas.Map{ServeLayerCollections: &serve}, expected: true},
+		"explicitly whole-map only": {atlasMap: atlas.Map{ServeLayerCollections: &decline}, expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}

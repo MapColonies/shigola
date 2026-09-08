@@ -131,6 +131,18 @@ parks:trees     one layer — tiles carry only that layer
 The map-collection is always published, even for a single-layer map, so a map name is always a
 usable collection id.
 
+The layer tier is the part a map can decline. With `serve_layer_collections = false` on a map, that
+map publishes its whole-map collection only:
+
+```
+parks           the whole map — unchanged
+parks:trees     collection not found
+```
+
+The flag removes the layer ids and nothing else: the whole-map collection keeps its tilesets and
+keeps serving tiles. It is per map and defaults to on, so a map that declines the tier and a map
+that says nothing about it sit in the same config.
+
 ### Tile paths are z/y/x
 
 OGC orders a tile path `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then **column**. This is
@@ -170,10 +182,15 @@ JSON-only resource is still a 400.
 
 ## Caching
 
-Tile requests use the same cache keys `shigola cache seed` writes, so a seeded tile is served rather
-than generated a second time. The key is
-`{tileMatrixSetId}/{map}/{layer}/{z}/{x}/{y}` — it does not include the query string, so every
-spelling of `?f=` shares one entry rather than storing the same bytes twice.
+Tile requests are keyed as `{tileMatrixSetId}/{map}/{layer}/{z}/{x}/{y}`. The key does not include
+the query string, so every spelling of `?f=` shares one entry rather than storing the same bytes
+twice.
+
+A whole-map collection's tiles use the same keys `shigola cache seed` writes, so a seeded tile is
+served rather than generated a second time. A layer collection's tiles carry the layer in the key,
+and `cache seed` and `cache purge` pass an empty layer — they address a map's own key only — so
+layer tiles are cached as they are served and cannot be seeded ahead of a request or purged by the
+CLI.
 
 A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
 it. Nothing on this surface passes query parameters through to a provider — `[[maps.params]]` is

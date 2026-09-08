@@ -7,6 +7,7 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cmd/internal/register"
 	"github.com/MapColonies/shigola/dict"
+	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/provider"
 	_ "github.com/MapColonies/shigola/provider/test"
 )
@@ -170,6 +171,120 @@ func TestSanitizeAttribution(t *testing.T) {
 			input:    `foo <a href="http://example.com">bar</a> - <a href="http://example.com" target="_blank">zoo</a>`,
 			expected: `foo <a href="http://example.com">bar</a> - <a href="http://example.com" target="_blank">zoo</a>`,
 		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// registerMaps registers maps on a fresh atlas through the one test provider,
+// and returns the atlas. Both tests below need the same three-call setup; only
+// what they assert about the result differs.
+func registerMaps(t *testing.T, maps []provider.Map) *atlas.Atlas {
+	t.Helper()
+
+	providers, err := register.Providers([]dict.Dicter{
+		dict.Dict{"name": "test", "type": "mvt_test"},
+	}, maps)
+	if err != nil {
+		t.Fatalf("Providers() = %v, want nil", err)
+	}
+
+	var a atlas.Atlas
+	if err := register.Maps(&a, maps, providers); err != nil {
+		t.Fatalf("Maps() = %v, want nil", err)
+	}
+
+	return &a
+}
+
+// servesLayerCollections is what a registered map reports for the flag.
+func servesLayerCollections(t *testing.T, a *atlas.Atlas, name string) bool {
+	t.Helper()
+
+	m, err := a.Map(name)
+	if err != nil {
+		t.Fatalf("Map(%q) = %v, want nil", name, err)
+	}
+
+	return m.ServesLayerCollections()
+}
+
+// TestMapsServeLayerCollections covers the config-to-atlas hop for the flag:
+// an omitted key and an explicit true both leave the layer tier published, and
+// only an explicit false takes it away (MAPCO-11493).
+func TestMapsServeLayerCollections(t *testing.T) {
+	type tcase struct {
+		configured *env.Bool
+		expected   bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			a := registerMaps(t, []provider.Map{
+				{
+					Name:                  "osm",
+					ServeLayerCollections: tc.configured,
+					Layers: []provider.MapLayer{
+						{ProviderLayer: "test.test-layer"},
+					},
+				},
+			})
+
+			if got := servesLayerCollections(t, a, "osm"); got != tc.expected {
+				t.Errorf("ServesLayerCollections() = %v, want %v", got, tc.expected)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"omitted":        {configured: nil, expected: true},
+		"explicit true":  {configured: env.BoolPtr(true), expected: true},
+		"explicit false": {configured: env.BoolPtr(false), expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// TestMapsServeLayerCollectionsCoexist covers one config holding both kinds of
+// map: the flag is per map, so a map that declines the layer tier must not
+// decide anything for the map next to it (MAPCO-11493).
+func TestMapsServeLayerCollectionsCoexist(t *testing.T) {
+	type tcase struct {
+		mapName  string
+		expected bool
+	}
+
+	a := registerMaps(t, []provider.Map{
+		{
+			Name:                  "whole",
+			ServeLayerCollections: env.BoolPtr(false),
+			Layers: []provider.MapLayer{
+				{ProviderLayer: "test.test-layer"},
+			},
+		},
+		{
+			Name: "osm",
+			Layers: []provider.MapLayer{
+				{ProviderLayer: "test.test-layer"},
+			},
+		},
+	})
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			if got := servesLayerCollections(t, a, tc.mapName); got != tc.expected {
+				t.Errorf("%v ServesLayerCollections() = %v, want %v", tc.mapName, got, tc.expected)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"the map that declines the tier": {mapName: "whole", expected: false},
+		"the map that says nothing":      {mapName: "osm", expected: true},
 	}
 
 	for name, tc := range tests {

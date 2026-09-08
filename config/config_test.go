@@ -2,9 +2,11 @@ package config_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-test/deep"
@@ -1515,5 +1517,113 @@ func TestValidateTileMatrixSets(t *testing.T) {
 				t.Fatalf("Validate() = %v, want %v", err, tc.expectedErr)
 			}
 		})
+	}
+}
+
+// TestParseServeLayerCollections covers the distinction the flag's pointer type
+// exists for: an omitted key is not the same as an explicit false, so the
+// default cannot be inverted by a config that never mentions it (MAPCO-11493).
+func TestParseServeLayerCollections(t *testing.T) {
+	type tcase struct {
+		key         string
+		expected    *env.Bool
+		expectedErr bool
+	}
+
+	t.Setenv("ENV_TEST_SERVE_LAYER_COLLECTIONS", "false")
+
+	const template = `
+[[maps]]
+name = "osm"
+%v
+
+  [[maps.layers]]
+  provider_layer = "provider1.water"
+`
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			conf, err := config.Parse(strings.NewReader(fmt.Sprintf(template, tc.key)), "")
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatalf("Parse() = nil, want an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() = %v, want nil", err)
+			}
+
+			if len(conf.Maps) != 1 {
+				t.Fatalf("maps = %d, want 1", len(conf.Maps))
+			}
+
+			if diff := deep.Equal(conf.Maps[0].ServeLayerCollections, tc.expected); diff != nil {
+				t.Fatalf("serve_layer_collections: %v", diff)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"omitted":        {key: "", expected: nil},
+		"explicit true":  {key: "serve_layer_collections = true", expected: env.BoolPtr(true)},
+		"explicit false": {key: "serve_layer_collections = false", expected: env.BoolPtr(false)},
+		// The env-var form is the only way this key can fail to parse: a bare
+		// bool is decoded by the TOML parser, a "${VAR}" string by env.Bool.
+		"from the environment": {
+			key:      `serve_layer_collections = "${ENV_TEST_SERVE_LAYER_COLLECTIONS}"`,
+			expected: env.BoolPtr(false),
+		},
+		"an unparseable value": {
+			key:         "serve_layer_collections = \"not a bool\"",
+			expectedErr: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// TestParseServeLayerCollectionsMixedConfig parses one document holding a map
+// that declines the layer tier and a map that says nothing about it, which is
+// the coexistence MAPCO-11493 asks for stated at the config boundary.
+func TestParseServeLayerCollectionsMixedConfig(t *testing.T) {
+	const doc = `
+[[maps]]
+name = "whole"
+serve_layer_collections = false
+
+  [[maps.layers]]
+  provider_layer = "provider1.water"
+
+[[maps]]
+name = "osm"
+
+  [[maps.layers]]
+  provider_layer = "provider1.water"
+`
+
+	conf, err := config.Parse(strings.NewReader(doc), "")
+	if err != nil {
+		t.Fatalf("Parse() = %v, want nil", err)
+	}
+
+	if len(conf.Maps) != 2 {
+		t.Fatalf("maps = %d, want 2", len(conf.Maps))
+	}
+
+	expected := map[string]*env.Bool{"whole": env.BoolPtr(false), "osm": nil}
+	for i := range conf.Maps {
+		name := string(conf.Maps[i].Name)
+		want, ok := expected[name]
+		if !ok {
+			t.Errorf("unexpected map %q", name)
+			continue
+		}
+
+		if diff := deep.Equal(conf.Maps[i].ServeLayerCollections, want); diff != nil {
+			t.Errorf("%v serve_layer_collections: %v", name, diff)
+		}
 	}
 }

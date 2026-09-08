@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Shigola — OGC API - Tiles",
-    "description": "Vector (Mapbox Vector Tile) tiles served by Shigola, following OGC API - Tiles. Every collection is vector geodata; a collection is either a Shigola map or one layer of one.",
+    "description": "Vector (Mapbox Vector Tile) tiles served by Shigola, following OGC API - Tiles. Every collection is vector geodata; a collection is either a Shigola map or one layer of one. A map may publish its own collection only, in which case its layers are not addressable.",
     "version": "1.0.0",
     "license": {
       "name": "MIT",
@@ -90,7 +90,7 @@
       "get": {
         "tags": ["Data"],
         "summary": "The collections in this dataset",
-        "description": "One collection per Shigola map, plus one per layer of each map, identified as {map}:{layer}.",
+        "description": "One collection per Shigola map, plus one per layer of each map, identified as {map}:{layer}. A map may publish its own collection only; its layers are then absent from this list and are not valid collection ids.",
         "operationId": "getCollectionsList",
         "parameters": [{ "$ref": "#/components/parameters/f" }],
         "responses": {
@@ -271,7 +271,7 @@
       "collectionId": {
         "name": "collectionId",
         "in": "path",
-        "description": "A collection id: a map name, or {map}:{layer} for a single layer of one.",
+        "description": "A collection id: a map name, or {map}:{layer} for a single layer of one. Layer ids exist only for maps that publish layer collections.",
         "required": true,
         "schema": { "type": "string" }
       },

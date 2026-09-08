@@ -81,6 +81,19 @@ type Map struct {
 	//
 	// Read it through TileGrids rather than directly.
 	TileMatrixSets []*tms.TileMatrixSet
+	// ServeLayerCollections decides whether this map's layers are independently
+	// addressable: nil or true publishes a collection per layer alongside the
+	// map's own, false publishes the map's own only (MAPCO-11493).
+	//
+	// A pointer rather than a plain bool, unlike TileBuffer above, because the
+	// two zero values differ in kind. A zero TileBuffer is a degenerate value of
+	// a knob; a zero bool here would read as "hide every layer collection" on
+	// every Map built as a literal rather than through NewWebMercatorMap — two
+	// dozen of them in this tree — and silently invert the feature's default.
+	// nil is the default, and it means the same thing as an omitted config key.
+	//
+	// Read it through ServesLayerCollections rather than directly.
+	ServeLayerCollections *bool
 	// MVT output values
 	TileExtent uint64
 	TileBuffer uint64
@@ -107,6 +120,15 @@ func (m Map) TileGrids() []*tms.TileMatrixSet {
 	}
 
 	return grids
+}
+
+// ServesLayerCollections reports whether this map's layers are independently
+// addressable.
+//
+// The default is yes, so a Map that says nothing about the flag serves what it
+// always did.
+func (m Map) ServesLayerCollections() bool {
+	return m.ServeLayerCollections == nil || *m.ServeLayerCollections
 }
 
 // SupportsTileGrid reports whether this map may be requested in the named grid.
