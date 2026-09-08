@@ -26,6 +26,7 @@ type Map struct {
 	//
 	// A pointer, like TileBuffer above, so that "omitted" is a state of its own.
 	// A plain bool would make the zero value false and so invert the default for
-	// every config that has never heard of the key.
+	// every config that has never heard of the key. atlas.Map's field is a
+	// pointer for a related but separate reason, which it documents.
 	ServeLayerCollections *env.Bool `toml:"serve_layer_collections"`
 }

@@ -116,9 +116,10 @@ func (s *Service) collection(id string) (Collection, error) {
 		return Collection{ID: id, Map: m}, nil
 	}
 
-	// Not-found rather than an error of its own: to a client the layer
-	// collection does not exist, and saying "it exists but is not published"
-	// would describe the config to anyone who can guess a layer name.
+	// Not-found rather than an error of its own: "no such layer" and "that
+	// layer is not published" are a difference a client cannot act on, so both
+	// are one 404. Not concealment -- /api says a map may publish itself only
+	// -- just the absence of a distinction worth drawing.
 	if !m.ServesLayerCollections() {
 		return Collection{}, ErrCollectionNotFound{ID: id}
 	}
