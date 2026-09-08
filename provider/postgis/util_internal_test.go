@@ -70,11 +70,17 @@ func TestReplaceTokens(t *testing.T) {
 			sql:   "SELECT id, !pixel_width! as width, !pixel_height! as height, !scale_denominator! as scale_denom FROM foo WHERE geom && !BBOX!",
 			layer: Layer{srid: shigola.WebMercator},
 			tile:  provider.NewTile(11, 1070, 676, 64, shigola.WebMercator),
-			// The last digit of scale_denom and of the envelope's minx moved by
-			// 1e-8 (10 nanometres) when tile extents started coming from the
-			// TileMatrixSet registry: the WebMercatorQuad document's origin and
-			// cell sizes are exact, where the previous slippy grid round-tripped
-			// through a projection and came out very slightly asymmetric.
+			// Two separate 1e-8 moves in the last digit, and they have different
+			// causes. The envelope's minx moved when tile extents started coming
+			// from the TileMatrixSet registry, whose origin and cell sizes are
+			// exact where the previous slippy grid round-tripped through a
+			// projection. scale_denom moved here, in MAPCO-11614: it is the
+			// matrix's own ScaleDenominator now rather than a pixel width
+			// divided by 0.00028, and the document's value is the definition.
+			//
+			// Neither changes a tile. This token reaches SQL as a number a layer
+			// may compare against a threshold, and 10 nanometres does not cross
+			// one.
 			expected: "SELECT id, 76.43702829 as width, 76.43702829 as height, 272989.38673277 as scale_denom FROM foo WHERE geom && ST_MakeEnvelope(899816.69697310,6789748.34851564,919996.07244038,6809927.72398292,3857)",
 		},
 	}

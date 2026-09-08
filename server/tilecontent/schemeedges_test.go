@@ -27,8 +27,14 @@ func newEdgesAtlas(t *testing.T) *atlas.Atlas {
 	t.Helper()
 
 	return newAtlas(t, edgesCollection, []map[string]any{
+		// !BBOX! selects, in the layer's SRID; !TILE_BBOX! clips, in the CRS the
+		// scheme spaces the tile by. Both are the same envelope for a 4326 layer
+		// in WorldCRS84Quad and different ones in WebMercatorQuad -- and this
+		// file asserts against both schemes, which is exactly the case the two
+		// tokens exist to tell apart (MAPCO-11614).
 		providerLayer(edgesLayer, "point",
-			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name FROM scheme_edges WHERE geom && !BBOX!"),
+			"SELECT ST_AsMVTGeom(ST_Transform(geom,!TILE_SRID!),!TILE_BBOX!) AS geom, fid, name "+
+				"FROM scheme_edges WHERE geom && !BBOX!"),
 	})
 }
 
