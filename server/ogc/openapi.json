@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Shigola — OGC API - Tiles",
-    "description": "Vector (Mapbox Vector Tile) tiles served by Shigola, following OGC API - Tiles. Every collection is vector geodata; a collection is either a Shigola map or one layer of one.",
+    "description": "Vector (Mapbox Vector Tile) tiles served by Shigola, following OGC API - Tiles. Every collection is vector geodata; a collection is either a Shigola map or one layer of one, unless the map is configured to publish itself only.",
     "version": "1.0.0",
     "license": {
       "name": "MIT",
@@ -90,7 +90,7 @@
       "get": {
         "tags": ["Data"],
         "summary": "The collections in this dataset",
-        "description": "One collection per Shigola map, plus one per layer of each map, identified as {map}:{layer}.",
+        "description": "One collection per Shigola map, plus one per layer of each map, identified as {map}:{layer}. A map configured with serve_layer_collections = false contributes its own collection only.",
         "operationId": "getCollectionsList",
         "parameters": [{ "$ref": "#/components/parameters/f" }],
         "responses": {

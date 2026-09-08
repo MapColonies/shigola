@@ -2,9 +2,11 @@ package config_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-test/deep"
@@ -1515,5 +1517,51 @@ func TestValidateTileMatrixSets(t *testing.T) {
 				t.Fatalf("Validate() = %v, want %v", err, tc.expectedErr)
 			}
 		})
+	}
+}
+
+// TestParseServeLayerCollections covers the distinction the flag's pointer type
+// exists for: an omitted key is not the same as an explicit false, so the
+// default cannot be inverted by a config that never mentions it (MAPCO-11493).
+func TestParseServeLayerCollections(t *testing.T) {
+	type tcase struct {
+		key      string
+		expected *env.Bool
+	}
+
+	const template = `
+[[maps]]
+name = "osm"
+%v
+
+  [[maps.layers]]
+  provider_layer = "provider1.water"
+`
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			conf, err := config.Parse(strings.NewReader(fmt.Sprintf(template, tc.key)), "")
+			if err != nil {
+				t.Fatalf("Parse() = %v, want nil", err)
+			}
+
+			if len(conf.Maps) != 1 {
+				t.Fatalf("maps = %d, want 1", len(conf.Maps))
+			}
+
+			if diff := deep.Equal(conf.Maps[0].ServeLayerCollections, tc.expected); diff != nil {
+				t.Fatalf("serve_layer_collections: %v", diff)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"omitted":        {key: "", expected: nil},
+		"explicit true":  {key: "serve_layer_collections = true", expected: env.BoolPtr(true)},
+		"explicit false": {key: "serve_layer_collections = false", expected: env.BoolPtr(false)},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }

@@ -34,6 +34,14 @@ func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map, err error)
 		newMap.TileBuffer = uint64(*cfg.TileBuffer)
 	}
 
+	// Carried across as a pointer rather than resolved to a bool here, so the
+	// atlas map keeps the same three states the config has and nothing
+	// downstream has to know which of them produced a true.
+	if cfg.ServeLayerCollections != nil {
+		serve := bool(*cfg.ServeLayerCollections)
+		newMap.ServeLayerCollections = &serve
+	}
+
 	// A map that names no tiling schemes may be requested in any this build can
 	// serve. Filling the list here rather than leaving it empty is what keeps
 	// "no schemes named" from meaning "no schemes offered" downstream: nothing

@@ -70,13 +70,18 @@ func (e ErrTileSetNotFound) Error() string {
 // Map-collection per map, plus one Layer-collection per layer of it.
 //
 // The map-collection is always emitted, even for a single-layer map, so that a
-// map's id is always a valid collection id.
+// map's id is always a valid collection id. The layer tier is what a map can
+// decline, with serve_layer_collections (MAPCO-11493).
 func (s *Service) collections() []Collection {
 	maps := s.cfg.Atlas.AllMaps()
 
 	out := make([]Collection, 0, len(maps))
 	for _, m := range maps {
 		out = append(out, Collection{ID: m.Name, Map: m})
+
+		if !m.ServesLayerCollections() {
+			continue
+		}
 
 		for i := range m.Layers {
 			name := m.Layers[i].MVTName()
@@ -95,6 +100,10 @@ func (s *Service) collections() []Collection {
 //
 // The id is split on the first separator only: a layer name may itself contain
 // one, and the map name comes first.
+//
+// Every route that takes a collection id resolves it here, so a map that
+// declines the layer tier declines it for the tilesets and the tile route too,
+// not just for the listing.
 func (s *Service) collection(id string) (Collection, error) {
 	mapName, layerName, hasLayer := strings.Cut(id, LayerSeparator)
 
@@ -105,6 +114,13 @@ func (s *Service) collection(id string) (Collection, error) {
 
 	if !hasLayer {
 		return Collection{ID: id, Map: m}, nil
+	}
+
+	// Not-found rather than an error of its own: to a client the layer
+	// collection does not exist, and saying "it exists but is not published"
+	// would describe the config to anyone who can guess a layer name.
+	if !m.ServesLayerCollections() {
+		return Collection{}, ErrCollectionNotFound{ID: id}
 	}
 
 	filtered := m.FilterLayersByName(layerName)

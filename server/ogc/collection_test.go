@@ -30,7 +30,18 @@ var testTile = []byte("test tile bytes")
 func newAtlas(t *testing.T, gridIDs ...string) *atlas.Atlas {
 	t.Helper()
 
-	m := atlas.NewWebMercatorMap("osm")
+	a := &atlas.Atlas{}
+	a.AddMap(newMap(t, "osm", gridIDs...))
+
+	return a
+}
+
+// newMap builds a two-layer map, optionally offering more than one tiling
+// scheme.
+func newMap(t *testing.T, name string, gridIDs ...string) atlas.Map {
+	t.Helper()
+
+	m := atlas.NewWebMercatorMap(name)
 	m.Bounds = &geom.Extent{-20, -10, 20, 10}
 	m.Attribution = "test attribution"
 	// One provider for the map, not one per layer (MAPCO-11491). What it serves
@@ -66,10 +77,7 @@ func newAtlas(t *testing.T, gridIDs ...string) *atlas.Atlas {
 		m.TileMatrixSets = grids
 	}
 
-	a := &atlas.Atlas{}
-	a.AddMap(m)
-
-	return a
+	return m
 }
 
 // newRouterFor mounts the surface over a given atlas.
@@ -177,6 +185,77 @@ func TestCollection(t *testing.T) {
 
 	t.Run("a known map with an unknown layer", func(t *testing.T) {
 		if w := get(t, r, "/collections/osm:nope", nil); w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", w.Code)
+		}
+	})
+}
+
+// TestWholeMapOnly covers a map with serve_layer_collections off: it publishes a
+// collection for itself and none for its layers, alongside a map that leaves the
+// flag unset and is unaffected (MAPCO-11493).
+func TestWholeMapOnly(t *testing.T) {
+	decline := false
+	whole := newMap(t, "whole")
+	whole.ServeLayerCollections = &decline
+
+	a := &atlas.Atlas{}
+	a.AddMap(whole)
+	a.AddMap(newMap(t, "osm"))
+
+	r := newRouterFor(t, a)
+
+	t.Run("the listing omits its layer collections", func(t *testing.T) {
+		var doc ogc.Collections
+		if w := get(t, r, "/collections", &doc); w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+
+		ids := make([]string, 0, len(doc.Collections))
+		for _, c := range doc.Collections {
+			ids = append(ids, c.ID)
+		}
+
+		// The whole-map collection stays, and so does every collection of the
+		// map that leaves the flag unset: the two coexist in one atlas.
+		for _, want := range []string{"whole", "osm", "osm:water", "osm:roads"} {
+			if !slices.Contains(ids, want) {
+				t.Errorf("collections is missing %q, got %v", want, ids)
+			}
+		}
+
+		for _, unwanted := range []string{"whole:water", "whole:roads"} {
+			if slices.Contains(ids, unwanted) {
+				t.Errorf("collections still lists %q, got %v", unwanted, ids)
+			}
+		}
+	})
+
+	t.Run("its layer collection is not found", func(t *testing.T) {
+		if w := get(t, r, "/collections/whole:water", nil); w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", w.Code)
+		}
+	})
+
+	// The flag removes the layer tier and nothing else, so the map's own
+	// collection keeps its tilesets and keeps serving tiles.
+	t.Run("the whole-map collection is unaffected", func(t *testing.T) {
+		for _, uri := range []string{
+			"/collections/whole",
+			"/collections/whole/tiles",
+			"/collections/whole/tiles/" + tms.WebMercatorQuad,
+			"/collections/whole/tiles/" + tms.WebMercatorQuad + "/1/0/0",
+		} {
+			if w := get(t, r, uri, nil); w.Code != http.StatusOK {
+				t.Errorf("GET %v status = %d, want 200", uri, w.Code)
+			}
+		}
+	})
+
+	// A layer id resolves in one place for every route, so hiding it from the
+	// listing hides it from the tile route too.
+	t.Run("its layer tile route is not found", func(t *testing.T) {
+		uri := "/collections/whole:water/tiles/" + tms.WebMercatorQuad + "/1/0/0"
+		if w := get(t, r, uri, nil); w.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", w.Code)
 		}
 	})

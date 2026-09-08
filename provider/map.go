@@ -19,4 +19,13 @@ type Map struct {
 	// scheme. What order still decides is the order tilesets are listed in, and
 	// which scheme `cache seed --map` picks when no --tile-matrix-set is given.
 	TileMatrixSets []env.String `toml:"tile_matrix_sets"`
+	// ServeLayerCollections decides whether this map's layers are independently
+	// addressable: true publishes a collection per layer alongside the map's
+	// own, false publishes the map's own only. Omitted means true
+	// (MAPCO-11493).
+	//
+	// A pointer, like TileBuffer above, so that "omitted" is a state of its own.
+	// A plain bool would make the zero value false and so invert the default for
+	// every config that has never heard of the key.
+	ServeLayerCollections *env.Bool `toml:"serve_layer_collections"`
 }
