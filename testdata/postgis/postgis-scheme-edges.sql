@@ -58,6 +58,18 @@ INSERT INTO scheme_edges (fid, name, geom) VALUES
     -- meets the equator, where four tiles meet. Selection is by bounding-box
     -- intersection, which includes the boundary, so this point belongs to all
     -- four. That is deliberate -- see the tests that pin it.
-    (4, 'corner',       ST_SetSRID(ST_MakePoint(0,            0),        4326));
+    (4, 'corner',       ST_SetSRID(ST_MakePoint(0,            0),        4326)),
+
+    -- A general mid-latitude, on neither the equator nor a tile edge. Every
+    -- other point here is at a latitude where spacing a tile by latitude and
+    -- spacing it by mercator y give the same answer, which is what made this
+    -- fixture blind to MAPCO-11614: in WebMercatorQuad it belongs at y=1473 and
+    -- the defect put it at 964, a difference of an eighth of the tile that no
+    -- point in this table could express.
+    --
+    -- Exact in both schemes: 45 degrees is a quarter of WorldCRS84Quad zoom 0's
+    -- 180-degree height, so y=1024 there, and the mercator value is pinned by
+    -- the goldens.
+    (5, 'midlat',       ST_SetSRID(ST_MakePoint(-45,          45),       4326));
 
 CREATE INDEX scheme_edges_geom_idx ON scheme_edges USING GIST (geom);

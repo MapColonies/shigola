@@ -22,14 +22,14 @@ func newCrossAtlas(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	a := newAtlas(t, crossCollection, []map[string]any{
-		providerLayerSRID(crossNativeLyr, "point", 4326,
+		providerLayer(crossNativeLyr, "point", 4326,
 			"SELECT ST_AsMVTGeom(ST_Transform(geom, !TILE_SRID!), !TILE_BBOX!) AS geom, fid, name "+
 				"FROM cross_crs WHERE geom && !BBOX!"),
 		// The same ground, reaching ST_AsMVTGeom as 3857 -- the shape an
 		// OpenMapTiles import has, and the one that produced the reported
 		// symptom. The declared srid is 3857 because that is what the subquery
 		// returns, which is what !BBOX! has to be converted into to select with.
-		providerLayerSRID(crossMercLyr, "point", 3857,
+		providerLayer(crossMercLyr, "point", 3857,
 			"SELECT ST_AsMVTGeom(ST_Transform(geom, !TILE_SRID!), !TILE_BBOX!) AS geom, fid, name "+
 				"FROM (SELECT ST_Transform(geom, 3857) AS geom, fid, name FROM cross_crs) q "+
 				"WHERE geom && !BBOX!"),

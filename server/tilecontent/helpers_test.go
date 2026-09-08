@@ -282,16 +282,16 @@ func absent(t *testing.T, tile mvttest.Tile, layer, name string) {
 }
 
 // providerLayer is the config for one MVT layer of a fixture.
-func providerLayer(name, geomType, sql string) map[string]any {
-	return providerLayerSRID(name, geomType, 4326, sql)
-}
-
-// providerLayerSRID is providerLayer for a layer whose geometry is not in 4326.
+// The SRID is spelled out at every call site rather than defaulted.
 //
-// The SRID is what the provider converts a tile's envelope into before
-// selecting rows with it, so it has to match the geometry the layer's SQL
-// actually returns -- including a geometry the SQL itself transformed.
-func providerLayerSRID(name, geomType string, srid int, sql string) map[string]any {
+// It used to default to 4326, and that default is why this suite could not see
+// MAPCO-11614: the tile-space mapping happens in the CRS of the envelope
+// ST_AsMVTGeom is handed, so the defect lives in the *pairing* of layer SRID
+// and scheme, and every layer this suite served was 4326. Two of the four
+// pairings were unreachable, including the one a production OpenMapTiles import
+// runs. A default that quietly narrows what a suite can observe is worth the
+// extra argument.
+func providerLayer(name, geomType string, srid int, sql string) map[string]any {
 	return map[string]any{
 		postgis.ConfigKeyLayerName:   name,
 		postgis.ConfigKeyGeomIDField: "fid",
