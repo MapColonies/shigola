@@ -70,9 +70,6 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric
 # github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0
 ## explicit; go 1.23.0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping
-# github.com/ajstarks/svgo v0.0.0-20170507103333-2489f1e6d405
-## explicit
-github.com/ajstarks/svgo
 # github.com/akrylysov/algnhsa v1.0.0
 ## explicit; go 1.18
 github.com/akrylysov/algnhsa
@@ -202,9 +199,6 @@ github.com/envoyproxy/protoc-gen-validate/validate
 # github.com/felixge/httpsnoop v1.0.4
 ## explicit; go 1.13
 github.com/felixge/httpsnoop
-# github.com/gdey/tbltest v0.0.0-20170331191646-af8abc47b052
-## explicit
-github.com/gdey/tbltest
 # github.com/go-jose/go-jose/v4 v4.1.4
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
@@ -226,10 +220,6 @@ github.com/go-spatial/geom
 github.com/go-spatial/geom/cmp
 github.com/go-spatial/geom/encoding/mvt
 github.com/go-spatial/geom/encoding/mvt/vector_tile
-github.com/go-spatial/geom/encoding/wkb
-github.com/go-spatial/geom/encoding/wkb/internal/consts
-github.com/go-spatial/geom/encoding/wkb/internal/decode
-github.com/go-spatial/geom/encoding/wkb/internal/encode
 github.com/go-spatial/geom/encoding/wkt
 github.com/go-spatial/geom/slippy
 github.com/go-spatial/geom/winding
@@ -330,9 +320,6 @@ github.com/mattn/goveralls
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/pborman/uuid v1.2.0
-## explicit
-github.com/pborman/uuid
 # github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 ## explicit; go 1.20
 github.com/planetscale/vtprotobuf/protohelpers
