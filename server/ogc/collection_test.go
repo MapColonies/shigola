@@ -3,7 +3,6 @@ package ogc_test
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,17 +13,17 @@ import (
 
 	"github.com/dimfeld/httptreemux"
 	"github.com/go-spatial/geom"
-	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
-	"github.com/golang/protobuf/proto"
 
-	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache/memory"
-	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/server/ogc"
 	"github.com/MapColonies/shigola/tms"
 )
+
+// testTile is what the map's provider serves for every tile: non-empty and
+// stable, which is all these tests read of it.
+var testTile = []byte("test tile bytes")
 
 // newAtlas builds an atlas holding one two-layer map, optionally offering more
 // than one tiling scheme.
@@ -34,13 +33,16 @@ func newAtlas(t *testing.T, gridIDs ...string) *atlas.Atlas {
 	m := atlas.NewWebMercatorMap("osm")
 	m.Bounds = &geom.Extent{-20, -10, 20, 10}
 	m.Attribution = "test attribution"
+	// One provider for the map, not one per layer (MAPCO-11491). What it serves
+	// is fixed bytes: every assertion in this file is about a response's status,
+	// headers, links or framing, none of which reads the tile.
+	m.SetMVTProvider("mvt_test", &test.TileProvider{MVTTile: testTile})
 	m.Layers = []atlas.Layer{
 		{
 			Name:              "water",
 			ProviderLayerName: "water",
 			MinZoom:           0,
 			MaxZoom:           5,
-			Provider:          &test.TileProvider{},
 			GeomType:          geom.Polygon{},
 		},
 		{
@@ -48,7 +50,6 @@ func newAtlas(t *testing.T, gridIDs ...string) *atlas.Atlas {
 			ProviderLayerName: "roads",
 			MinZoom:           2,
 			MaxZoom:           8,
-			Provider:          &test.TileProvider{},
 			GeomType:          geom.LineString{},
 		},
 	}
@@ -408,97 +409,12 @@ func TestTile(t *testing.T) {
 	})
 }
 
-// fixedProvider serves one geometry, in WGS84, whatever tile it is asked for.
-//
-// The shared test provider returns each tile's own outline, which encodes to the
-// same bytes for every tile of every scheme — useless for telling schemes apart.
-// A fixed geometry makes a tile's content depend on the ground it covers, which
-// is the thing under test.
-type fixedProvider struct {
-	geometry geom.Geometry
-}
-
-func (fixedProvider) Layers() ([]provider.LayerInfo, error) { return nil, nil }
-
-func (p fixedProvider) TileFeatures(_ context.Context, _ string, _ provider.Tile, _ provider.Params, fn func(*provider.Feature) error) error {
-	return fn(&provider.Feature{
-		ID:       1,
-		Geometry: p.geometry,
-		SRID:     shigola.WGS84,
-		Tags:     map[string]any{},
-	})
-}
-
-// TestTileDiffersByScheme is the end-to-end form of the Phase 1 property: the
-// same z/y/x names different ground in different schemes, so a request for it
-// must serve different tiles.
-//
-// At z3 tile row 3, column 3, WebMercatorQuad covers lon -45..0 and lat 0..41,
-// while WorldCRS84Quad — twice as wide — covers lon -112.5..-90 and lat 0..22.5.
-// The polygon below sits in the first and not the second.
-func TestTileDiffersByScheme(t *testing.T) {
-	m := atlas.NewWebMercatorMap("osm")
-	m.Bounds = &geom.Extent{-180, -85, 180, 85}
-	m.TileBuffer = 0
-	m.Layers = []atlas.Layer{{
-		Name:              "shape",
-		ProviderLayerName: "shape",
-		MinZoom:           0,
-		MaxZoom:           8,
-		Provider: fixedProvider{geometry: geom.Polygon{{
-			{-30, 10}, {-20, 10}, {-20, 20}, {-30, 20}, {-30, 10},
-		}}},
-		GeomType: geom.Polygon{},
-	}}
-	m.TileMatrixSets = []*tms.TileMatrixSet{
-		mustGrid(t, tms.WebMercatorQuad),
-		mustGrid(t, tms.WorldCRS84Quad),
-	}
-
-	a := &atlas.Atlas{}
-	a.AddMap(m)
-	r := newRouterFor(t, a)
-
-	features := func(uri string) int {
-		req := httptest.NewRequest(http.MethodGet, uri, nil)
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("%v: status = %d, want 200 (body %s)", uri, w.Code, w.Body.String())
-		}
-
-		gz, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
-		if err != nil {
-			t.Fatalf("%v: body is not gzip: %v", uri, err)
-		}
-
-		body, err := io.ReadAll(gz)
-		if err != nil {
-			t.Fatalf("%v: reading tile: %v", uri, err)
-		}
-
-		var tile vectorTile.Tile
-		if err := proto.Unmarshal(body, &tile); err != nil {
-			t.Fatalf("%v: decoding tile: %v", uri, err)
-		}
-
-		var count int
-		for _, layer := range tile.Layers {
-			count += len(layer.Features)
-		}
-
-		return count
-	}
-
-	if got := features("/collections/osm/tiles/WebMercatorQuad/3/3/3"); got != 1 {
-		t.Errorf("WebMercatorQuad 3/3/3 holds %d features, want 1", got)
-	}
-
-	if got := features("/collections/osm/tiles/WorldCRS84Quad/3/3/3"); got != 0 {
-		t.Errorf("WorldCRS84Quad 3/3/3 covers different ground, so it should hold 0 features, got %d", got)
-	}
-}
+// The end-to-end "the same z/y/x is different ground in different schemes"
+// property used to be asserted here, against an in-process provider that served
+// one fixed geometry. Both that provider and the Go-side encode path it fed are
+// gone (MAPCO-11491). The property is not: it is asserted against the PostGIS
+// fixture in server/tilecontent.TestTileContentSchemeEdges (MAPCO-11552), which
+// checks the coordinates inside the tile rather than only the feature count.
 
 // mustGrid resolves a scheme, failing the test if this build cannot serve it.
 func mustGrid(t *testing.T, id string) *tms.TileMatrixSet {

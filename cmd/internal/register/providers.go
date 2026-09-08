@@ -33,9 +33,9 @@ func (e ErrProviderTypeInvalid) Error() string {
 }
 
 // Providers registers data provider backends
-func Providers(providers []dict.Dicter, maps []provider.Map) (map[string]provider.TilerUnion, error) {
+func Providers(providers []dict.Dicter, maps []provider.Map) (map[string]provider.MVTTiler, error) {
 	// holder for registered providers
-	registeredProviders := map[string]provider.TilerUnion{}
+	registeredProviders := map[string]provider.MVTTiler{}
 
 	// iterate providers
 	for _, p := range providers {

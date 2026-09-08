@@ -7,8 +7,8 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cmd/internal/register"
 	"github.com/MapColonies/shigola/dict"
-	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/provider"
+	_ "github.com/MapColonies/shigola/provider/test"
 )
 
 func TestMaps(t *testing.T) {
@@ -58,7 +58,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 			expectedErr: register.ErrProviderLayerInvalid{
@@ -95,7 +95,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 			expectedErr: register.ErrProviderLayerNotRegistered{
@@ -104,16 +104,13 @@ func TestMaps(t *testing.T) {
 				Provider:      "test",
 			},
 		},
-		"default tags": {
+		"a map with a layer": {
 			maps: []provider.Map{
 				{
 					Name: "foo",
 					Layers: []provider.MapLayer{
 						{
-							ProviderLayer: "test.debug-tile-outline",
-							DefaultTags: env.Dict{
-								"test": "test",
-							},
+							ProviderLayer: "test.test-layer",
 						},
 					},
 				},
@@ -121,7 +118,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 		},
@@ -130,7 +127,7 @@ func TestMaps(t *testing.T) {
 			providers: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 		},

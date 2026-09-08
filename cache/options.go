@@ -23,10 +23,13 @@ import (
 // so it splits on "." and a duration string like "1.5s" would silently truncate
 // to 1.
 //
-// Parsed here rather than in atlas — which is where TEGOLA_OPTIONS is otherwise
-// read — because this is the package that owns the pool. Having atlas parse
-// them would mean atlas pushing values into cache at init time, which is both
-// an ordering dependency and more knowledge of caches than atlas needs.
+// This is the only place TEGOLA_OPTIONS is read. It was not always: atlas
+// parsed its own switches out of the same variable until MAPCO-11491 retired
+// them with the Go-side encode path. Parsing lives here because this is the
+// package that owns the pool, and that reason outlives the other reader —
+// parsing it anywhere else would mean pushing values into cache at init time,
+// which is both an ordering dependency and more knowledge of caches than the
+// parsing package needs.
 const (
 	// defaultDetachedWriteSlots is a sensible middle. In-flight writes are
 	// miss_rate × write_duration × tiers, which spans two orders of magnitude

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,7 +66,6 @@ type Config struct {
 	// the maps section
 	// 2. type -- this is the name the provider modules register
 	// themselves under. (e.g. mvt_postgis)
-	// Note: Use the type to figure out if the provider is a mvt or std provider
 	Providers []env.Dict     `toml:"providers"`
 	Maps      []provider.Map `toml:"maps"`
 }
@@ -159,19 +159,15 @@ func ValidateAndRegisterParams(mapName string, params []provider.QueryParameter)
 // Validate checks the config for issues
 func (c *Config) Validate() error {
 
-	var knownTypes []string
-	drivers := make(map[string]int)
-	for _, name := range provider.Drivers(provider.TypeStd) {
-		drivers[name] = int(provider.TypeStd)
-		knownTypes = append(knownTypes, name)
-	}
-	for _, name := range provider.Drivers(provider.TypeMvt) {
-		drivers[name] = int(provider.TypeMvt)
-		knownTypes = append(knownTypes, name)
-	}
-	// mvtproviders maps a known provider name to whether that provider is
-	// an mvt provider or not.
-	mvtproviders := make(map[string]bool, len(c.Providers))
+	knownTypes := provider.Drivers()
+
+	// configuredProviders is the set of provider names this config declares,
+	// which is what the map section below is checked against.
+	//
+	// It recorded whether each was an MVT provider until MAPCO-11491. Every
+	// provider is one now, so the question the flag answered -- may this map mix
+	// providers? -- has a single answer, and it is no.
+	configuredProviders := make(map[string]struct{}, len(c.Providers))
 	for i, prvd := range c.Providers {
 		name, _ := prvd.String("name", nil)
 		if name == "" {
@@ -182,11 +178,10 @@ func (c *Config) Validate() error {
 			return ErrProviderTypeRequired{Pos: i}
 		}
 		// Check to see if the name has already been seen before.
-		if _, ok := mvtproviders[name]; ok {
+		if _, ok := configuredProviders[name]; ok {
 			return ErrProviderNameDuplicate{Pos: i}
 		}
-		drv, ok := drivers[typ]
-		if !ok {
+		if !slices.Contains(knownTypes, typ) {
 			// A type with a named successor is reported as removed rather than
 			// as unknown, so the operator is told what to write instead of
 			// being handed the list to choose from.
@@ -203,7 +198,7 @@ func (c *Config) Validate() error {
 				KnownProviders: knownTypes,
 			}
 		}
-		mvtproviders[name] = drv == int(provider.TypeMvt)
+		configuredProviders[name] = struct{}{}
 	}
 	// check for map layer name / zoom collisions
 	// map of layers to providers
@@ -238,7 +233,6 @@ func (c *Config) Validate() error {
 		// This allow us to track what the first found provider
 		// is.
 		currentProvider := ""
-		isMVTProvider := false
 		for layerKey, l := range m.Layers {
 			pname, _, err := l.ProviderLayerName()
 			if err != nil {
@@ -252,29 +246,21 @@ func (c *Config) Validate() error {
 				currentProvider = pname
 			}
 
-			isMvt, doesExists := mvtproviders[pname]
-			if !doesExists {
+			if _, doesExists := configuredProviders[pname]; !doesExists {
 				return ErrInvalidProviderForMap{
 					MapName:      string(m.Name),
 					ProviderName: pname,
 				}
 			}
 
-			// check to see if any of the prior provider or this one is
-			// an mvt provider. If it is, then the mvtProvider check needs
-			// to be done
-			isMVTProvider = isMVTProvider || isMvt
-
-			// only need to do this check if we are dealing with MVTProviders
-			if isMVTProvider && pname != currentProvider {
-				// for mvt_providers we can only have the same provider
-				// for all layers
-				// check to see
-				if mvtproviders[pname] || isMVTProvider {
-					return ErrMVTDifferentProviders{
-						Original: currentProvider,
-						Current:  pname,
-					}
+			// An MVT provider returns an encoded tile, so a map's layers cannot
+			// be assembled from more than one of them. This was conditional on
+			// at least one provider being MVT; they all are now (MAPCO-11491),
+			// so it always applies.
+			if pname != currentProvider {
+				return ErrMVTDifferentProviders{
+					Original: currentProvider,
+					Current:  pname,
 				}
 			}
 

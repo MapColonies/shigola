@@ -72,24 +72,6 @@ func (err ErrUnknownProvider) Error() string {
 	return errStr.String()
 }
 
-// ErrInvalidProviderType is return when the requested provider type is not known for
-// the given name
-type ErrInvalidProviderType struct {
-	Name           string
-	Type           providerType
-	KnownProviders []string
-}
-
-func (err ErrInvalidProviderType) Error() string {
-	var errStr strings.Builder
-	fmt.Fprintf(&errStr, "provider '%v' is not of type %v", err.Name, err.Type)
-	if len(err.KnownProviders) != 0 {
-		fmt.Fprintf(&errStr, ", known providers of type (%v):", err.Type)
-		errStr.WriteString(strings.Join(err.KnownProviders, ","))
-	}
-	return errStr.String()
-}
-
 // ErrInvalidRegisteredProvider is returned when something went wrong with the
 // provider registration. This should never happen, in normal usage, and if it does it's an issue
 // with the provider plugin.

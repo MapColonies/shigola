@@ -12,7 +12,6 @@ import (
 	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/provider"
-	_ "github.com/MapColonies/shigola/provider/debug"
 	_ "github.com/MapColonies/shigola/provider/postgis"
 	_ "github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/tms"
@@ -161,9 +160,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water",
 								MinZoom:       env.UintPtr(10),
 								MaxZoom:       env.UintPtr(20),
-								DontSimplify:  true,
-								DontClip:      true,
-								DontClean:     true,
 							},
 						},
 						Parameters: []provider.QueryParameter{
@@ -269,9 +265,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water_0_5",
 								MinZoom:       env.UintPtr(0),
 								MaxZoom:       env.UintPtr(5),
-								DefaultTags: env.Dict{
-									"provider": ENV_TEST_MAP_LAYER_DEFAULT_TAG,
-								},
 							},
 							{
 								Name:          "water",
@@ -366,9 +359,6 @@ func TestParse(t *testing.T) {
 								ProviderLayer: "provider1.water_0_5",
 								MinZoom:       env.UintPtr(0),
 								MaxZoom:       env.UintPtr(5),
-								DefaultTags: env.Dict{
-									"provider": ENV_TEST_MAP_LAYER_DEFAULT_TAG,
-								},
 							},
 							{
 								Name:          "water",
@@ -430,7 +420,7 @@ func TestValidateMutateZoom(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -474,7 +464,7 @@ func TestValidateMutateZoom(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -543,7 +533,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -556,19 +546,8 @@ func TestValidate(t *testing.T) {
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
 							},
-						},
-					},
-					{
-						"name":     "provider2",
-						"type":     "test",
-						"host":     "localhost",
-						"port":     int64(5432),
-						"database": "osm_water",
-						"user":     "admin",
-						"password": "",
-						"layers": []map[string]any{
 							{
-								"name":               "water",
+								"name":               "water_2",
 								"geometry_fieldname": "geom",
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
@@ -584,12 +563,14 @@ func TestValidate(t *testing.T) {
 						Center:      [3]env.Float{-76.275329586789, 39.153492567373, 8.0},
 						Layers: []provider.MapLayer{
 							{
+								Name:          "water",
 								ProviderLayer: "provider1.water",
 								MinZoom:       env.UintPtr(10),
 								MaxZoom:       env.UintPtr(20),
 							},
 							{
-								ProviderLayer: "provider2.water",
+								Name:          "water",
+								ProviderLayer: "provider1.water_2",
 								MinZoom:       env.UintPtr(10),
 								MaxZoom:       env.UintPtr(20),
 							},
@@ -599,7 +580,7 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: config.ErrOverlappingLayerZooms{
 				ProviderLayer1: "provider1.water",
-				ProviderLayer2: "provider2.water",
+				ProviderLayer2: "provider1.water_2",
 			},
 		},
 		"happy path 2": {
@@ -607,7 +588,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -620,17 +601,6 @@ func TestValidate(t *testing.T) {
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
 							},
-						},
-					},
-					{
-						"name":     "provider2",
-						"type":     "test",
-						"host":     "localhost",
-						"port":     int64(5432),
-						"database": "osm_water",
-						"user":     "admin",
-						"password": "",
-						"layers": []map[string]any{
 							{
 								"name":               "water_5_10",
 								"geometry_fieldname": "geom",
@@ -655,7 +625,7 @@ func TestValidate(t *testing.T) {
 							},
 							{
 								Name:          "water",
-								ProviderLayer: "provider2.water_5_10",
+								ProviderLayer: "provider1.water_5_10",
 								MinZoom:       env.UintPtr(5),
 								MaxZoom:       env.UintPtr(10),
 							},
@@ -665,7 +635,7 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: config.ErrOverlappingLayerZooms{
 				ProviderLayer1: "provider1.water_0_5",
-				ProviderLayer2: "provider2.water_5_10",
+				ProviderLayer2: "provider1.water_5_10",
 			},
 		},
 		"happy path 3": {
@@ -677,7 +647,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -690,19 +660,8 @@ func TestValidate(t *testing.T) {
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
 							},
-						},
-					},
-					{
-						"name":     "provider2",
-						"type":     "test",
-						"host":     "localhost",
-						"port":     int64(5432),
-						"database": "osm_water",
-						"user":     "admin",
-						"password": "",
-						"layers": []map[string]any{
 							{
-								"name":               "water",
+								"name":               "water_2",
 								"geometry_fieldname": "geom",
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
@@ -723,7 +682,7 @@ func TestValidate(t *testing.T) {
 								MaxZoom:       env.UintPtr(15),
 							},
 							{
-								ProviderLayer: "provider2.water",
+								ProviderLayer: "provider1.water_2",
 								MinZoom:       env.UintPtr(16),
 								MaxZoom:       env.UintPtr(20),
 							},
@@ -741,7 +700,7 @@ func TestValidate(t *testing.T) {
 								MaxZoom:       env.UintPtr(15),
 							},
 							{
-								ProviderLayer: "provider2.water",
+								ProviderLayer: "provider1.water_2",
 								MinZoom:       env.UintPtr(16),
 								MaxZoom:       env.UintPtr(20),
 							},
@@ -760,7 +719,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -777,7 +736,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name":     "provider2",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -829,7 +788,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name":     "provider1",
-						"type":     "test",
+						"type":     "mvt_test",
 						"host":     "localhost",
 						"port":     int64(5432),
 						"database": "osm_water",
@@ -842,19 +801,8 @@ func TestValidate(t *testing.T) {
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
 							},
-						},
-					},
-					{
-						"name":     "provider2",
-						"type":     "test",
-						"host":     "localhost",
-						"port":     int64(5432),
-						"database": "osm_water",
-						"user":     "admin",
-						"password": "",
-						"layers": []map[string]any{
 							{
-								"name":               "water",
+								"name":               "water_2",
 								"geometry_fieldname": "geom",
 								"id_fieldname":       "gid",
 								"sql":                "SELECT gid, ST_AsBinary(geom) AS geom FROM simplified_water_polygons WHERE geom && !BBOX!",
@@ -870,10 +818,12 @@ func TestValidate(t *testing.T) {
 						Center:      [3]env.Float{-76.275329586789, 39.153492567373, 8.0},
 						Layers: []provider.MapLayer{
 							{
+								Name:          "water",
 								ProviderLayer: "provider1.water_default_z",
 							},
 							{
-								ProviderLayer: "provider2.water_default_z",
+								Name:          "water",
+								ProviderLayer: "provider1.water_default_z_2",
 							},
 						},
 					},
@@ -881,7 +831,57 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: config.ErrOverlappingLayerZooms{
 				ProviderLayer1: "provider1.water_default_z",
-				ProviderLayer2: "provider2.water_default_z",
+				ProviderLayer2: "provider1.water_default_z_2",
+			},
+		},
+		// Two providers in one map used to be legal, because a standard provider
+		// handed over features that Shigola encoded and several could be merged
+		// into one tile. An MVT provider hands over an encoded tile instead, so
+		// there is nothing to merge -- and since MAPCO-11491 retired the
+		// standard interface, every provider is one of those.
+		"a map may not draw from two providers": {
+			config: config.Config{
+				LocationName: "",
+				Webserver: config.Webserver{
+					Port: ":8080",
+				},
+				Providers: []env.Dict{
+					{
+						"name": "provider1",
+						"type": "mvt_test",
+						"layers": []map[string]any{
+							{"name": "water"},
+						},
+					},
+					{
+						"name": "provider2",
+						"type": "mvt_test",
+						"layers": []map[string]any{
+							{"name": "roads"},
+						},
+					},
+				},
+				Maps: []provider.Map{
+					{
+						Name: "osm",
+						Layers: []provider.MapLayer{
+							{
+								ProviderLayer: "provider1.water",
+								MinZoom:       env.UintPtr(0),
+								MaxZoom:       env.UintPtr(5),
+							},
+							{
+								ProviderLayer: "provider2.roads",
+								MinZoom:       env.UintPtr(6),
+								MaxZoom:       env.UintPtr(10),
+							},
+						},
+					},
+				},
+			},
+			expectedErr: config.ErrMVTDifferentProviders{
+				Original: "provider1",
+				Current:  "provider2",
 			},
 		},
 		"blocked headers": {
@@ -914,7 +914,7 @@ func TestValidate(t *testing.T) {
 			config: config.Config{
 				Providers: []env.Dict{
 					{
-						"type": "test",
+						"type": "mvt_test",
 					},
 				},
 			},
@@ -925,11 +925,11 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name": "provider1",
-						"type": "test",
+						"type": "mvt_test",
 					},
 					{
 						"name": "provider1",
-						"type": "test",
+						"type": "mvt_test",
 					},
 				},
 			},
@@ -940,10 +940,10 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name": "provider1",
-						"type": "test",
+						"type": "mvt_test",
 					},
 					{
-						"type": "test",
+						"type": "mvt_test",
 					},
 				},
 			},
@@ -964,7 +964,7 @@ func TestValidate(t *testing.T) {
 				Providers: []env.Dict{
 					{
 						"name": "provider1",
-						"type": "test",
+						"type": "mvt_test",
 					},
 					{
 						"name": "provider2",
@@ -1017,7 +1017,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 		},
-		"happy 1 mvt, 1 std provider only 1 layer": {
+		"one mvt provider, one layer": {
 			config: config.Config{
 				Providers: []env.Dict{
 					{
@@ -1026,7 +1026,7 @@ func TestValidate(t *testing.T) {
 					},
 					{
 						"name": "provider2",
-						"type": "test",
+						"type": "mvt_test",
 					},
 				},
 				Maps: []provider.Map{
@@ -1073,7 +1073,7 @@ func TestValidate(t *testing.T) {
 		"mvt_provider comingle": {
 			expectedErr: config.ErrMVTDifferentProviders{
 				Original: "provider1",
-				Current:  "stdprovider1",
+				Current:  "provider2",
 			},
 			config: config.Config{
 				Providers: []env.Dict{
@@ -1082,8 +1082,8 @@ func TestValidate(t *testing.T) {
 						"type": "mvt_test",
 					},
 					{
-						"name": "stdprovider1",
-						"type": "test",
+						"name": "provider2",
+						"type": "mvt_test",
 					},
 				},
 				Maps: []provider.Map{
@@ -1095,7 +1095,7 @@ func TestValidate(t *testing.T) {
 								ProviderLayer: "provider1.water_default_z",
 							},
 							{
-								ProviderLayer: "stdprovider1.water_default_z",
+								ProviderLayer: "provider2.water_default_z",
 							},
 						},
 					},
@@ -1104,14 +1104,14 @@ func TestValidate(t *testing.T) {
 		},
 		"mvt_provider comingle; flip": {
 			expectedErr: config.ErrMVTDifferentProviders{
-				Original: "stdprovider1",
+				Original: "provider2",
 				Current:  "provider1",
 			},
 			config: config.Config{
 				Providers: []env.Dict{
 					{
-						"name": "stdprovider1",
-						"type": "test",
+						"name": "provider2",
+						"type": "mvt_test",
 					},
 					{
 						"name": "provider1",
@@ -1124,7 +1124,7 @@ func TestValidate(t *testing.T) {
 						Attribution: "Test Attribution",
 						Layers: []provider.MapLayer{
 							{
-								ProviderLayer: "stdprovider1.water_default_z",
+								ProviderLayer: "provider2.water_default_z",
 							},
 							{
 								ProviderLayer: "provider1.water_default_z",
@@ -1456,7 +1456,7 @@ func TestValidateTileMatrixSets(t *testing.T) {
 			Providers: []env.Dict{
 				{
 					"name": "provider1",
-					"type": "test",
+					"type": "mvt_test",
 					"layers": []map[string]any{
 						{"name": "water"},
 					},

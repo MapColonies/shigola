@@ -20,6 +20,18 @@ var removedProviderTypes = []string{
 	"mvt_hana", // MAPCO-11487
 	"gpkg",     // MAPCO-11488
 	"postgis",  // MAPCO-11490, replaced by mvt_postgis
+
+	// The in-process providers that fed the Go-side encode path (MAPCO-11491).
+	// They were never a data source: debug drew each tile's own outline, and the
+	// other two existed for tests. They are listed here for the same reason as
+	// the rest -- so that re-registering one fails loudly rather than quietly
+	// restoring a second tile-production path.
+	"debug",
+	"test",
+	"emptycollection",
+	// Note "test", not "mvt_test": the standard registration is what was
+	// removed from provider/test. Its MVT half is still registered, and is in
+	// the expected list below.
 }
 
 // TestRemovedProviderTypes is what makes a provider removal stick.
@@ -47,14 +59,18 @@ func TestRemovedProviderTypes(t *testing.T) {
 // catches a type arriving. Both std and mvt names are listed, so a type
 // registered under either shows up here.
 //
-// test, mvt_test and emptycollection are not part of what ships: they come from
-// provider/test, which only this test binary imports. They are listed because
-// Drivers reports what is registered, not what a release contains.
+// mvt_test is not part of what ships: it comes from provider/test, which only
+// this test binary imports. It is listed because Drivers reports what is
+// registered, not what a release contains.
+//
+// Every name here now carries the mvt_ prefix, and that is the shape of the
+// change MAPCO-11491 made: registration has one kind of entry again, because
+// the standard provider interface is gone.
 func TestCheckProviderTypes(t *testing.T) {
 	got := provider.Drivers()
 	sort.Strings(got)
 
-	exp := []string{"debug", "emptycollection", "mvt_postgis", "mvt_test", "test"}
+	exp := []string{"mvt_postgis", "mvt_test"}
 	sort.Strings(exp)
 
 	if !reflect.DeepEqual(got, exp) {

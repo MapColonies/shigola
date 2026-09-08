@@ -40,11 +40,7 @@ var testLayer1 = atlas.Layer{
 	ProviderLayerName: "test-layer-1",
 	MinZoom:           4,
 	MaxZoom:           9,
-	Provider:          &test.TileProvider{},
 	GeomType:          geom.Point{},
-	DefaultTags: map[string]any{
-		"foo": "bar",
-	},
 }
 
 var testLayer2 = atlas.Layer{
@@ -52,11 +48,7 @@ var testLayer2 = atlas.Layer{
 	ProviderLayerName: "test-layer-2-provider-layer-name",
 	MinZoom:           10,
 	MaxZoom:           15,
-	Provider:          &test.TileProvider{},
 	GeomType:          geom.Line{},
-	DefaultTags: map[string]any{
-		"foo": "bar",
-	},
 }
 
 var testLayer3 = atlas.Layer{
@@ -64,14 +56,29 @@ var testLayer3 = atlas.Layer{
 	ProviderLayerName: "test-layer-3",
 	MinZoom:           10,
 	MaxZoom:           20,
-	Provider:          &test.TileProvider{},
 	GeomType:          geom.Point{},
-	DefaultTags:       map[string]any{},
+}
+
+// testTile is what the test map's provider serves for every tile.
+//
+// It is bytes rather than a real MVT because nothing in this package decodes
+// one: these tests are about routing, headers, compression and caching, and all
+// of those need the body to be non-empty and stable rather than valid. Tile
+// content is checked against the PostGIS fixture in server/tilecontent.
+var testTile = []byte("test tile bytes")
+
+// withMVTProvider gives a map something to serve.
+//
+// Every map needs one since MAPCO-11491: layers no longer carry a provider of
+// their own, and the map's provider is the only thing a tile can come from.
+func withMVTProvider(m atlas.Map) atlas.Map {
+	m.SetMVTProvider("mvt_test", &test.TileProvider{MVTTile: testTile})
+	return m
 }
 
 func newTestMapWithLayers(layers ...atlas.Layer) *atlas.Atlas {
 
-	testMap := atlas.NewWebMercatorMap(testMapName)
+	testMap := withMVTProvider(atlas.NewWebMercatorMap(testMapName))
 	testMap.Attribution = testMapAttribution
 	testMap.Center = testMapCenter
 	testMap.Layers = append(testMap.Layers, layers...)
@@ -84,7 +91,7 @@ func newTestMapWithLayers(layers ...atlas.Layer) *atlas.Atlas {
 
 func newTestMapWithBounds(minx, miny, maxx, maxy float64) *atlas.Atlas {
 
-	testMap := atlas.NewWebMercatorMap(testMapName)
+	testMap := withMVTProvider(atlas.NewWebMercatorMap(testMapName))
 	testMap.Attribution = testMapAttribution
 	testMap.Center = testMapCenter
 	testMap.Layers = append(testMap.Layers, testLayer1)
@@ -97,7 +104,7 @@ func newTestMapWithBounds(minx, miny, maxx, maxy float64) *atlas.Atlas {
 }
 
 func newTestMapWithGrid(gridID string, layers ...atlas.Layer) *atlas.Atlas {
-	testMap := atlas.NewWebMercatorMap(testMapName)
+	testMap := withMVTProvider(atlas.NewWebMercatorMap(testMapName))
 
 	grid, err := tms.Get(gridID)
 	if err != nil {

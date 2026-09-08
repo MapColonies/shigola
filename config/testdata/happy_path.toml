@@ -39,9 +39,6 @@ center = [-76.275329586789, 39.153492567373, 8.0]
     provider_layer = "provider1.water"
     min_zoom = 10
     max_zoom = 20
-    dont_simplify = true
-    dont_clip = true
-    dont_clean = true
 
     [[maps.params]]
     name = "param1"

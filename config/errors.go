@@ -169,15 +169,6 @@ func (e ErrMVTDifferentProviders) Error() string {
 	)
 }
 
-// ErrMixedProviders represents the user configuration issue of using an MVT provider with another provider
-type ErrMixedProviders struct {
-	Map string
-}
-
-func (e ErrMixedProviders) Error() string {
-	return fmt.Sprintf("config: can not mix MVT providers with normal providers for map %s", e.Map)
-}
-
 // ErrMissingEnvVar represents an environmental variable the system was unable to find in the environment
 type ErrMissingEnvVar struct {
 	EnvVar string

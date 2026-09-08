@@ -5,6 +5,7 @@ import (
 
 	"github.com/MapColonies/shigola/cmd/internal/register"
 	"github.com/MapColonies/shigola/dict"
+	_ "github.com/MapColonies/shigola/provider/test"
 )
 
 func TestProviders(t *testing.T) {
@@ -75,11 +76,11 @@ func TestProviders(t *testing.T) {
 			config: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 			expectedErr: register.ErrProviderAlreadyRegistered("test"),
@@ -88,7 +89,7 @@ func TestProviders(t *testing.T) {
 			config: []dict.Dict{
 				{
 					"name": "test",
-					"type": "debug",
+					"type": "mvt_test",
 				},
 			},
 		},
