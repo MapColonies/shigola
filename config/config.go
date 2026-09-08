@@ -19,7 +19,25 @@ import (
 )
 
 const (
-	BboxToken             = "!BBOX!"
+	BboxToken = "!BBOX!"
+	// TileBboxToken is the tile's envelope in the tiling scheme's own CRS,
+	// where BboxToken is the same envelope converted into the layer's SRID.
+	//
+	// The two are the same string whenever the layer is stored in the scheme's
+	// CRS, which is why one token sufficed for as long as every scheme served
+	// was WebMercatorQuad. They are not the same for a 3857 layer served in
+	// WorldCRS84Quad, and the difference is not a rounding one: the geometry
+	// ST_AsMVTGeom is handed must be in the CRS of the envelope it is clipped
+	// against, or the tile is spaced by the wrong CRS's axis (MAPCO-11614).
+	//
+	// BboxToken is the one to select rows with -- it matches the SRID the
+	// spatial index is built in. TileBboxToken is the one to hand
+	// ST_AsMVTGeom, together with a geometry transformed to TileSridToken.
+	TileBboxToken = "!TILE_BBOX!"
+	// TileSridToken is the EPSG code of the tiling scheme's CRS: the SRID a
+	// geometry has to be in before ST_AsMVTGeom clips it against
+	// TileBboxToken.
+	TileSridToken         = "!TILE_SRID!"
 	ZoomToken             = "!ZOOM!"
 	XToken                = "!X!"
 	YToken                = "!Y!"
@@ -30,11 +48,25 @@ const (
 	IdFieldToken          = "!ID_FIELD!"
 	GeomFieldToken        = "!GEOM_FIELD!"
 	GeomTypeToken         = "!GEOM_TYPE!"
+	// WebMercatorZoomToken is the WebMercatorQuad zoom whose scale denominator
+	// matches this tile's, which is not this tile's own zoom in any scheme but
+	// that one -- WorldCRS84Quad z0 has the scale of WebMercatorQuad z1, so it
+	// runs one level ahead the whole way down.
+	//
+	// ZoomToken stays the matrix index, because that is what it names. This
+	// token exists for the other question a layer asks a zoom: how much detail
+	// belongs at this resolution. Datasets generalise against the mercator
+	// ladder almost universally (OpenMapTiles' layer_* functions do), so a
+	// scheme-independent answer has to be derived from the scale rather than
+	// read off the index.
+	WebMercatorZoomToken = "!WEB_MERCATOR_ZOOM!"
 )
 
 // ReservedTokens for query injection
 var ReservedTokens = map[string]struct{}{
 	BboxToken:             {},
+	TileBboxToken:         {},
+	TileSridToken:         {},
 	ZoomToken:             {},
 	XToken:                {},
 	YToken:                {},
@@ -45,6 +77,7 @@ var ReservedTokens = map[string]struct{}{
 	IdFieldToken:          {},
 	GeomFieldToken:        {},
 	GeomTypeToken:         {},
+	WebMercatorZoomToken:  {},
 }
 
 var blacklistHeaders = []string{"content-encoding", "content-length", "content-type"}

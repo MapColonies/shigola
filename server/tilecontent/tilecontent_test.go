@@ -35,13 +35,13 @@ func newContentAtlas(t *testing.T) *atlas.Atlas {
 	t.Helper()
 
 	return newAtlas(t, contentCollection, []map[string]any{
-		providerLayer("places", "point",
+		providerLayer("places", "point", 4326,
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, rank, score, active, note FROM tile_content_places WHERE geom && !BBOX!"),
-		providerLayer("roads", "linestring",
+		providerLayer("roads", "linestring", 4326,
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, lanes FROM tile_content_roads WHERE geom && !BBOX!"),
-		providerLayer("areas", "polygon",
+		providerLayer("areas", "polygon", 4326,
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name, floors FROM tile_content_areas WHERE geom && !BBOX!"),
-		providerLayer("far", "point",
+		providerLayer("far", "point", 4326,
 			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name FROM tile_content_far WHERE geom && !BBOX!"),
 	})
 }

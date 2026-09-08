@@ -101,6 +101,9 @@ func NewTileForGrid(z slippy.Zoom, x uint, y uint, buf uint, grid *tms.TileMatri
 	return t
 }
 
+// Grid returns the TileMatrixSet this tile is indexed in.
+func (tile *tile_t) Grid() *tms.TileMatrixSet { return tile.grid }
+
 // index converts the slippy tile index into the tms package's equivalent.
 func (tile *tile_t) index() tms.Tile {
 	return tms.Tile{Z: int(tile.Z), X: int64(tile.X), Y: int64(tile.Y)}
@@ -144,6 +147,14 @@ type Tile interface {
 	Extent() (extent *geom.Extent, srid uint64)
 	// BufferedExtent returns the extent of the tile including any buffer
 	BufferedExtent() (extent *geom.Extent, srid uint64)
+	// Grid returns the TileMatrixSet this tile is indexed in, or nil when the
+	// caller named an SRID no grid is registered for.
+	//
+	// A provider that hands the tile-space mapping to the database needs more
+	// than the extent: the scheme decides the CRS that mapping happens in and
+	// the resolution of the zoom level, neither of which an extent and an SRID
+	// can answer between them (MAPCO-11614).
+	Grid() *tms.TileMatrixSet
 }
 
 // ParameterTokenRegexp to validate QueryParameters

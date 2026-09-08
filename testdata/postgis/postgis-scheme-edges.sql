@@ -12,14 +12,21 @@
 -- coordinate pairs; a golden that size gets regenerated and blessed rather than
 -- reviewed, and the check then passes while asserting nothing.
 --
--- The geometry is 4326 because both schemes' tiles can be expressed in it. The
--- points sit where a 4326 layer is exact in both schemes: on the equator, on a
--- tile edge, or in the scheme that reaches them natively. ST_AsMVTGeom maps the
--- bounding box onto the tile grid affinely, and for WebMercatorQuad that is
--- linear in latitude where the true grid is linear in mercator y -- an error
--- that is zero at a tile's own edges and at the equator, and largest in
--- between. See .github/cite/config.toml for the arithmetic. Anything placed at
--- a general latitude would need a per-scheme layer to be exact.
+-- The geometry is 4326 because both schemes' tiles can be expressed in it, and
+-- because one of these points is above the highest latitude a 3857 column could
+-- hold.
+--
+-- The points sat where a 4326 layer was exact in both schemes -- the equator, a
+-- tile edge, or the scheme that reaches them natively -- because ST_AsMVTGeom
+-- was handed !BBOX! in the layer's own SRID, which for WebMercatorQuad made the
+-- mapping linear in latitude where the grid is linear in mercator y. That was a
+-- workaround for MAPCO-11614, not a property of tiling: the layer SQL clips
+-- against !TILE_BBOX! now, so a general latitude is exact in either scheme.
+--
+-- They stay where they are anyway. Where the two schemes differ in shape rather
+-- than in accuracy -- the poles, the antimeridian, a tile corner, the shallowest
+-- zoom -- is still what this fixture is for, and postgis-cross-crs.sql covers
+-- the general latitudes.
 
 DROP TABLE IF EXISTS scheme_edges;
 
@@ -51,6 +58,18 @@ INSERT INTO scheme_edges (fid, name, geom) VALUES
     -- meets the equator, where four tiles meet. Selection is by bounding-box
     -- intersection, which includes the boundary, so this point belongs to all
     -- four. That is deliberate -- see the tests that pin it.
-    (4, 'corner',       ST_SetSRID(ST_MakePoint(0,            0),        4326));
+    (4, 'corner',       ST_SetSRID(ST_MakePoint(0,            0),        4326)),
+
+    -- A general mid-latitude, on neither the equator nor a tile edge. Every
+    -- other point here is at a latitude where spacing a tile by latitude and
+    -- spacing it by mercator y give the same answer, which is what made this
+    -- fixture blind to MAPCO-11614: in WebMercatorQuad it belongs at y=1473 and
+    -- the defect put it at 964, a difference of an eighth of the tile that no
+    -- point in this table could express.
+    --
+    -- Exact in both schemes: 45 degrees is a quarter of WorldCRS84Quad zoom 0's
+    -- 180-degree height, so y=1024 there, and the mercator value is pinned by
+    -- the goldens.
+    (5, 'midlat',       ST_SetSRID(ST_MakePoint(-45,          45),       4326));
 
 CREATE INDEX scheme_edges_geom_idx ON scheme_edges USING GIST (geom);
