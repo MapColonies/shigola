@@ -3,6 +3,7 @@ package postgis
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -86,18 +87,57 @@ func genSQL(
 	return fmt.Sprintf(mvtSQL, selectClause, tblname, l.geomField), nil
 }
 
+// mercatorLatLimit is the highest latitude EPSG:3857 can express: past it the
+// mercator y goes to infinity, and log(tan(0)) at the south pole reaches it
+// exactly rather than approaching it.
+//
+// A geographic tiling scheme runs to +-90, and its buffered extent runs past
+// that -- WorldCRS84Quad z0 buffered by 64px is -92.8125..92.8125. Transforming
+// those straight through produces -Inf, NaN, or 238107693.26 (the northern
+// pole, which floating-point tan lands just short of infinity on), and all
+// three reach PostgreSQL as an ST_MakeEnvelope argument: -Inf parses as the
+// identifier "inf" and fails the query outright, while the finite one is a
+// silently wrong envelope 11.9x too tall.
+//
+// Clamping is not an approximation here. This bound is only applied to an
+// envelope in a mercator SRID, and a layer stored in one holds nothing outside
+// it to select.
+const mercatorLatLimit = 85.05112877980659
+
+// webMercatorQuadZ0ScaleDenominator is WebMercatorQuad's zoom 0 scale
+// denominator. TestWebMercatorQuadZ0ScaleDenominator pins it against the
+// registry, which is the definition; it is repeated here so that deriving
+// WebMercatorZoomToken costs no lookup on the request path.
+const webMercatorQuadZ0ScaleDenominator = 559082264.0287178
+
 // replaceTokens replaces tokens in the provided SQL string
 //
-// !BBOX! - the bounding box of the tile
+// !BBOX! - the tile's envelope in the layer's SRID: what to select rows with
+// !TILE_BBOX! - the tile's envelope in the tiling scheme's CRS: what to clip
+//
+//	against, with a geometry transformed to !TILE_SRID!
+//
+// !TILE_SRID! - the EPSG code of the tiling scheme's CRS
 // !ZOOM! - the tile Z value
 // !X! - the tile X value
 // !Y! - the tile Y value
 // !Z! - the tile Z value
+// !WEB_MERCATOR_ZOOM! - the WebMercatorQuad zoom of the same scale
 // !SCALE_DENOMINATOR! - scale denominator, assuming 90.7 DPI (i.e. 0.28mm pixel size)
-// !PIXEL_WIDTH! - the pixel width in meters, assuming 256x256 tiles
-// !PIXEL_HEIGHT! - the pixel height in meters, assuming 256x256 tiles
+// !PIXEL_WIDTH! - the pixel width in meters
+// !PIXEL_HEIGHT! - the pixel height in meters
 // !GEOM_FIELD! - the geom field name
 // !GEOM_TYPE! - the geom field type if defined otherwise ""
+//
+// !BBOX! and !TILE_BBOX! are the same envelope, and the same string, whenever
+// the layer is stored in the scheme's own CRS. That was every request this
+// server served for as long as WebMercatorQuad was the only scheme, which is
+// why one token did both jobs. It cannot: an mvt_postgis layer hands the
+// tile-space mapping to ST_AsMVTGeom, which spaces the tile by the axis of
+// whatever CRS its envelope is in. Give it a mercator envelope for a
+// WorldCRS84Quad tile and the tile is mercator-spaced inside a plate-carree
+// frame -- at z1 that puts every feature between the equator and 85N into the
+// bottom 8.4% of the tile (MAPCO-11599).
 func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) (string, error) {
 	var (
 		extent   *geom.Extent
@@ -115,40 +155,17 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 	} else {
 		extent, tileSRID = tile.Extent()
 	}
-	if tileSRID == shigola.WGS84 {
-		z, x, y := tile.ZXY()
-		log.Debugf("postgis: replacing tokens for WorldCRS84Quad tile z=%v x=%v y=%v tile_srid=%v layer_srid=%v with_buffer=%v extent=%v", z, x, y, tileSRID, srid, withBuffer, extent)
-	}
 
-	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MinX(), extent.MinY()})
+	// The scheme's own envelope, untransformed -- this is the one ST_AsMVTGeom
+	// needs, and the one that needs no conversion to be right.
+	tileBBox := envelopeSQL(extent.MinX(), extent.MinY(), extent.MaxX(), extent.MaxY(), tileSRID)
+
+	bbox, err := layerEnvelopeSQL(extent, tileSRID, srid)
 	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+		return "", err
 	}
 
-	maxGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MaxX(), extent.MaxY()})
-	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
-	}
-
-	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
-
-	bbox := fmt.Sprintf(
-		"ST_MakeEnvelope(%.8f,%.8f,%.8f,%.8f,%d)",
-		minPt.X(),
-		minPt.Y(),
-		maxPt.X(),
-		maxPt.Y(),
-		srid,
-	)
-	if tileSRID == shigola.WGS84 {
-		log.Debugf("postgis: WorldCRS84Quad BBOX tile_srid=%v layer_srid=%v min=%v max=%v bbox=%v", tileSRID, srid, minPt, maxPt, bbox)
-	}
-
-	extent, _ = tile.Extent()
-	// TODO: Always convert to meter if we support different projections
-	pixelWidth := (extent.MaxX() - extent.MinX()) / 256
-	pixelHeight := (extent.MaxY() - extent.MinY()) / 256
-	scaleDenominator := pixelWidth / 0.00028 /* px size in m */
+	pixelWidth, pixelHeight, scaleDenominator, webMercatorZoom := tileScale(tile)
 
 	if lyr.GeomType() != nil {
 		geoType = fmt.Sprintf("%v", lyr.GeomType())
@@ -158,10 +175,13 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 	z, x, y := tile.ZXY()
 	tokenReplacer := strings.NewReplacer(
 		config.BboxToken, bbox,
+		config.TileBboxToken, tileBBox,
+		config.TileSridToken, strconv.FormatUint(tileSRID, 10),
 		config.ZoomToken, strconv.FormatUint(uint64(z), 10),
 		config.ZToken, strconv.FormatUint(uint64(z), 10),
 		config.XToken, strconv.FormatUint(uint64(x), 10),
 		config.YToken, strconv.FormatUint(uint64(y), 10),
+		config.WebMercatorZoomToken, strconv.Itoa(webMercatorZoom),
 		config.ScaleDenominatorToken, strconv.FormatFloat(scaleDenominator, 'f', 8, 64),
 		config.PixelWidthToken, strconv.FormatFloat(pixelWidth, 'f', 8, 64),
 		config.PixelHeightToken, strconv.FormatFloat(pixelHeight, 'f', 8, 64),
@@ -173,6 +193,77 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 	uppercaseTokenSQL := uppercaseTokens(sql)
 
 	return tokenReplacer.Replace(uppercaseTokenSQL), nil
+}
+
+// envelopeSQL renders an ST_MakeEnvelope call. The 8 decimal places are what
+// callers have always emitted and what the tests pin.
+func envelopeSQL(minX, minY, maxX, maxY float64, srid uint64) string {
+	return fmt.Sprintf("ST_MakeEnvelope(%.8f,%.8f,%.8f,%.8f,%d)", minX, minY, maxX, maxY, srid)
+}
+
+// layerEnvelopeSQL converts a tile's envelope from the tiling scheme's CRS into
+// the layer's SRID, so that the result can be compared against a column the
+// spatial index covers.
+//
+// This is a selection envelope and nothing else. It is the wrong thing to clip
+// a tile against whenever the two CRSs differ -- see replaceTokens.
+func layerEnvelopeSQL(extent *geom.Extent, tileSRID, srid uint64) (string, error) {
+	minX, minY := extent.MinX(), extent.MinY()
+	maxX, maxY := extent.MaxX(), extent.MaxY()
+
+	// basic.Transform routes everything through web mercator, so a latitude
+	// outside the mercator range is unrepresentable on the way out and, for a
+	// buffered geographic tile, on the way in as well.
+	if tileSRID == shigola.WGS84 && srid != shigola.WGS84 {
+		minY = math.Max(minY, -mercatorLatLimit)
+		maxY = math.Min(maxY, mercatorLatLimit)
+	}
+
+	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{minX, minY})
+	if err != nil {
+		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+	}
+
+	maxGeo, err := basic.Transform(tileSRID, srid, geom.Point{maxX, maxY})
+	if err != nil {
+		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+	}
+
+	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
+
+	return envelopeSQL(minPt.X(), minPt.Y(), maxPt.X(), maxPt.Y(), srid), nil
+}
+
+// tileScale reports a tile's resolution: pixel size in metres, scale
+// denominator, and the WebMercatorQuad zoom of the same scale.
+//
+// All four come off the tiling scheme's own matrix rather than being divided
+// out of the tile's extent. The extent is in the scheme's CRS, whose units are
+// degrees for a geographic scheme -- dividing that by a tile width yields
+// degrees per pixel, and the old code went on to treat the result as metres.
+// The matrix states the answer in metres for every scheme, because that is what
+// a scale denominator means.
+//
+// A tile with no resolvable grid or matrix falls back to the extent arithmetic:
+// it is already an unserveable tile (Extent logs and returns an empty one), and
+// a token value of zero says less about why than a wrong one does.
+func tileScale(tile provider.Tile) (pixelWidth, pixelHeight, scaleDenominator float64, webMercatorZoom int) {
+	z, _, _ := tile.ZXY()
+
+	if grid := tile.Grid(); grid != nil {
+		if m, err := grid.Matrix(int(z)); err == nil {
+			pixelSize := m.CellSize * grid.MetersPerUnit()
+
+			return pixelSize, pixelSize, m.ScaleDenominator,
+				int(math.Round(math.Log2(webMercatorQuadZ0ScaleDenominator / m.ScaleDenominator)))
+		}
+	}
+
+	extent, _ := tile.Extent()
+	pixelWidth = (extent.MaxX() - extent.MinX()) / 256
+	pixelHeight = (extent.MaxY() - extent.MinY()) / 256
+
+	return pixelWidth, pixelHeight, pixelWidth / 0.00028 /* px size in m */, int(z)
 }
 
 // extractQueryParamValues finds default values for SQL tokens and constructs query parameter values out of them
@@ -234,8 +325,8 @@ func (l *LoggerAdapter) Log(
 	}
 
 	if level == tracelog.LogLevelError {
-		log.Errorf("PostGIS(pgx): %s, %#v", msg, data)
+		log.Errorf("PostGIS(pgx): %s, %v", msg, data)
 	} else {
-		log.Warnf("PostGIS(pgx): %s, %#v", msg, data)
+		log.Warnf("PostGIS(pgx): %s, %v", msg, data)
 	}
 }
