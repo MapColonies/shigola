@@ -280,6 +280,15 @@ func absent(t *testing.T, tile mvttest.Tile, layer, name string) {
 
 // providerLayer is the config for one MVT layer of a fixture.
 func providerLayer(name, geomType, sql string) map[string]any {
+	return providerLayerSRID(name, geomType, 4326, sql)
+}
+
+// providerLayerSRID is providerLayer for a layer whose geometry is not in 4326.
+//
+// The SRID is what the provider converts a tile's envelope into before
+// selecting rows with it, so it has to match the geometry the layer's SQL
+// actually returns -- including a geometry the SQL itself transformed.
+func providerLayerSRID(name, geomType string, srid int, sql string) map[string]any {
 	return map[string]any{
 		postgis.ConfigKeyLayerName:   name,
 		postgis.ConfigKeyGeomIDField: "fid",
@@ -288,7 +297,7 @@ func providerLayer(name, geomType, sql string) map[string]any {
 		// back, and a query ending in ST_AsMVTGeom returns tile-space geometry
 		// it cannot type.
 		postgis.ConfigKeyGeomType: geomType,
-		postgis.ConfigKeySRID:     4326,
+		postgis.ConfigKeySRID:     srid,
 		postgis.ConfigKeySQL:      sql,
 	}
 }
