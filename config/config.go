@@ -28,7 +28,7 @@ const (
 	// was WebMercatorQuad. They are not the same for a 3857 layer served in
 	// WorldCRS84Quad, and the difference is not a rounding one: the geometry
 	// ST_AsMVTGeom is handed must be in the CRS of the envelope it is clipped
-	// against, or the tile is spaced by the wrong CRS's axis (MAPCO-11599).
+	// against, or the tile is spaced by the wrong CRS's axis (MAPCO-11614).
 	//
 	// BboxToken is the one to select rows with -- it matches the SRID the
 	// spatial index is built in. TileBboxToken is the one to hand

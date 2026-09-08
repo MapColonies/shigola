@@ -232,12 +232,15 @@ regenerate one. If a golden ever grows past what a reviewer will actually read, 
 an assertion: the Athens fixture next door would put 633 features and about 4300 coordinate pairs in
 a single one.
 
-Two fixtures, because they answer different questions. `postgis-scheme-edges.sql` is four points
-placed where a 4326 layer is exact in *both* tiling schemes — on a tile edge or the equator — which
-is what the poles, the antimeridian and the tile-corner cases need.
+Three fixtures, because they answer different questions. `postgis-scheme-edges.sql` is four points
+placed at the poles, the antimeridian, a tile corner and the shallowest zoom — where the two schemes
+differ in shape rather than only in extent.
 `postgis-tile-content.sql` is four layers and eleven features around one WorldCRS84Quad tile, with
 one column of each MVT value type, a null attribute, a road clipped at the tile edge, simple and
 holed polygons, a feature outside the tile and a layer outside it entirely.
+`postgis-cross-crs.sql` is three points on one meridian at general latitudes, served through both a
+4326 and a 3857 layer over the same table: what a tile must not depend on is which SRID the geometry
+was stored in, and that is an assertion the other two cannot make.
 
 Two things about that second fixture are worth knowing before you add to it. `ST_AsMVTGeom`'s buffer
 defaults to **256**, not 0, so geometry legitimately runs past the extent — but that buffer decides

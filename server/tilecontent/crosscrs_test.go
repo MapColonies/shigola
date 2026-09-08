@@ -54,7 +54,7 @@ func crossAt(t *testing.T, tile mvttest.Tile, name string, x, y int32) {
 }
 
 // TestTileContentCrossCRS pins the tile a scheme produces against the SRID the
-// layer is stored in (MAPCO-11599).
+// layer is stored in (MAPCO-11614).
 //
 // The two have to be independent, and were not: the provider converted a tile's
 // envelope into the layer's SRID and handed that to ST_AsMVTGeom, which spaces a

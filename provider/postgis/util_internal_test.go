@@ -143,7 +143,7 @@ func mercatorEnvelope(minLon, minLat, maxLon, maxLat float64) string {
 }
 
 // TestReplaceTokensTileCRS covers the two envelopes replaceTokens emits once the
-// tiling scheme's CRS stops matching the layer's (MAPCO-11599).
+// tiling scheme's CRS stops matching the layer's (MAPCO-11614).
 //
 // Every expected value is derived from the grid rather than recorded from a run.
 // WorldCRS84Quad z1 is four columns by two rows over -180..180 by -90..90, so

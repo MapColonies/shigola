@@ -153,7 +153,7 @@ type Tile interface {
 	// A provider that hands the tile-space mapping to the database needs more
 	// than the extent: the scheme decides the CRS that mapping happens in and
 	// the resolution of the zoom level, neither of which an extent and an SRID
-	// can answer between them (MAPCO-11599).
+	// can answer between them (MAPCO-11614).
 	Grid() *tms.TileMatrixSet
 }
 

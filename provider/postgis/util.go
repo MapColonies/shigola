@@ -113,11 +113,8 @@ const webMercatorQuadZ0ScaleDenominator = 559082264.0287178
 // replaceTokens replaces tokens in the provided SQL string
 //
 // !BBOX! - the tile's envelope in the layer's SRID: what to select rows with
-// !TILE_BBOX! - the tile's envelope in the tiling scheme's CRS: what to clip
-//
-//	against, with a geometry transformed to !TILE_SRID!
-//
-// !TILE_SRID! - the EPSG code of the tiling scheme's CRS
+// !TILE_BBOX! - the tile's envelope in the tiling scheme's CRS: what to clip against
+// !TILE_SRID! - the EPSG code of the tiling scheme's CRS, to transform the geometry to
 // !ZOOM! - the tile Z value
 // !X! - the tile X value
 // !Y! - the tile Y value
@@ -137,7 +134,7 @@ const webMercatorQuadZ0ScaleDenominator = 559082264.0287178
 // whatever CRS its envelope is in. Give it a mercator envelope for a
 // WorldCRS84Quad tile and the tile is mercator-spaced inside a plate-carree
 // frame -- at z1 that puts every feature between the equator and 85N into the
-// bottom 8.4% of the tile (MAPCO-11599).
+// bottom 8.4% of the tile (MAPCO-11614).
 func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) (string, error) {
 	var (
 		extent   *geom.Extent
@@ -325,8 +322,8 @@ func (l *LoggerAdapter) Log(
 	}
 
 	if level == tracelog.LogLevelError {
-		log.Errorf("PostGIS(pgx): %s, %v", msg, data)
+		log.Errorf("PostGIS(pgx): %s, %#v", msg, data)
 	} else {
-		log.Warnf("PostGIS(pgx): %s, %v", msg, data)
+		log.Warnf("PostGIS(pgx): %s, %#v", msg, data)
 	}
 }

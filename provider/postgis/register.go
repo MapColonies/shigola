@@ -43,8 +43,13 @@ const (
 //		srid (int): [Optional] the SRID of the layer. Supports 3857 (WebMercator) or 4326 (WGS84).
 //		sql (string): [*Required] custom SQL to use use. Required if tablename is not defined. Supports the following tokens:
 //
-//			!BBOX! - [Required] will be replaced with the bounding box of the tile before the query is sent to the database.
+//			!BBOX! - [Required] the tile's envelope in the layer's SRID: what to select rows with.
+//			!TILE_BBOX! - [Required for ST_AsMVTGeom] the same envelope in the tiling scheme's CRS: what to clip against.
+//			!TILE_SRID! - [Optional] the EPSG code of the tiling scheme's CRS.
 //			!ZOOM! - [Optional] will be replaced with the "Z" (zoom) value of the requested tile.
+//			!WEB_MERCATOR_ZOOM! - [Optional] the WebMercatorQuad zoom of the same scale.
+//
+//		See provider/postgis/README.md for why !BBOX! and !TILE_BBOX! are different jobs.
 func NewMVTTileProvider(config dict.Dicter, maps []provider.Map) (provider.MVTTiler, error) {
 	return CreateProvider(config, maps)
 }

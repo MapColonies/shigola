@@ -51,7 +51,7 @@ srid = 4326
 # !BBOX! still does the selecting: it arrives in the layer's own 4326, which is
 # the SRID the GiST index is built in. The two envelopes are the same rectangle
 # for a WorldCRS84Quad tile and different ones for a WebMercatorQuad tile, and
-# writing both is what makes one SQL string exact in either scheme (MAPCO-11599).
+# writing both is what makes one SQL string exact in either scheme (MAPCO-11614).
 #
 # This used to pass !BBOX! to ST_AsMVTGeom unwrapped, which was exact for
 # WorldCRS84Quad and out by the difference between latitude and mercator y for

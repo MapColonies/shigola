@@ -1,4 +1,4 @@
--- Fixture for the cross-CRS tile-content checks (MAPCO-11599).
+-- Fixture for the cross-CRS tile-content checks (MAPCO-11614).
 --
 -- Three points on one meridian, served twice over: once from the 4326 column
 -- below, and once from the same column transformed to 3857 by the layer SQL.
