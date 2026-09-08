@@ -27,8 +27,14 @@ func newEdgesAtlas(t *testing.T) *atlas.Atlas {
 	t.Helper()
 
 	return newAtlas(t, edgesCollection, []map[string]any{
-		providerLayer(edgesLayer, "point",
-			"SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, fid, name FROM scheme_edges WHERE geom && !BBOX!"),
+		// !BBOX! selects, in the layer's SRID; !TILE_BBOX! clips, in the CRS the
+		// scheme spaces the tile by. Both are the same envelope for a 4326 layer
+		// in WorldCRS84Quad and different ones in WebMercatorQuad -- and this
+		// file asserts against both schemes, which is exactly the case the two
+		// tokens exist to tell apart (MAPCO-11614).
+		providerLayer(edgesLayer, "point", 4326,
+			"SELECT ST_AsMVTGeom(ST_Transform(geom,!TILE_SRID!),!TILE_BBOX!) AS geom, fid, name "+
+				"FROM scheme_edges WHERE geom && !BBOX!"),
 	})
 }
 
@@ -76,10 +82,17 @@ func TestTileContentSchemeEdges(t *testing.T) {
 			// x = (lon + 180) / 360 * 4096; y = 2048 on the equator, where the
 			// linear-in-latitude and linear-in-mercator mappings agree.
 			assertLayers(t, tile, edgesLayer)
-			assertFeatureIDs(t, tile, edgesLayer, 1, 3, 4)
+			assertFeatureIDs(t, tile, edgesLayer, 1, 3, 4, 5)
 			edgeAt(t, tile, "origin", 1024, 2048)       // lon -90
 			edgeAt(t, tile, "corner", 2048, 2048)       // lon 0
 			edgeAt(t, tile, "antimeridian", 4088, 2048) // lon 179.296875
+
+			// The one point here that is not on the equator or a tile edge, and
+			// so the one whose y distinguishes the two mappings. This grid is
+			// linear in mercator y: (yTop - R*ln(tan(pi/4 + lat/2))) / (2*yTop)
+			// * 4096 with yTop = 20037508.3428, which is 1473.43 at lat 45.
+			// Linear in latitude -- what this suite used to serve -- is 964.
+			edgeAt(t, tile, "midlat", 1536, 1473) // lon -45, lat 45
 
 			// Above 85.0511287798: not in this grid at any zoom.
 			edgeAbsent(t, tile, "polar")
@@ -92,9 +105,10 @@ func TestTileContentSchemeEdges(t *testing.T) {
 			// Row 0 spans lat -90..90, so y = (90 - lat) / 180 * 4096.
 			west := fetchEdges(t, srv, tms.WorldCRS84Quad, 0, 0, 0)
 			assertLayers(t, west, edgesLayer)
-			assertFeatureIDs(t, west, edgesLayer, 1, 2, 4)
+			assertFeatureIDs(t, west, edgesLayer, 1, 2, 4, 5)
 			edgeAt(t, west, "origin", 2048, 2048) // lon -90, lat 0
 			edgeAt(t, west, "polar", 2048, 64)    // lon -90, lat 87.1875
+			edgeAt(t, west, "midlat", 3072, 1024) // lon -45, lat 45
 			edgeAt(t, west, "corner", 4096, 2048) // lon 0, this column's right edge
 			edgeAbsent(t, west, "antimeridian")
 			mvttest.AssertGolden(t, "testdata/golden/edges-WorldCRS84Quad-0-0-0.txt", west.Render())
@@ -106,6 +120,7 @@ func TestTileContentSchemeEdges(t *testing.T) {
 			edgeAt(t, east, "corner", 0, 2048)          // lon 0, this column's left edge
 			edgeAbsent(t, east, "origin")
 			edgeAbsent(t, east, "polar")
+			edgeAbsent(t, east, "midlat")
 			mvttest.AssertGolden(t, "testdata/golden/edges-WorldCRS84Quad-0-0-1.txt", east.Render())
 		})
 	})

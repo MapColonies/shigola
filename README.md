@@ -113,10 +113,16 @@ uri = "postgresql://shigola:<password>@localhost:5432/shigola?ssl_mode=prefer" #
   # Wrapping the geom with ST_AsMVTGeom is required, and so is declaring
   # geometry_type: the startup inference that would otherwise guess it reads the
   # layer's SQL back, and cannot type what ST_AsMVTGeom returns.
+  #
+  # !BBOX! selects, in the layer's own SRID, against the spatial index.
+  # !TILE_BBOX! clips, in the CRS of the tiling scheme the request named, which
+  # is the CRS ST_AsMVTGeom spaces the tile by — so the geometry it is given has
+  # to be in that one too. The two are the same envelope for a 3857 layer in
+  # WebMercatorQuad and different ones in WorldCRS84Quad.
   geometry_type = "multipolygon"
-  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
+  sql = "SELECT ST_AsMVTGeom(ST_Transform(geom,!TILE_SRID!),!TILE_BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX!"
   # If you want to use the configurable parameters defined in maps.params make sure to include the token in the SQL statement
-  sql = "SELECT ST_AsMVTGeom(geom,!BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX! !PARAM!"
+  sql = "SELECT ST_AsMVTGeom(ST_Transform(geom,!TILE_SRID!),!TILE_BBOX!) AS geom, gid FROM gis.landuse WHERE geom && !BBOX! !PARAM!"
 
 # maps are made up of layers
 [[maps]]

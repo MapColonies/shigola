@@ -75,7 +75,10 @@ func newAtlas(t *testing.T, collection string, layers []map[string]any) *atlas.A
 	m.SetMVTProvider(collection+"_provider", prvd)
 
 	m.TileMatrixSets = nil
-	for _, id := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad} {
+	// WGS1984Quad as well as WorldCRS84Quad: same CRS, same matrix shape,
+	// separate registration, so a fix that reached one and not the other would
+	// be invisible from the WorldCRS84Quad assertions alone (MAPCO-11614).
+	for _, id := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad, tms.WGS1984Quad} {
 		grid, err := tms.Get(id)
 		if err != nil {
 			t.Fatalf("tms.Get(%v) = %v, want nil", id, err)
@@ -279,7 +282,16 @@ func absent(t *testing.T, tile mvttest.Tile, layer, name string) {
 }
 
 // providerLayer is the config for one MVT layer of a fixture.
-func providerLayer(name, geomType, sql string) map[string]any {
+// The SRID is spelled out at every call site rather than defaulted.
+//
+// It used to default to 4326, and that default is why this suite could not see
+// MAPCO-11614: the tile-space mapping happens in the CRS of the envelope
+// ST_AsMVTGeom is handed, so the defect lives in the *pairing* of layer SRID
+// and scheme, and every layer this suite served was 4326. Two of the four
+// pairings were unreachable, including the one a production OpenMapTiles import
+// runs. A default that quietly narrows what a suite can observe is worth the
+// extra argument.
+func providerLayer(name, geomType string, srid int, sql string) map[string]any {
 	return map[string]any{
 		postgis.ConfigKeyLayerName:   name,
 		postgis.ConfigKeyGeomIDField: "fid",
@@ -288,7 +300,7 @@ func providerLayer(name, geomType, sql string) map[string]any {
 		// back, and a query ending in ST_AsMVTGeom returns tile-space geometry
 		// it cannot type.
 		postgis.ConfigKeyGeomType: geomType,
-		postgis.ConfigKeySRID:     4326,
+		postgis.ConfigKeySRID:     srid,
 		postgis.ConfigKeySQL:      sql,
 	}
 }
