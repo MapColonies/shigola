@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/MapColonies/shigola"
-	"github.com/MapColonies/shigola/basic"
 	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/internal/log"
+	"github.com/MapColonies/shigola/maths/webmercator"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -86,6 +86,40 @@ func genSQL(
 	return fmt.Sprintf(mvtSQL, selectClause, tblname, l.geomField), nil
 }
 
+// transformPoint reprojects a point between the two SRIDs a layer may declare,
+// returning it unchanged when they match.
+//
+// This replaced basic.Transform, which MAPCO-11492 deleted along with the rest
+// of the Go-side geometry trees. That function dispatched over every geometry
+// type in order to walk one down to its points, but the only geometries it was
+// ever handed here were the two BBOX corners in replaceTokens, so the walk was
+// generality without a caller. The SRID pair is closed for the same reason
+// config validation closes it: 3857 and 4326 are what a layer may declare.
+func transformPoint(fromSRID, toSRID uint64, pt geom.Point) (geom.Point, error) {
+	if fromSRID == toSRID {
+		return pt, nil
+	}
+
+	var (
+		crds []float64
+		err  error
+	)
+
+	switch {
+	case fromSRID == shigola.WGS84 && toSRID == shigola.WebMercator:
+		crds, err = webmercator.PToXY(pt.X(), pt.Y())
+	case fromSRID == shigola.WebMercator && toSRID == shigola.WGS84:
+		crds, err = webmercator.PToLonLat(pt.X(), pt.Y())
+	default:
+		return geom.Point{}, fmt.Errorf("postgis: do not know how to convert from %v to %v", fromSRID, toSRID)
+	}
+	if err != nil {
+		return geom.Point{}, err
+	}
+
+	return geom.Point{crds[0], crds[1]}, nil
+}
+
 // replaceTokens replaces tokens in the provided SQL string
 //
 // !BBOX! - the bounding box of the tile
@@ -120,17 +154,15 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 		log.Debugf("postgis: replacing tokens for WorldCRS84Quad tile z=%v x=%v y=%v tile_srid=%v layer_srid=%v with_buffer=%v extent=%v", z, x, y, tileSRID, srid, withBuffer, extent)
 	}
 
-	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MinX(), extent.MinY()})
+	minPt, err := transformPoint(tileSRID, srid, geom.Point{extent.MinX(), extent.MinY()})
 	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+		return "", fmt.Errorf("postgis: converting tile point: %w", err)
 	}
 
-	maxGeo, err := basic.Transform(tileSRID, srid, geom.Point{extent.MaxX(), extent.MaxY()})
+	maxPt, err := transformPoint(tileSRID, srid, geom.Point{extent.MaxX(), extent.MaxY()})
 	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+		return "", fmt.Errorf("postgis: converting tile point: %w", err)
 	}
-
-	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
 
 	bbox := fmt.Sprintf(
 		"ST_MakeEnvelope(%.8f,%.8f,%.8f,%.8f,%d)",
