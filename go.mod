@@ -6,11 +6,9 @@ require (
 	cloud.google.com/go/storage v1.56.0
 	github.com/Azure/azure-storage-blob-go v0.0.0-20180706173141-f0a732ea9441
 	github.com/BurntSushi/toml v0.4.1
-	github.com/ajstarks/svgo v0.0.0-20170507103333-2489f1e6d405
 	github.com/akrylysov/algnhsa v1.0.0
 	github.com/aws/aws-sdk-go v1.34.0
 	github.com/dimfeld/httptreemux v5.0.1+incompatible
-	github.com/gdey/tbltest v0.0.0-20170331191646-af8abc47b052
 	github.com/go-spatial/cobra v0.0.3-0.20181105183926-68194e4fbcc6
 	github.com/go-spatial/geom v0.1.0
 	github.com/go-spatial/proj v0.3.0
@@ -19,7 +17,6 @@ require (
 	github.com/jackc/pgx-gofrs-uuid v0.0.0-20230224015001-1d428863c2e2
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/mattn/goveralls v0.0.5
-	github.com/pborman/uuid v1.2.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/theckman/goconstraint v1.10.1-0.20180216224824-e867bde6e4e1

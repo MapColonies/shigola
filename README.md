@@ -27,13 +27,12 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 
 ## Features
 
-- Native geometry processing (simplification, clipping, make valid, intersection, contains, scaling, translation)
 - [Mapbox Vector Tile v2 specification](https://github.com/mapbox/vector-tile-spec) compliant.
 - [PostGIS](provider/postgis) data provider, with the MVT encoding done in the database by `ST_AsMVT`. Extensible design to support additional data providers.
-- Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob).
+- Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob), [gcs](cache/gcs).
 - [Layered caching](#layered-cache): an ordered chain of cache backends with read-through promotion, per-tier read deadlines and non-blocking writes.
 - Cache seeding and invalidation via individual tiles (ZXY), lat / lon bounds and ZXY tile list.
-- Parallelized tile serving and geometry processing.
+- Parallelized tile serving.
 - Support for Web Mercator (3857) and WGS84 (4326) projections.
 - Support for [AWS Lambda](cmd/shigola_lambda).
 - Support for serving HTTPS.
@@ -460,6 +459,7 @@ surface that had to be kept working, documented and tested for no user of it her
 | The native `/maps/...` tile routes | OGC API - Tiles is the only tile surface, and `/` is its landing page. |
 | The [GeoPackage](https://www.geopackage.org/) and [SAP HANA](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) providers | PostGIS. A config naming `gpkg` or `hana` is rejected at startup. |
 | The `postgis` provider type | [`mvt_postgis`](provider/postgis), which encodes the tile in the database with `ST_AsMVT`. A config naming `postgis` is rejected at startup with a message naming its replacement. |
+| Go-side geometry processing — clipping, make-valid, simplification, hit-mapping | PostGIS. `ST_AsMVT` and the layer SQL produce the tile, so no geometry reaches this process to be processed. |
 
 Removing the GeoPackage provider also took the last cgo out of the tree, so `CGO_ENABLED` no longer
 decides what a shigola binary can do.

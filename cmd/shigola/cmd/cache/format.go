@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/MapColonies/shigola"
-	"github.com/MapColonies/shigola/maths"
 	"github.com/go-spatial/geom/slippy"
 )
 
@@ -77,7 +76,11 @@ func (f Format) Parse(val string) (z, x, y uint, err error) {
 		return 0, 0, 0, fmt.Errorf("invalid Z value (%v)", parts[f.Z])
 	}
 
-	maxXYatZ := maths.Exp2(zi) - 1
+	// A shift, not a float exponential: zi is already bounded by shigola.MaxZ
+	// above, so the clamp this used to call -- which pinned any exponent over
+	// 63 to 63 to mimic what casting an overflowed math.Exp2 does -- could
+	// never fire from either of these two call sites.
+	maxXYatZ := uint64(1)<<zi - 1
 
 	xi, err := strconv.ParseUint(parts[f.X], 10, 64)
 	if err != nil || xi > maxXYatZ {

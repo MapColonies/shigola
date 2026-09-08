@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/MapColonies/shigola"
-	"github.com/MapColonies/shigola/basic"
 	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/internal/log"
+	"github.com/MapColonies/shigola/maths/webmercator"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/go-spatial/geom"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -85,6 +85,40 @@ func genSQL(
 	selectClause := strings.Join(flds, ", ")
 
 	return fmt.Sprintf(mvtSQL, selectClause, tblname, l.geomField), nil
+}
+
+// transformPoint reprojects a point between the two SRIDs a layer may declare,
+// returning it unchanged when they match.
+//
+// This replaced basic.Transform, which MAPCO-11492 deleted along with the rest
+// of the Go-side geometry trees. That function dispatched over every geometry
+// type in order to walk one down to its points, but the only geometries it was
+// ever handed here were the two BBOX corners in replaceTokens, so the walk was
+// generality without a caller. The SRID pair is closed for the same reason
+// config validation closes it: 3857 and 4326 are what a layer may declare.
+func transformPoint(fromSRID, toSRID uint64, pt geom.Point) (geom.Point, error) {
+	if fromSRID == toSRID {
+		return pt, nil
+	}
+
+	var (
+		crds []float64
+		err  error
+	)
+
+	switch {
+	case fromSRID == shigola.WGS84 && toSRID == shigola.WebMercator:
+		crds, err = webmercator.PToXY(pt.X(), pt.Y())
+	case fromSRID == shigola.WebMercator && toSRID == shigola.WGS84:
+		crds, err = webmercator.PToLonLat(pt.X(), pt.Y())
+	default:
+		return geom.Point{}, fmt.Errorf("postgis: do not know how to convert from %v to %v", fromSRID, toSRID)
+	}
+	if err != nil {
+		return geom.Point{}, err
+	}
+
+	return geom.Point{crds[0], crds[1]}, nil
 }
 
 // mercatorLatLimit is the highest latitude EPSG:3857 can express: past it the
@@ -216,12 +250,12 @@ func layerEnvelopeSQL(extent *geom.Extent, tileSRID, srid uint64) (string, error
 	minX, minY := extent.MinX(), extent.MinY()
 	maxX, maxY := extent.MaxX(), extent.MaxY()
 
-	// basic.Transform routes everything through web mercator, so a latitude
-	// outside the mercator range is unrepresentable on the way out and, for a
-	// buffered geographic tile, on the way in as well.
+	// transformPoint goes through web mercator, so a latitude outside the
+	// mercator range is unrepresentable on the way out and, for a buffered
+	// geographic tile, on the way in as well.
 	//
 	// The condition reads as "geographic tile, non-geographic layer" rather than
-	// "mercator layer", which are the same set only because basic.Transform
+	// "mercator layer", which are the same set only because transformPoint
 	// supports exactly 3857 and 4326 -- it returns an error for anything else,
 	// so a third SRID cannot reach the clamp without failing below first. If it
 	// ever grows a projection whose valid latitudes are not mercator's, this
@@ -231,17 +265,15 @@ func layerEnvelopeSQL(extent *geom.Extent, tileSRID, srid uint64) (string, error
 		maxY = math.Min(maxY, mercatorLatLimit)
 	}
 
-	minGeo, err := basic.Transform(tileSRID, srid, geom.Point{minX, minY})
+	minPt, err := transformPoint(tileSRID, srid, geom.Point{minX, minY})
 	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+		return "", fmt.Errorf("postgis: converting tile point: %w", err)
 	}
 
-	maxGeo, err := basic.Transform(tileSRID, srid, geom.Point{maxX, maxY})
+	maxPt, err := transformPoint(tileSRID, srid, geom.Point{maxX, maxY})
 	if err != nil {
-		return "", fmt.Errorf("Error trying to convert tile point: %w ", err)
+		return "", fmt.Errorf("postgis: converting tile point: %w", err)
 	}
-
-	minPt, maxPt := minGeo.(geom.Point), maxGeo.(geom.Point)
 
 	return envelopeSQL(minPt.X(), minPt.Y(), maxPt.X(), maxPt.Y(), srid), nil
 }
