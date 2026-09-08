@@ -90,6 +90,38 @@ func TestTileContentCrossCRS(t *testing.T) {
 		crossAt(t, tile, "equator", 0, 4096)
 	})
 
+	// The top row is where the old envelope was worst, and it got worse as the
+	// zoom deepened rather than better: the tile's own latitude span shrinks
+	// while the envelope still ran to a bogus 238,107,693, so the band of it
+	// holding real ground narrowed. Measured against the pre-fix build on an
+	// OpenMapTiles import, a whole top-row tile arrived inside the bottom 9% of
+	// the tile at z1, 7% at z2, 5% at z3 and 3.5% at z4.
+	t.Run("WorldCRS84Quad spaces a deeper top-row tile by latitude", func(t *testing.T) {
+		// Zoom 3 is 16 columns by 8 rows. Column 4 spans lon -90..-67.5 and row
+		// 0 spans lat 90..67.5, so lon -90 is the column's left edge at x = 0
+		// and y = (90 - lat) / 22.5 * 4096.
+		tile := fetch(t, srv, crossCollection, tms.WorldCRS84Quad, 3, 0, 4)
+
+		crossAt(t, tile, "high", 0, 2048) // lat 78.75, which spacing by mercator y put at about 3842
+
+		// Below this tile's southern edge, and absent under either spacing --
+		// which is the point of asserting it: the fix moves features, it does
+		// not admit ones that do not belong.
+		for _, layer := range []string{crossNativeLyr, crossMercLyr} {
+			absent(t, tile, layer, "mid")
+			absent(t, tile, layer, "equator")
+		}
+	})
+
+	// WGS1984Quad is EPSG:4326 where WorldCRS84Quad is CRS84, with the same
+	// matrix shape. The spec names it and nothing else here asks for it.
+	t.Run("WGS1984Quad spaces a tile by latitude too", func(t *testing.T) {
+		tile := fetch(t, srv, crossCollection, tms.WGS1984Quad, 1, 0, 1)
+
+		crossAt(t, tile, "mid", 0, 2048)
+		crossAt(t, tile, "high", 0, 512)
+	})
+
 	t.Run("WorldCRS84Quad at its shallowest zoom", func(t *testing.T) {
 		// Zoom 0 is 2 columns by 1 row. Column 0 spans lon -180..0 and row 0
 		// spans lat 90..-90, so x = (lon + 180) / 180 * 4096 and
@@ -104,6 +136,20 @@ func TestTileContentCrossCRS(t *testing.T) {
 		crossAt(t, tile, "equator", 2048, 2048)
 		crossAt(t, tile, "mid", 2048, 1024) // lat 45
 		crossAt(t, tile, "high", 2048, 256) // lat 78.75
+
+		// Column 1, the other half of the world and the URL the bug was
+		// reported against. It reaches 90S the same way column 0 does and failed
+		// the same way; the acceptance criterion names both columns, and nothing
+		// else here asks for the second one.
+		//
+		// Column 1 spans lon 0..180 and holds none of these points, so the
+		// assertion is the fetch: it fails the test on any status but 200.
+		east := fetch(t, srv, crossCollection, tms.WorldCRS84Quad, 0, 0, 1)
+		for _, layer := range []string{crossNativeLyr, crossMercLyr} {
+			for _, name := range []string{"equator", "mid", "high"} {
+				absent(t, east, layer, name)
+			}
+		}
 	})
 
 	// The same independence in the other direction: a 4326 layer served in

@@ -105,9 +105,17 @@ func genSQL(
 const mercatorLatLimit = 85.05112877980659
 
 // webMercatorQuadZ0ScaleDenominator is WebMercatorQuad's zoom 0 scale
-// denominator. TestWebMercatorQuadZ0ScaleDenominator pins it against the
-// registry, which is the definition; it is repeated here so that deriving
-// WebMercatorZoomToken costs no lookup on the request path.
+// denominator, which WebMercatorZoomToken is a ratio against.
+//
+// It duplicates tms/data/WebMercatorQuad.json, and tms is meant to be the one
+// source of truth for tiling schemes. The alternative is resolving that scheme
+// through the registry on a path that has already resolved a different one --
+// tms.Get can fail, and a token whose value depends on a second scheme being
+// registered is a worse thing to reason about than a constant.
+//
+// So it stays a constant, and TestWebMercatorQuadZ0ScaleDenominator pins it
+// against the registry, which is the definition. That test failing means the
+// document moved and this did not.
 const webMercatorQuadZ0ScaleDenominator = 559082264.0287178
 
 // replaceTokens replaces tokens in the provided SQL string
@@ -211,6 +219,13 @@ func layerEnvelopeSQL(extent *geom.Extent, tileSRID, srid uint64) (string, error
 	// basic.Transform routes everything through web mercator, so a latitude
 	// outside the mercator range is unrepresentable on the way out and, for a
 	// buffered geographic tile, on the way in as well.
+	//
+	// The condition reads as "geographic tile, non-geographic layer" rather than
+	// "mercator layer", which are the same set only because basic.Transform
+	// supports exactly 3857 and 4326 -- it returns an error for anything else,
+	// so a third SRID cannot reach the clamp without failing below first. If it
+	// ever grows a projection whose valid latitudes are not mercator's, this
+	// has to name the SRID it is clamping for.
 	if tileSRID == shigola.WGS84 && srid != shigola.WGS84 {
 		minY = math.Max(minY, -mercatorLatLimit)
 		maxY = math.Min(maxY, mercatorLatLimit)
@@ -251,8 +266,20 @@ func tileScale(tile provider.Tile) (pixelWidth, pixelHeight, scaleDenominator fl
 		if m, err := grid.Matrix(int(z)); err == nil {
 			pixelSize := m.CellSize * grid.MetersPerUnit()
 
-			return pixelSize, pixelSize, m.ScaleDenominator,
-				int(math.Round(math.Log2(webMercatorQuadZ0ScaleDenominator / m.ScaleDenominator)))
+			// Nearest, and floored at zero. Every scheme registered here halves
+			// its scale denominator per level, so the log2 is a whole number and
+			// the rounding does nothing; a scheme with another ratio gets the
+			// closest mercator zoom instead, which is the honest answer to "how
+			// much detail belongs at this resolution" and is what callers use it
+			// for. Floored because a scheme shallower than WebMercatorQuad z0
+			// would otherwise emit a negative zoom into SQL, and no dataset's
+			// generalisation is indexed below zero.
+			webMercatorZoom := int(math.Round(math.Log2(webMercatorQuadZ0ScaleDenominator / m.ScaleDenominator)))
+			if webMercatorZoom < 0 {
+				webMercatorZoom = 0
+			}
+
+			return pixelSize, pixelSize, m.ScaleDenominator, webMercatorZoom
 		}
 	}
 

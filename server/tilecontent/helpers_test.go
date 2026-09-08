@@ -75,7 +75,10 @@ func newAtlas(t *testing.T, collection string, layers []map[string]any) *atlas.A
 	m.SetMVTProvider(collection+"_provider", prvd)
 
 	m.TileMatrixSets = nil
-	for _, id := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad} {
+	// WGS1984Quad as well as WorldCRS84Quad: same CRS, same matrix shape,
+	// separate registration, so a fix that reached one and not the other would
+	// be invisible from the WorldCRS84Quad assertions alone (MAPCO-11614).
+	for _, id := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad, tms.WGS1984Quad} {
 		grid, err := tms.Get(id)
 		if err != nil {
 			t.Fatalf("tms.Get(%v) = %v, want nil", id, err)
