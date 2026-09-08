@@ -29,7 +29,7 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 
 - [Mapbox Vector Tile v2 specification](https://github.com/mapbox/vector-tile-spec) compliant.
 - [PostGIS](provider/postgis) data provider, with the MVT encoding done in the database by `ST_AsMVT`. Extensible design to support additional data providers.
-- Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob).
+- Support for several cache backends: [file](cache/file), [s3](cache/s3), [redis](cache/redis), [azure blob store](cache/azblob), [gcs](cache/gcs).
 - [Layered caching](#layered-cache): an ordered chain of cache backends with read-through promotion, per-tier read deadlines and non-blocking writes.
 - Cache seeding and invalidation via individual tiles (ZXY), lat / lon bounds and ZXY tile list.
 - Parallelized tile serving.
