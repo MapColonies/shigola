@@ -1,10 +1,12 @@
 package postgis
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola"
+	"github.com/MapColonies/shigola/maths/webmercator"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom/slippy"
@@ -123,6 +125,23 @@ func TestUppercaseTokens(t *testing.T) {
 	}
 }
 
+// mercatorEnvelope renders the layer-SRID envelope the provider should emit for
+// a geographic tile against a mercator layer, from the corner it should have
+// converted.
+//
+// The latitudes are written out by the caller, so the clamp is still what is
+// being asserted: an unclamped provider produces -Inf or 238107693.26 at a pole,
+// neither of which this can render. The mercator y for them is computed rather
+// than written because ST_MakeEnvelope is formatted to eight decimal places, and
+// at a magnitude of 2e7 that is fifteen significant digits -- past the point
+// where amd64 and arm64 libm agree on tan and log. The literal that used to be
+// here passed locally and failed in CI on the sign of a zero.
+func mercatorEnvelope(minLon, minLat, maxLon, maxLat float64) string {
+	return fmt.Sprintf("ST_MakeEnvelope(%.8f,%.8f,%.8f,%.8f,3857)",
+		webmercator.PLonToX(minLon), webmercator.PLatToY(minLat),
+		webmercator.PLonToX(maxLon), webmercator.PLatToY(maxLat))
+}
+
 // TestReplaceTokensTileCRS covers the two envelopes replaceTokens emits once the
 // tiling scheme's CRS stops matching the layer's (MAPCO-11599).
 //
@@ -163,10 +182,12 @@ func TestReplaceTokensTileCRS(t *testing.T) {
 			sql:   "SELECT ST_AsMVTGeom(ST_Transform(geom,!TILE_SRID!), !TILE_BBOX!) FROM foo WHERE geom && !BBOX!",
 			layer: Layer{srid: shigola.WebMercator},
 			tile:  provider.NewTile(1, 2, 0, 64, shigola.WGS84),
+			// lat 90 clamps to the mercator limit; lon and the equator convert
+			// as they are.
 			expected: "SELECT ST_AsMVTGeom(ST_Transform(geom,4326), " +
 				"ST_MakeEnvelope(0.00000000,0.00000000,90.00000000,90.00000000,4326)) " +
 				"FROM foo WHERE geom && " +
-				"ST_MakeEnvelope(0.00000000,-0.00000000,10018754.17139462,20037508.34278924,3857)",
+				mercatorEnvelope(0, 0, 90, mercatorLatLimit),
 		},
 		// The crash: WorldCRS84Quad z0 reaches the south pole, whose mercator y
 		// is -Inf, and its buffered extent reaches -92.8125 -- the buffer is in
@@ -180,7 +201,7 @@ func TestReplaceTokensTileCRS(t *testing.T) {
 			tile:       provider.NewTile(0, 0, 0, 64, shigola.WGS84),
 			withBuffer: true,
 			expected: "SELECT ST_MakeEnvelope(-182.81250000,-92.81250000,2.81250000,92.81250000,4326) AS tile, " +
-				"ST_MakeEnvelope(-20350594.41064532,-20037508.34278924,313086.06785608,20037508.34278924,3857) AS layer",
+				mercatorEnvelope(-182.8125, -mercatorLatLimit, 2.8125, mercatorLatLimit) + " AS layer",
 		},
 		// A geographic layer in a geographic scheme needs no transform, and the
 		// two envelopes stay one rectangle -- the case that hid the bug.
