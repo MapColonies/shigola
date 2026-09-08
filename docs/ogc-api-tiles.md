@@ -131,6 +131,18 @@ parks:trees     one layer — tiles carry only that layer
 The map-collection is always published, even for a single-layer map, so a map name is always a
 usable collection id.
 
+The layer tier is the part a map can decline. With `serve_layer_collections = false` on a map, that
+map publishes its whole-map collection only:
+
+```
+parks           the whole map — unchanged
+parks:trees     collection not found
+```
+
+The flag removes the layer ids and nothing else: the whole-map collection keeps its tilesets and
+keeps serving tiles. It is per map and defaults to on, so a map that declines the tier and a map
+that says nothing about it sit in the same config.
+
 ### Tile paths are z/y/x
 
 OGC orders a tile path `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then **column**. This is
