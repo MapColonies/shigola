@@ -45,6 +45,7 @@ const (
 	SpanTierGet       = "cache.tier.Get"
 	SpanTierSet       = "cache.tier.Set"
 	SpanTierPurge     = "cache.tier.Purge"
+	SpanPostgisQuery  = "postgis.query"
 )
 
 // Span attribute keys, in shigola's own namespace: the OTEL semantic
@@ -62,6 +63,11 @@ const (
 	AttrCacheTier     = attribute.Key("shigola.cache.tier")
 	AttrCacheHit      = attribute.Key("shigola.cache.hit")
 	AttrCacheKey      = attribute.Key("shigola.cache.key")
+
+	// AttrQueryTruncated marks a span whose db.query.text was cut to
+	// MaxQueryTextBytes, so a reader knows the statement ends where the limit
+	// was rather than where the query did.
+	AttrQueryTruncated = attribute.Key("shigola.db.query_truncated")
 )
 
 // Interface is what a tracing backend provides.
