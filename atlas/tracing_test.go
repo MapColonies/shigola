@@ -5,13 +5,13 @@ import (
 	"slices"
 	"testing"
 
-	promclient "github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/MapColonies/shigola/tracing"
@@ -33,24 +33,6 @@ func tierAttrs(spans []tracetest.SpanStub) []string {
 	slices.Sort(tiers)
 
 	return tiers
-}
-
-// familyNames is every metric family the process publishes right now.
-func familyNames(t *testing.T) []string {
-	t.Helper()
-
-	families, err := promclient.DefaultGatherer.Gather()
-	if err != nil {
-		t.Fatalf("gather: %v", err)
-	}
-
-	names := make([]string, 0, len(families))
-	for _, family := range families {
-		names = append(names, family.GetName())
-	}
-	slices.Sort(names)
-
-	return names
 }
 
 // TestTierSpansPerTier is the span half of what the layered cache exists to
@@ -122,7 +104,7 @@ func TestMetricsAreUnaffectedByTracing(t *testing.T) {
 	//nolint:errcheck // a miss on both tiers; the metric is what is asserted
 	a.GetCache().Get(context.Background(), obsKey)
 
-	familiesBefore := familyNames(t)
+	familiesBefore := ttools.MetricFamilyNames(t)
 	missesBefore := counter(t, misses, hotLabels)
 
 	tracer, exporter := faketracer.New(t)
@@ -131,7 +113,7 @@ func TestMetricsAreUnaffectedByTracing(t *testing.T) {
 	//nolint:errcheck // as above
 	a.GetCache().Get(context.Background(), obsKey)
 
-	added, lost := familyDiff(familiesBefore, familyNames(t))
+	added, lost := familyDiff(familiesBefore, ttools.MetricFamilyNames(t))
 	if len(added) > 0 {
 		t.Errorf("tracing published new metric families: %v", added)
 	}

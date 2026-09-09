@@ -1,14 +1,19 @@
-package tracing
+package tracing_test
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/tracing"
 )
 
 const (
@@ -23,7 +28,7 @@ const (
 // continue that trace rather than root a sibling one, or a request's spans end
 // up in two unrelated traces and neither shows the whole path.
 func TestInstrumentedAPIHttpHandlerJoinsAnIncomingTrace(t *testing.T) {
-	backend, exporter := recording(t)
+	backend, exporter := faketracer.New(t)
 
 	handler := backend.InstrumentedAPIHttpHandler(
 		http.MethodGet, "/collections/:collection_id/tiles",
@@ -37,7 +42,7 @@ func TestInstrumentedAPIHttpHandlerJoinsAnIncomingTrace(t *testing.T) {
 
 	spans := exporter.GetSpans()
 	if len(spans) != 1 {
-		t.Fatalf("recorded %d spans, want 1: %v", len(spans), spanNames(exporter))
+		t.Fatalf("recorded %d spans, want 1: %v", len(spans), faketracer.Names(exporter.GetSpans()))
 	}
 	span := spans[0]
 
@@ -55,7 +60,7 @@ func TestInstrumentedAPIHttpHandlerJoinsAnIncomingTrace(t *testing.T) {
 // so naming spans after them would give Tempo a new operation name per tile and
 // make the service's own latency unreadable.
 func TestInstrumentedAPIHttpHandlerNamesSpansForTheRoute(t *testing.T) {
-	backend, exporter := recording(t)
+	backend, exporter := faketracer.New(t)
 
 	const route = "/collections/:collection_id/tiles/:tile_matrix_set_id/:tile_matrix/:tile_row/:tile_col"
 
@@ -86,7 +91,7 @@ func TestInstrumentedAPIHttpHandlerNamesSpansForTheRoute(t *testing.T) {
 // property trace exemplars will read the active trace id out of
 // (MAPCO-11496).
 func TestInstrumentedAPIHttpHandlerPutsTheSpanInTheRequestContext(t *testing.T) {
-	backend, _ := recording(t)
+	backend, _ := faketracer.New(t)
 
 	var seen trace.SpanContext
 	handler := backend.InstrumentedAPIHttpHandler(http.MethodGet, "/",
@@ -123,7 +128,7 @@ func TestNewDoesNotTouchOtelGlobals(t *testing.T) {
 		otel.SetTextMapPropagator(beforeProp)
 	})
 
-	backend, _ := recording(t)
+	backend, exporter := faketracer.New(t)
 
 	if got := otel.GetTracerProvider(); got != before {
 		t.Errorf("constructing a backend replaced the global tracer provider with %T", got)
@@ -131,13 +136,18 @@ func TestNewDoesNotTouchOtelGlobals(t *testing.T) {
 
 	backend.Install()
 
-	installed, ok := backend.(*provider)
-	if !ok {
-		t.Fatalf("recording() returned a %T", backend)
+	// Asserted behaviourally, not by comparing the installed provider against
+	// the backend's own: what a caller actually depends on is that a span
+	// started from OTEL's global lands in this backend, which is the whole
+	// point of Install and is what an instrumented client library will do.
+	_, span := otel.Tracer("probe").Start(context.Background(), "probe")
+	span.End()
+
+	if got := faketracer.SpansNamed(exporter, "probe"); len(got) != 1 {
+		t.Errorf("a span started from the global tracer provider did not reach the installed backend; recorded %v",
+			faketracer.Names(exporter.GetSpans()))
 	}
-	if got := otel.GetTracerProvider(); got != installed.tp {
-		t.Errorf("global tracer provider = %T, want the backend's own", got)
-	}
+
 	// The propagator is the half that makes an instrumented outgoing client
 	// carry this service's trace context without being handed anything.
 	//
@@ -153,17 +163,70 @@ func TestNewDoesNotTouchOtelGlobals(t *testing.T) {
 	}
 }
 
+// TestInstalledPropagatorReachesAnOutgoingClient is the mechanism the ticket's
+// "outgoing calls carry it" rests on, pinned.
+//
+// shigola instruments no client of its own; what it does is publish the global
+// propagator, and a client library that reads it then injects trace context
+// with no further wiring. That indirection is load-bearing and subtle — the GCS
+// cache's transport is built by google.golang.org/api *before* Install runs, and
+// works anyway only because OTEL's global propagator is a delegating wrapper
+// rather than a value captured at construction.
+//
+// So: build an otelhttp round-tripper before Install, the way that transport is
+// built, and check that a request through it afterwards carries traceparent.
+func TestInstalledPropagatorReachesAnOutgoingClient(t *testing.T) {
+	before := otel.GetTracerProvider()
+	beforeProp := otel.GetTextMapPropagator()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(before)
+		otel.SetTextMapPropagator(beforeProp)
+	})
+
+	// Constructed first, deliberately: this is the ordering the GCS client has.
+	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+
+	backend, _ := faketracer.New(t)
+	backend.Install()
+
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("traceparent")
+	}))
+	t.Cleanup(srv.Close)
+
+	// Under a span, since traceparent describes one.
+	ctx, span := backend.Tracer().Start(context.Background(), "outgoing")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	span.End()
+
+	if got == "" {
+		t.Fatal("an outgoing request carried no traceparent, so nothing downstream can join this trace")
+	}
+	if want := span.SpanContext().TraceID().String(); !strings.Contains(got, want) {
+		t.Errorf("traceparent %q does not carry this trace's id %v", got, want)
+	}
+}
+
 // TestNullTracerHandlerIsTheHandlerItWasGiven — the disabled case again, at the
 // HTTP seam: no wrapper, so no per-request cost and no propagator installed.
 func TestNullTracerHandlerIsTheHandlerItWasGiven(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 
-	got := NullTracer.InstrumentedAPIHttpHandler(http.MethodGet, "/", handler)
+	got := tracing.NullTracer.InstrumentedAPIHttpHandler(http.MethodGet, "/", handler)
 
 	if _, ok := got.(http.HandlerFunc); !ok {
 		t.Errorf("the handler was wrapped: %T", got)
 	}
-	if err := NullTracer.Shutdown(context.Background()); err != nil {
+	if err := tracing.NullTracer.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown() = %v, want nil", err)
 	}
 }

@@ -1,4 +1,4 @@
-package tracing
+package tracing_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/tracing"
 )
 
 // TestNewDisabledBuildsNothing is the acceptance criterion "off by default",
@@ -17,21 +18,21 @@ import (
 // anywhere to have a cost.
 func TestNewDisabledBuildsNothing(t *testing.T) {
 	type tcase struct {
-		config Config
+		config tracing.Config
 	}
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			backend, err := New(context.Background(), tc.config)
+			backend, err := tracing.New(context.Background(), tc.config)
 			if err != nil {
-				t.Fatalf("New() = %v", err)
+				t.Fatalf("tracing.New() = %v", err)
 			}
 
 			if backend.Enabled() {
 				t.Error("Enabled() = true for a disabled config")
 			}
-			if got := backend.Name(); got != "none" {
-				t.Errorf("Name() = %v, want none", got)
+			if backend != tracing.Interface(tracing.NullTracer) {
+				t.Errorf("New() = %T for a disabled config, want the null backend", backend)
 			}
 
 			inner := faketier.New("inner")
@@ -43,12 +44,12 @@ func TestNewDisabledBuildsNothing(t *testing.T) {
 
 	tests := map[string]tcase{
 		// No [tracing] section in the file at all.
-		"absent section": {config: Config{}},
+		"absent section": {config: tracing.Config{}},
 		// A section that is filled in but switched off: still nothing built,
 		// so an operator can leave the endpoint configured and toggle one key.
 		"configured but disabled": {
-			config: Config{
-				Exporter: ExporterOTLPGRPC,
+			config: tracing.Config{
+				Exporter: tracing.ExporterOTLPGRPC,
 				Endpoint: "tempo:4317",
 				Insecure: true,
 			},
@@ -64,12 +65,12 @@ func TestNewDisabledBuildsNothing(t *testing.T) {
 // is a startup error, not a silent fallback to no tracing. An operator who
 // asked for tracing and got none without being told would debug the collector.
 func TestNewRejectsAnUnusableConfig(t *testing.T) {
-	backend, err := New(context.Background(), Config{Enabled: true, Exporter: "jaeger"})
+	backend, err := tracing.New(context.Background(), tracing.Config{Enabled: true, Exporter: "jaeger"})
 	if err == nil {
-		t.Fatal("New() = nil error for an unknown exporter")
+		t.Fatal("tracing.New() = nil error for an unknown exporter")
 	}
 	if backend == nil || backend.Enabled() {
-		t.Error("New() should still return the null backend alongside its error")
+		t.Error("tracing.New() should still return the null backend alongside its error")
 	}
 }
 
@@ -79,9 +80,9 @@ func TestNewRejectsAnUnusableConfig(t *testing.T) {
 // The HTTP exporter is used because it establishes no connection until it has
 // something to export, so this neither dials nor blocks.
 func TestNewEnabledBuildsAWorkingBackend(t *testing.T) {
-	cfg := Config{
+	cfg := tracing.Config{
 		Enabled:     true,
-		Exporter:    ExporterOTLPHTTP,
+		Exporter:    tracing.ExporterOTLPHTTP,
 		Endpoint:    "127.0.0.1:4318",
 		Insecure:    true,
 		ServiceName: "shigola-test",
@@ -89,17 +90,14 @@ func TestNewEnabledBuildsAWorkingBackend(t *testing.T) {
 	sample := env.Float(1)
 	cfg.SampleRatio = &sample
 
-	backend, err := New(context.Background(), cfg)
+	backend, err := tracing.New(context.Background(), cfg)
 	if err != nil {
-		t.Fatalf("New() = %v", err)
+		t.Fatalf("tracing.New() = %v", err)
 	}
 	t.Cleanup(func() { _ = backend.Shutdown(context.Background()) })
 
 	if !backend.Enabled() {
 		t.Error("Enabled() = false")
-	}
-	if got := backend.Name(); got != ExporterOTLPHTTP {
-		t.Errorf("Name() = %v, want %v", got, ExporterOTLPHTTP)
 	}
 
 	// A tracer that records: the sampler and the provider are wired, even

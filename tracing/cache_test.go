@@ -1,4 +1,4 @@
-package tracing
+package tracing_test
 
 import (
 	"context"
@@ -9,7 +9,9 @@ import (
 
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/internal/faketracer"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/MapColonies/shigola/tracing"
 )
 
 func testKey(t *testing.T) *cache.Key {
@@ -36,7 +38,7 @@ func TestTracedCacheSpanPerOperation(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			backend, exporter := recording(t)
+			backend, exporter := faketracer.New(t)
 			key := testKey(t)
 
 			var traced cache.Interface
@@ -58,16 +60,16 @@ func TestTracedCacheSpanPerOperation(t *testing.T) {
 			}
 
 			for _, name := range tc.want {
-				span := spanNamed(t, exporter, name)
+				span := faketracer.SpanNamed(t, exporter, name)
 
-				if got := attrOf(t, span, AttrCacheKey).AsString(); got != key.String() {
+				if got := faketracer.StringAttr(span, tracing.AttrCacheKey); got != key.String() {
 					t.Errorf("%v key attribute = %q, want %q", name, got, key.String())
 				}
 
 				if tc.tier == "" {
 					continue
 				}
-				if got := attrOf(t, span, AttrCacheTier).AsString(); got != tc.tier {
+				if got := faketracer.StringAttr(span, tracing.AttrCacheTier); got != tc.tier {
 					t.Errorf("%v tier attribute = %q, want %q", name, got, tc.tier)
 				}
 			}
@@ -80,11 +82,11 @@ func TestTracedCacheSpanPerOperation(t *testing.T) {
 		// a tier read is one lookup, and a query that summed them would be
 		// counting two different things.
 		"whole cache": {
-			want: []string{SpanCacheGet, SpanCacheSet, SpanCachePurge},
+			want: []string{tracing.SpanCacheGet, tracing.SpanCacheSet, tracing.SpanCachePurge},
 		},
 		"one tier": {
 			tier: "hot",
-			want: []string{SpanTierGet, SpanTierSet, SpanTierPurge},
+			want: []string{tracing.SpanTierGet, tracing.SpanTierSet, tracing.SpanTierPurge},
 		},
 	}
 
@@ -109,7 +111,7 @@ func TestTracedCacheGetIsTransparent(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			backend, _ := recording(t)
+			backend, _ := faketracer.New(t)
 			key := testKey(t)
 
 			inner := faketier.New("inner")
@@ -162,7 +164,7 @@ func TestTracedCacheRecordsTheCachesOwnFailures(t *testing.T) {
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			backend, exporter := recording(t)
+			backend, exporter := faketracer.New(t)
 			key := testKey(t)
 
 			inner := faketier.New("inner")
@@ -180,7 +182,7 @@ func TestTracedCacheRecordsTheCachesOwnFailures(t *testing.T) {
 			//nolint:errcheck // the error is the point; the span is what is asserted
 			traced.Get(ctx, key)
 
-			span := spanNamed(t, exporter, SpanTierGet)
+			span := faketracer.SpanNamed(t, exporter, tracing.SpanTierGet)
 
 			if span.Status.Code != tc.wantCode {
 				t.Errorf("span status = %v, want %v", span.Status.Code, tc.wantCode)
@@ -221,7 +223,7 @@ func (f *fakeTiered) WithTiers([]cache.Interface) cache.Interface { return f }
 // would make the chain invisible to all three the moment tracing was switched
 // on.
 func TestTracedCacheCanBeReachedThrough(t *testing.T) {
-	backend, _ := recording(t)
+	backend, _ := faketracer.New(t)
 
 	inner := &fakeTiered{
 		Interface: faketier.New("inner"),
@@ -234,7 +236,7 @@ func TestTracedCacheCanBeReachedThrough(t *testing.T) {
 		t.Fatal("the cache was not wrapped at all")
 	}
 
-	wrapped, ok := traced.(Cache)
+	wrapped, ok := traced.(tracing.Cache)
 	if !ok {
 		t.Fatal("a traced cache does not satisfy tracing.Cache, so atlas cannot strip it")
 	}
@@ -260,13 +262,13 @@ func TestTracedCacheCanBeReachedThrough(t *testing.T) {
 func TestNullTracerInstallsNothing(t *testing.T) {
 	inner := faketier.New("inner")
 
-	if got := NullTracer.InstrumentedCache(inner); got != cache.Interface(inner) {
+	if got := tracing.NullTracer.InstrumentedCache(inner); got != cache.Interface(inner) {
 		t.Error("InstrumentedCache wrapped the cache")
 	}
-	if got := NullTracer.InstrumentedTierCache("hot", inner); got != cache.Interface(inner) {
+	if got := tracing.NullTracer.InstrumentedTierCache("hot", inner); got != cache.Interface(inner) {
 		t.Error("InstrumentedTierCache wrapped the cache")
 	}
-	if NullTracer.Enabled() {
+	if tracing.NullTracer.Enabled() {
 		t.Error("Enabled() = true")
 	}
 }

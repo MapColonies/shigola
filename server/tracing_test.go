@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/observability/prometheus"
 	"github.com/MapColonies/shigola/server"
 	"github.com/MapColonies/shigola/tracing"
@@ -205,7 +206,15 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 		}
 	}
 
-	before := familyNames(t)
+	before := ttools.MetricFamilyNames(t)
+	httpBefore := map[string]float64{}
+	for _, family := range []string{
+		"shigola_api_requests_total",
+		"shigola_api_duration_seconds",
+		"shigola_api_response_size_bytes",
+	} {
+		httpBefore[family] = sampleCount(t, family)
+	}
 
 	tracer, exporter := faketracer.New(t)
 	tracer.Install()
@@ -221,7 +230,7 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 		t.Fatal("the traced request recorded no spans, so this proved nothing about metrics")
 	}
 
-	after := familyNames(t)
+	after := ttools.MetricFamilyNames(t)
 	for _, name := range after {
 		if !slices.Contains(before, name) {
 			t.Errorf("a traced request published a new metric family: %v", name)
@@ -232,10 +241,32 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 			t.Errorf("a traced request removed a metric family: %v", name)
 		}
 	}
+
+	// Values, not just family names.
+	//
+	// The names would look identical if the tracing middleware had displaced
+	// the metrics one rather than wrapping outside it — the families would
+	// still exist from the untraced requests, and simply stop moving. These
+	// four are the whole set the HTTP observer maintains, and the middleware
+	// reorder in NewRouter is exactly what could disturb them.
+	for _, family := range []string{
+		"shigola_api_requests_total",
+		"shigola_api_duration_seconds",
+		"shigola_api_response_size_bytes",
+	} {
+		if got := sampleCount(t, family) - httpBefore[family]; got != 1 {
+			t.Errorf("%v moved by %v over one traced request, want 1", family, got)
+		}
+	}
 }
 
-// familyNames is every metric family the process publishes right now.
-func familyNames(t *testing.T) []string {
+// sampleCount totals a metric family across every label set: counter values,
+// or histogram observation counts.
+//
+// Summed rather than read per label set because the point here is only whether
+// the observer still saw the request, and the HTTP families carry route and
+// status labels this test has no reason to know.
+func sampleCount(t *testing.T, name string) float64 {
 	t.Helper()
 
 	families, err := promclient.DefaultGatherer.Gather()
@@ -243,11 +274,21 @@ func familyNames(t *testing.T) []string {
 		t.Fatalf("gather: %v", err)
 	}
 
-	names := make([]string, 0, len(families))
+	var total float64
 	for _, family := range families {
-		names = append(names, family.GetName())
-	}
-	slices.Sort(names)
+		if family.GetName() != name {
+			continue
+		}
 
-	return names
+		for _, m := range family.GetMetric() {
+			if c := m.GetCounter(); c != nil {
+				total += c.GetValue()
+			}
+			if h := m.GetHistogram(); h != nil {
+				total += float64(h.GetSampleCount())
+			}
+		}
+	}
+
+	return total
 }
