@@ -100,6 +100,11 @@ func newResource(cfg Config) (*resource.Resource, error) {
 // siblings themselves, and an in-cluster collector is normally configured that
 // way for every service at once. Substituting a shigola-specific default would
 // take that away.
+// The two arms below build the same four options twice. otlptracegrpc.Option
+// and otlptracehttp.Option are unrelated types with no common interface, so
+// factoring the shared shape out would mean either a generic helper per option
+// (four of them, each a one-line closure pair) or reflection — both longer and
+// harder to read than the repetition.
 func newExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
 	switch cfg.ExporterName() {
 	case ExporterOTLPGRPC:

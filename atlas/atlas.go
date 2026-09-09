@@ -360,12 +360,17 @@ func (a *Atlas) SetCache(c cache.Interface) {
 		defaultAtlas.SetCache(c)
 		return
 	}
-	// Instrument it with whatever backends are already set. Through the same
+	// Instrument it with whatever backends are already set, through the same
 	// path SetObservability and SetTracing use, rather than the whole-cache
-	// wrapper this applied on its own until MAPCO-11497: root.go happens to
-	// call SetCache first and instrument afterwards, so the shallow version
-	// was always overwritten and never wrong — but only by ordering, and the
-	// shared path is idempotent, which the shallow one was not.
+	// wrapper this applied on its own until MAPCO-11497.
+	//
+	// In shigola's own startup this changes nothing: root.go calls SetCache
+	// before either setter, so the shallow wrapper was always immediately
+	// re-derived. It does change one case, deliberately — an embedding caller
+	// who configures a backend *before* handing over the cache now gets per-
+	// tier metrics and tier spans, where the shallow path silently gave them
+	// only the whole-cache family. That is the behaviour they should always
+	// have had, and unlike the shallow path this one is idempotent.
 	a.cacher = instrumentCache(a.observer, a.tracer, c)
 }
 

@@ -79,10 +79,6 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		}
 	}
 
-	if t.Enabled() {
-		log.Infof("setting up tracing: %v", t.Name())
-	}
-
 	// OGC API - Tiles surface, and the only tile surface: the native /maps/...
 	// routes it was once additive to are gone (MAPCO-11484, MAPCO-11485), so
 	// every route below this point is registered by ogc.Service.

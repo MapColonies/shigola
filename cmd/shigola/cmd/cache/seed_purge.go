@@ -18,6 +18,7 @@ import (
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/cobra"
 	"github.com/go-spatial/geom/slippy"
 	"github.com/go-spatial/proj"
@@ -425,7 +426,7 @@ func seedPurgeCommand(_ *cobra.Command, _ []string) (err error) {
 	// Seeding a region writes through the same traced cache the server reads
 	// through, so a config with tracing on produces spans here too — and
 	// without this they would be dropped on the way out rather than exported.
-	gdcmd.OnComplete(flushTracing)
+	gdcmd.OnComplete(func() { tracing.Flush(atlas.Tracing()) })
 	atlas.StartSubProcesses()
 
 	go func() {
