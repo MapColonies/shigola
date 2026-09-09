@@ -25,7 +25,7 @@ func (s *Service) HandleCollections(w http.ResponseWriter, r *http.Request) {
 		descs = append(descs, s.collectionDesc(r, c))
 	}
 
-	writeJSON(w, format, Collections{
+	writeJSON(w, r, format, Collections{
 		Links: []Link{
 			{Rel: relSelf, Href: s.href(r, "collections"), Type: MediaTypeJSON, Title: "this document"},
 		},
@@ -47,7 +47,7 @@ func (s *Service) HandleCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, format, s.collectionDesc(r, c))
+	writeJSON(w, r, format, s.collectionDesc(r, c))
 }
 
 // collectionDesc builds a collection's description document.
@@ -126,7 +126,7 @@ func (s *Service) HandleTileSets(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, format, TileSets{
+	writeJSON(w, r, format, TileSets{
 		Tilesets: items,
 		Links: []Link{
 			{Rel: relSelf, Href: s.href(r, "collections", c.ID, "tiles"), Type: MediaTypeJSON, Title: "this document"},
@@ -161,11 +161,11 @@ func (s *Service) HandleTileSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == FormatTileJSON {
-		writeJSON(w, format, s.tileJSON(r, c, grid))
+		writeJSON(w, r, format, s.tileJSON(r, c, grid))
 		return
 	}
 
-	writeJSON(w, format, s.tileSetMetadata(r, c, grid))
+	writeJSON(w, r, format, s.tileSetMetadata(r, c, grid))
 }
 
 // collectionGrid resolves the tiling scheme a request names, for a collection.

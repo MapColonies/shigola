@@ -57,7 +57,7 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	if len(m.Layers) == 0 {
 		// The tileset exists, this zoom simply holds nothing. An empty tile is
 		// the honest answer: a 404 would tell a client the tileset is wrong.
-		writeEmptyTile(w)
+		writeEmptyTile(w, r)
 		return
 	}
 
@@ -77,10 +77,10 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	}
 	if cacher != nil {
 		if cached, hit, err := cacher.Get(r.Context(), &key); err != nil {
-			logf("ogc: reading from cache: %v", err)
+			logf(r, "ogc: reading from cache: %v", err)
 		} else if hit {
 			w.Header().Set("Shigola-Cache", "HIT")
-			writeTile(w, cached)
+			writeTile(w, r, cached)
 			return
 		}
 	}
@@ -101,7 +101,7 @@ func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Shigola-Cache", "MISS")
 	}
 
-	writeTile(w, body)
+	writeTile(w, r, body)
 
 	if cacher != nil {
 		cacheAfterResponse(w, r, cacher, &key, body)
@@ -130,7 +130,7 @@ func cacheAfterResponse(w http.ResponseWriter, r *http.Request, cacher cache.Int
 		// property of the assembled middleware stack, not of one request, so a
 		// line per request would say nothing extra.
 		warnUnflushable.Do(func() {
-			logf("ogc: %T is not an http.Flusher, so tile bytes wait for the handler to return", w)
+			logf(r, "ogc: %T is not an http.Flusher, so tile bytes wait for the handler to return", w)
 		})
 	}
 
@@ -141,7 +141,7 @@ func cacheAfterResponse(w http.ResponseWriter, r *http.Request, cacher cache.Int
 	}
 
 	if err := cacher.Set(r.Context(), key, body); err != nil {
-		logf("ogc: writing to cache: %v", err)
+		logf(r, "ogc: writing to cache: %v", err)
 	}
 }
 
@@ -225,13 +225,13 @@ func parseTilePath(grid *tms.TileMatrixSet, tileMatrix, tileRow, tileCol string)
 // The bytes are gzipped — atlas.Map.Encode compresses, and the cache stores what
 // it produced — which the server's gzip middleware either declares with a
 // Content-Encoding header or decompresses, according to the request.
-func writeTile(w http.ResponseWriter, body []byte) {
+func writeTile(w http.ResponseWriter, r *http.Request, body []byte) {
 	w.Header().Set("Content-Type", MediaTypeMVT)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(body); err != nil {
-		logf("ogc: writing tile: %v", err)
+		logf(r, "ogc: writing tile: %v", err)
 	}
 }
 
@@ -239,7 +239,7 @@ func writeTile(w http.ResponseWriter, body []byte) {
 // no data at the requested zoom.
 var emptyTile = gzipEmptyMVT()
 
-func writeEmptyTile(w http.ResponseWriter) { writeTile(w, emptyTile) }
+func writeEmptyTile(w http.ResponseWriter, r *http.Request) { writeTile(w, r, emptyTile) }
 
 // gzipEmptyMVT builds the gzipped encoding of an MVT tile with no layers.
 //

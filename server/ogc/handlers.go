@@ -9,8 +9,16 @@ import (
 	"github.com/MapColonies/shigola/tms"
 )
 
-// logf keeps the package's logging in one place.
-func logf(format string, args ...any) { log.Errorf(format, args...) }
+// logf keeps the package's logging in one place, at ERROR: everything this
+// package logs is something it could not do.
+//
+// It takes the request so the record carries that request's trace and span ids
+// (internal/log.Handler): what goes wrong here — a response that could not be
+// written, a cache that could not be read — is only diagnosable against the
+// request it happened to.
+func logf(r *http.Request, format string, args ...any) {
+	log.ErrorfContext(r.Context(), format, args...)
+}
 
 // HandleLandingPage serves "/", the document every OGC API client starts from.
 func (s *Service) HandleLandingPage(w http.ResponseWriter, r *http.Request) {
@@ -20,7 +28,7 @@ func (s *Service) HandleLandingPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, format, LandingPage{
+	writeJSON(w, r, format, LandingPage{
 		Title:          "shigola",
 		Description:    "OGC API - Tiles served by shigola",
 		ShigolaVersion: s.cfg.Version,
@@ -42,7 +50,7 @@ func (s *Service) HandleConformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, format, Conformance{ConformsTo: conformsTo})
+	writeJSON(w, r, format, Conformance{ConformsTo: conformsTo})
 }
 
 // HandleTileMatrixSets serves the list of tiling schemes this build can serve.
@@ -71,7 +79,7 @@ func (s *Service) HandleTileMatrixSets(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, format, TileMatrixSets{TileMatrixSets: items})
+	writeJSON(w, r, format, TileMatrixSets{TileMatrixSets: items})
 }
 
 // HandleTileMatrixSet serves one tiling scheme's definition.
@@ -106,6 +114,6 @@ func (s *Service) HandleTileMatrixSet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(body); err != nil {
-		logf("ogc: writing tile matrix set %v: %v", id, err)
+		logf(r, "ogc: writing tile matrix set %v: %v", id, err)
 	}
 }

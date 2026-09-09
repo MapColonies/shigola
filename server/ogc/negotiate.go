@@ -217,7 +217,7 @@ func mediaRangeMatches(mediaRange, mediaType string) bool {
 }
 
 // writeJSON serves v as JSON in the given format's media type.
-func writeJSON(w http.ResponseWriter, format Format, v any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, format Format, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("encoding response: %w", err))
@@ -230,7 +230,7 @@ func writeJSON(w http.ResponseWriter, format Format, v any) {
 
 	if _, err := w.Write(body); err != nil {
 		// The status line is already sent, so this can only be reported.
-		logf("ogc: writing response: %v", err)
+		logf(r, "ogc: writing response: %v", err)
 	}
 }
 

@@ -993,16 +993,16 @@ func (p Provider) MVTForLayers(
 
 	for i := range layers {
 		if debug {
-			log.Debugf("looking for layer: %v", layers[i])
+			log.DebugfContext(ctx, "looking for layer: %v", layers[i])
 		}
 		l, ok := p.Layer(layers[i].Name)
 		if !ok {
 			// Should we error here, or have a flag so that we don't
 			// spam the user?
-			log.Warnf("provider layer not found %v", layers[i].Name)
+			log.WarnfContext(ctx, "provider layer not found %v", layers[i].Name)
 		}
 		if debugLayerSQL {
-			log.Debugf("SQL for Layer(%v):\n%v\nargs:%v\n", l.Name(), l.sql, args)
+			log.DebugfContext(ctx, "SQL for Layer(%v):\n%v\nargs:%v\n", l.Name(), l.sql, args)
 		}
 		sql, err := replaceTokens(l.sql, &l, tile, false)
 		if err := ctxErr(ctx, err); err != nil {
@@ -1040,7 +1040,7 @@ func (p Provider) MVTForLayers(
 	var data []byte
 
 	if debugExecuteSQL {
-		log.Debugf("%s:%s: %v", EnvSQLDebugName, EnvSQLDebugExecute, fsql)
+		log.DebugfContext(ctx, "%s:%s: %v", EnvSQLDebugName, EnvSQLDebugExecute, fsql)
 	}
 	{
 		// The span opens before the clock starts, so the histogram measures
@@ -1064,12 +1064,12 @@ func (p Provider) MVTForLayers(
 	}
 
 	if debugExecuteSQL {
-		log.Debugf("%s:%s: %v", EnvSQLDebugName, EnvSQLDebugExecute, fsql)
+		log.DebugfContext(ctx, "%s:%s: %v", EnvSQLDebugName, EnvSQLDebugExecute, fsql)
 
 		if err != nil {
-			log.Errorf("%s:%s: returned error %v", EnvSQLDebugName, EnvSQLDebugExecute, err)
+			log.ErrorfContext(ctx, "%s:%s: returned error %v", EnvSQLDebugName, EnvSQLDebugExecute, err)
 		} else {
-			log.Debugf("%s:%s: returned %v bytes", EnvSQLDebugName, EnvSQLDebugExecute, len(data))
+			log.DebugfContext(ctx, "%s:%s: returned %v bytes", EnvSQLDebugName, EnvSQLDebugExecute, len(data))
 		}
 	}
 
