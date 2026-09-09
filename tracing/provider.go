@@ -28,8 +28,7 @@ type TracerProvider interface {
 //
 // New is the normal way in; this is the seam underneath it, separated so that
 // choosing an exporter and wiring up instrumentation are not the same decision.
-// name is what Name reports, which only startup logging reads.
-func NewWithProvider(tp TracerProvider, name string) Interface {
+func NewWithProvider(tp TracerProvider) Interface {
 	return &provider{
 		tp:     tp,
 		tracer: tp.Tracer(ScopeName),
@@ -41,7 +40,6 @@ func NewWithProvider(tp TracerProvider, name string) Interface {
 			propagation.TraceContext{},
 			propagation.Baggage{},
 		),
-		name: name,
 	}
 }
 
@@ -50,7 +48,6 @@ type provider struct {
 	tp     TracerProvider
 	tracer trace.Tracer
 	prop   propagation.TextMapPropagator
-	name   string
 }
 
 func (p *provider) Tracer() trace.Tracer {
@@ -62,14 +59,6 @@ func (p *provider) Tracer() trace.Tracer {
 }
 
 func (p *provider) Enabled() bool { return p != nil }
-
-func (p *provider) Name() string {
-	if p == nil {
-		return "none"
-	}
-
-	return p.name
-}
 
 // Install publishes this backend as OTEL's process-wide tracer provider and
 // text-map propagator.

@@ -103,20 +103,23 @@ type Config struct {
 // switch it on. Nothing it checks can be valid-while-disabled and invalid
 // while enabled, so this cannot reject a config that works today.
 func (c Config) Validate() error {
-	switch string(c.Exporter) {
-	case "", ExporterOTLPGRPC, ExporterOTLPHTTP:
-	default:
-		return fmt.Errorf("config: tracing.exporter (%v) must be %q or %q", c.Exporter, ExporterOTLPGRPC, ExporterOTLPHTTP)
+	// Against the same table newExporter dispatches on, so the set of names
+	// this accepts and the set it can actually build cannot drift apart. An
+	// empty name means "the default", which is why it is allowed through here.
+	if c.Exporter != "" {
+		if _, ok := exporterFor[string(c.Exporter)]; !ok {
+			return fmt.Errorf("tracing: exporter (%v) must be one of %v", c.Exporter, exporterNames())
+		}
 	}
 
 	if c.SampleRatio != nil {
 		if ratio := float64(*c.SampleRatio); ratio < 0 || ratio > 1 {
-			return fmt.Errorf("config: tracing.sample_ratio (%v) must be between 0 and 1", ratio)
+			return fmt.Errorf("tracing: sample_ratio (%v) must be between 0 and 1", ratio)
 		}
 	}
 
 	if int(c.TimeoutMS) < 0 {
-		return fmt.Errorf("config: tracing.timeout_ms (%v) must not be negative", int(c.TimeoutMS))
+		return fmt.Errorf("tracing: timeout_ms (%v) must not be negative", int(c.TimeoutMS))
 	}
 
 	return nil

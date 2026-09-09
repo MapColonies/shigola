@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -55,7 +56,7 @@ func New(ctx context.Context, cfg Config) (Interface, error) {
 		cfg.ExporterName(), cfg.Service(), cfg.Ratio(),
 	)
 
-	return NewWithProvider(tp, cfg.ExporterName()), nil
+	return NewWithProvider(tp), nil
 }
 
 // newSampler wraps the ratio sampler in a parent-based one.
@@ -100,45 +101,80 @@ func newResource(cfg Config) (*resource.Resource, error) {
 // siblings themselves, and an in-cluster collector is normally configured that
 // way for every service at once. Substituting a shigola-specific default would
 // take that away.
-// The two arms below build the same four options twice. otlptracegrpc.Option
-// and otlptracehttp.Option are unrelated types with no common interface, so
-// factoring the shared shape out would mean either a generic helper per option
-// (four of them, each a one-line closure pair) or reflection — both longer and
-// harder to read than the repetition.
+// exporterFor maps each accepted exporter name to its constructor.
+//
+// One vocabulary, read by both Config.Validate and newExporter. Those switched
+// on the same string separately until MAPCO-11497 review, and newExporter's
+// default branch existed only to catch a name added to one switch and not the
+// other — a hazard a single table cannot have.
+var exporterFor = map[string]func(context.Context, Config) (sdktrace.SpanExporter, error){
+	ExporterOTLPGRPC: newGRPCExporter,
+	ExporterOTLPHTTP: newHTTPExporter,
+}
+
+// exporterNames lists the accepted exporters in a stable order, for error
+// messages. Derived from the table rather than written out, so a new exporter
+// cannot be added without the error message learning about it.
+func exporterNames() []string {
+	names := make([]string, 0, len(exporterFor))
+	for name := range exporterFor {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	return names
+}
+
+// newExporter dials the collector.
 func newExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
-	switch cfg.ExporterName() {
-	case ExporterOTLPGRPC:
-		opts := []otlptracegrpc.Option{otlptracegrpc.WithTimeout(cfg.Timeout())}
-		if cfg.Endpoint != "" {
-			opts = append(opts, otlptracegrpc.WithEndpoint(string(cfg.Endpoint)))
-		}
-		if bool(cfg.Insecure) {
-			opts = append(opts, otlptracegrpc.WithInsecure())
-		}
-		if headers := cfg.HeaderMap(); headers != nil {
-			opts = append(opts, otlptracegrpc.WithHeaders(headers))
-		}
-
-		return otlptracegrpc.New(ctx, opts...)
-
-	case ExporterOTLPHTTP:
-		opts := []otlptracehttp.Option{otlptracehttp.WithTimeout(cfg.Timeout())}
-		if cfg.Endpoint != "" {
-			opts = append(opts, otlptracehttp.WithEndpoint(string(cfg.Endpoint)))
-		}
-		if bool(cfg.Insecure) {
-			opts = append(opts, otlptracehttp.WithInsecure())
-		}
-		if headers := cfg.HeaderMap(); headers != nil {
-			opts = append(opts, otlptracehttp.WithHeaders(headers))
-		}
-
-		return otlptracehttp.New(ctx, opts...)
+	newer, ok := exporterFor[cfg.ExporterName()]
+	if !ok {
+		// Unreachable in practice: New validates first, against this same
+		// table. Reported rather than panicked because an unreachable branch
+		// that becomes reachable should fail at startup, loudly.
+		return nil, fmt.Errorf("tracing: unknown exporter (%v)", cfg.ExporterName())
 	}
 
-	// Unreachable: Validate rejects any other name, and New validates before
-	// it gets here. Reported rather than panicked because a future exporter
-	// added to the switch above's vocabulary and not to this one should fail
-	// at startup, loudly, not take the process down.
-	return nil, fmt.Errorf("tracing: unknown exporter (%v)", cfg.ExporterName())
+	return newer(ctx, cfg)
+}
+
+// The two constructors below build the same four options twice.
+// otlptracegrpc.Option and otlptracehttp.Option are unrelated types with no
+// common interface, so factoring the shared shape out would mean either a
+// generic helper per option — four of them, each a closure pair — or
+// reflection, both longer and harder to read than the repetition.
+//
+// An empty endpoint is passed through rather than defaulted here: the OTLP
+// exporters read OTEL_EXPORTER_OTLP_ENDPOINT and its per-signal and per-header
+// siblings themselves, and an in-cluster collector is normally configured that
+// way for every service at once. Substituting a shigola-specific default would
+// take that away.
+func newGRPCExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
+	opts := []otlptracegrpc.Option{otlptracegrpc.WithTimeout(cfg.Timeout())}
+	if cfg.Endpoint != "" {
+		opts = append(opts, otlptracegrpc.WithEndpoint(string(cfg.Endpoint)))
+	}
+	if bool(cfg.Insecure) {
+		opts = append(opts, otlptracegrpc.WithInsecure())
+	}
+	if headers := cfg.HeaderMap(); headers != nil {
+		opts = append(opts, otlptracegrpc.WithHeaders(headers))
+	}
+
+	return otlptracegrpc.New(ctx, opts...)
+}
+
+func newHTTPExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
+	opts := []otlptracehttp.Option{otlptracehttp.WithTimeout(cfg.Timeout())}
+	if cfg.Endpoint != "" {
+		opts = append(opts, otlptracehttp.WithEndpoint(string(cfg.Endpoint)))
+	}
+	if bool(cfg.Insecure) {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	if headers := cfg.HeaderMap(); headers != nil {
+		opts = append(opts, otlptracehttp.WithHeaders(headers))
+	}
+
+	return otlptracehttp.New(ctx, opts...)
 }

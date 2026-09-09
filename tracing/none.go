@@ -31,8 +31,6 @@ func (Null) Tracer() trace.Tracer { return nullTracer }
 
 func (Null) Enabled() bool { return false }
 
-func (Null) Name() string { return "none" }
-
 // Install deliberately installs nothing.
 //
 // Not even a propagator: with tracing off there is no trace context to inject,

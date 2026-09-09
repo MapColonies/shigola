@@ -47,7 +47,7 @@ func New(t *testing.T) (tracing.Interface, *tracetest.InMemoryExporter) {
 	)
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
-	return tracing.NewWithProvider(tp, "test"), exporter
+	return tracing.NewWithProvider(tp), exporter
 }
 
 // SpansNamed returns every recorded span with the given name.

@@ -77,10 +77,12 @@ type Interface interface {
 	Tracer() trace.Tracer
 
 	// Enabled reports whether this backend records and exports spans.
+	//
+	// Only tests call it today. It stays on the interface because it is the
+	// observable definition of the off state — "the null backend is installed"
+	// is a fact about the wiring, and a caller should be able to ask it
+	// without type-asserting on Null.
 	Enabled() bool
-
-	// Name reports the configured exporter, for startup logging.
-	Name() string
 
 	// Install publishes this backend as OTEL's process-wide tracer provider
 	// and text-map propagator, which is what lets an instrumented client
