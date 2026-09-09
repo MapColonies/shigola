@@ -168,9 +168,9 @@ Extending it is a separate change per client library.
 
 ## Correlating logs with traces
 
-Every log record written while serving a traced request carries that request's
-ids as top-level fields, so a trace in Tempo reaches the log lines it produced
-and a log line reaches its trace (MAPCO-11494):
+Log records written while serving a traced request carry that request's ids as
+top-level fields, so a trace in Tempo reaches the log lines it produced and a
+log line reaches its trace (MAPCO-11494):
 
 ```json
 {"time":"...","level":"ERROR","msg":"cache/multi: tier (redis) get: dial tcp: connection refused",
@@ -181,8 +181,27 @@ and a log line reaches its trace (MAPCO-11494):
 The keys are `internal/log.TraceIDKey` and `SpanIDKey`. `internal/log.Handler`
 adds them from the span context it finds on the context it is handed, so a call
 site correlates exactly when it logs through one of the `*fContext` helpers with
-the request's context — which every log site on the request path that has a
-context now does.
+the request's context.
+
+**Which sites those are.** Every log site on the request path whose signature
+has a context: the layered cache's tier read and promotion failures, the GCS
+backend's per-key lines, pgx's statement warnings and errors, the PostGIS SQL
+debug output, and `server/ogc`'s response and cache failures.
+
+Three ERROR-level sites are reached mid-request and still carry nothing, so an
+uncorrelated line during a request is possible rather than a contradiction:
+
+- `provider.NewTileForGrid` — "tile grid %v has no EPSG code";
+- `tile_t.Extent` — "Unsupported tile SRID" and "Could not generate valid
+  extent for tile", reached from `provider/postgis/util.go`.
+
+Both are exported signatures with no context to take, and `Extent` is on the
+`provider.Tile` interface, so threading one through is an interface change
+rather than a call-site change. Both also report a *grid misconfiguration*,
+which fails identically for every request to that map rather than saying
+anything about one — so what a trace would add is the least here of anywhere.
+(`provider.NewTile` logs the same class of failure but is only reached at
+provider construction, never per request.)
 
 Three properties of this are load-bearing.
 
@@ -213,8 +232,12 @@ Two consequences worth knowing:
   names has already ended.
 - **Lines written outside a request carry nothing.** Startup, configuration,
   shutdown and the pool-level saturation warnings have no request context by
-  definition, and no empty fields are added for them. So does anything logged
+  definition, and no empty fields are added for them. Nor does anything logged
   when `[tracing]` is disabled: there is no span, so there are no ids.
+- **The `stack` field moved.** `ServiceAttrs` is what took the process identity
+  out of an open group, and an ERROR record's stack trace was inside that group
+  too — it is now `stack` at the top level rather than `shigola.stack`. Anything
+  parsing that path needs updating; nothing else about the record changed.
 
 ## Costs when disabled
 
@@ -225,9 +248,21 @@ decorator at all**, rather than one that starts a discarded span per cache read.
 
 Log correlation costs nothing when disabled either, and it is not gated on the
 config: the handler reads the context whether or not tracing is on. With no span
-there is nothing to read, which measures as one context lookup and zero
-allocations — `BenchmarkHandleWithoutATrace` in `internal/log` is within run
-noise of the same handler without the lookup.
+there is nothing to read.
+
+`internal/log`'s three benchmarks are meant to be read together, and are the
+evidence for that:
+
+| Benchmark | What it measures | ns/op | allocs/op |
+|:---|:---|---:|---:|
+| `BenchmarkHandleWithoutTheWrapper` | the base JSON handler alone | 325–375 | 0 |
+| `BenchmarkHandleWithoutATrace` | this package's handler, nothing in the context | 339–345 | 0 |
+| `BenchmarkHandleInATrace` | the same, with ids to add | 557–568 | 2 |
+
+The first two overlap: the level comparison and the context lookup the wrapper
+adds on an untraced record are inside the base handler's own run-to-run spread,
+at no allocations. Re-measure with
+`go test -bench BenchmarkHandle -benchtime 500000x -count 3 ./internal/log/`.
 
 ## When it is not working
 
