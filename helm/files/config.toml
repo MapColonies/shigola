@@ -1,0 +1,145 @@
+[webserver]
+port = ":8080"
+
+{{- if or .Values.cors.enabled .Values.cacheControl.enabled }}
+[webserver.headers]
+{{- if .Values.cors.enabled }}
+Access-Control-Allow-Origin = "{{ .Values.cors.allowedOrigin }}"
+Access-Control-Allow-Methods = "{{ .Values.cors.allowedMethods }}"
+Access-Control-Allow-Headers = "{{ .Values.cors.allowedHeaders }}"
+{{- end }}
+{{- if .Values.cacheControl.enabled }}
+Cache-Control = "{{ .Values.cacheControl.value }}"
+{{- end }}
+{{- end }}
+
+[cache]
+{{- if and .Values.cache.redis.enabled .Values.cache.s3.enabled }}
+type           = "multi"
+promote_on_hit = true
+
+  [[cache.layers]]
+  type = "redis"
+  name = "hot"
+  uri  = "{{ .Values.cache.redis.uri }}"
+  {{- if .Values.cache.redis.password }}
+  password = "${REDIS_PASSWORD}"
+  {{- end }}
+  ttl  = {{ .Values.cache.redis.ttl }}
+
+  [[cache.layers]]
+  type                  = "s3"
+  name                  = "s3"
+  bucket                = "{{ .Values.cache.s3.bucket }}"
+  {{- if .Values.cache.s3.endpoint }}
+  endpoint              = "{{ .Values.cache.s3.endpoint }}"
+  {{- end }}
+  region                = "{{ .Values.cache.s3.region }}"
+  force_path_style      = {{ .Values.cache.s3.forcePathStyle }}
+  aws_access_key_id     = "${S3_ACCESS_KEY}"
+  aws_secret_access_key = "${S3_SECRET_KEY}"
+{{- else if .Values.cache.redis.enabled }}
+type = "redis"
+uri  = "{{ .Values.cache.redis.uri }}"
+{{- if .Values.cache.redis.password }}
+password = "${REDIS_PASSWORD}"
+{{- end }}
+ttl  = {{ .Values.cache.redis.ttl }}
+{{- else if .Values.cache.s3.enabled }}
+type                  = "s3"
+bucket                = "{{ .Values.cache.s3.bucket }}"
+{{- if .Values.cache.s3.endpoint }}
+endpoint              = "{{ .Values.cache.s3.endpoint }}"
+{{- end }}
+region                = "{{ .Values.cache.s3.region }}"
+force_path_style      = {{ .Values.cache.s3.forcePathStyle }}
+aws_access_key_id     = "${S3_ACCESS_KEY}"
+aws_secret_access_key = "${S3_SECRET_KEY}"
+{{- else }}
+type     = "file"
+basepath = "/tmp/shigola-cache"
+{{- end }}
+
+{{- if .Values.database.enabled }}
+{{- $needsTransform := ne (toString .Values.database.srid) "3857" }}
+{{- $geomExpr := .Values.database.geometryColumn }}
+{{- $bboxExpr := "!BBOX!" }}
+{{- if $needsTransform }}
+{{- $geomExpr = printf "ST_Transform(%s, 3857)" .Values.database.geometryColumn }}
+{{- $bboxExpr = "ST_Transform(!BBOX!, 3857)" }}
+{{- end }}
+
+[[providers]]
+name = "database_postgis"
+type = "mvt_postgis"
+uri = "postgres://${DATABASE_PGUSER}:${DATABASE_PGPASSWORD}@${DATABASE_PGHOST}:${DATABASE_PGPORT}/${DATABASE_PGDATABASE}"
+srid = {{ .Values.database.srid }}
+{{- if .Values.database.ssl.enabled }}
+ssl_mode = "{{ .Values.database.ssl.mode }}"
+{{- if .Values.database.ssl.cert }}
+ssl_cert = "{{ .Values.database.ssl.cert }}"
+{{- end }}
+{{- if .Values.database.ssl.key }}
+ssl_key = "{{ .Values.database.ssl.key }}"
+{{- end }}
+{{- end }}
+
+  [[providers.layers]]
+  name = "{{ .Values.database.table }}"
+  id_fieldname = "{{ .Values.database.idColumn }}"
+  geometry_type = "{{ .Values.database.geometryType }}"
+  sql = "SELECT ST_AsMVTGeom({{ $geomExpr }}, {{ $bboxExpr }}) AS geom, {{ .Values.database.idColumn }}{{ range .Values.database.extraColumns }}, {{ . }}{{ end }} FROM {{ .Values.database.schema }}.{{ .Values.database.table }} WHERE {{ .Values.database.geometryColumn }} && !BBOX!"
+{{- end }}
+
+{{- if .Values.osm.enabled }}
+
+[[providers]]
+name = "osm_postgis"
+type = "mvt_postgis"
+uri = "postgres://${OSM_PGUSER}:${OSM_PGPASSWORD}@${OSM_PGHOST}:${OSM_PGPORT}/${OSM_PGDATABASE}"
+srid = 3857
+{{- if .Values.osm.ssl.enabled }}
+ssl_mode = "{{ .Values.osm.ssl.mode }}"
+{{- if .Values.osm.ssl.cert }}
+ssl_cert = "{{ .Values.osm.ssl.cert }}"
+{{- end }}
+{{- if .Values.osm.ssl.key }}
+ssl_key = "{{ .Values.osm.ssl.key }}"
+{{- end }}
+{{- end }}
+
+  # Placeholder only — this chart does not ship a full OSM tile schema.
+  # Replace this layer (and the one under [[maps]] below) with the actual
+  # tables/columns produced by whatever OSM import you run against this
+  # database (osm2pgsql, imposm, etc).
+  [[providers.layers]]
+  name = "example"
+  id_fieldname = "id"
+  geometry_type = "polygon"
+  sql = "SELECT id, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.example WHERE geom && !BBOX!"
+{{- end }}
+
+{{- if .Values.database.enabled }}
+
+[[maps]]
+name = "database"
+attribution = "{{ .Values.database.attribution }}"
+
+  [[maps.layers]]
+  name = "{{ .Values.database.table }}"
+  provider_layer = "database_postgis.{{ .Values.database.table }}"
+  min_zoom = {{ .Values.database.minZoom }}
+  max_zoom = {{ .Values.database.maxZoom }}
+{{- end }}
+
+{{- if .Values.osm.enabled }}
+
+[[maps]]
+name = "osm"
+tile_buffer = 64
+
+  [[maps.layers]]
+  provider_layer = "osm_postgis.example"
+  min_zoom = 0
+  max_zoom = 20
+{{- end }}
