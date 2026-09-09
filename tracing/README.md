@@ -11,6 +11,12 @@ publishes exactly the metric families it published before. `atlas`'s
 `TestMetricsAreUnaffectedByTracing` asserts that rather than leaving it to be
 believed.
 
+What tracing does add to both other signals is its ids: on log records, and as
+exemplars on the duration histograms — see
+[Correlating logs with traces](#correlating-logs-with-traces) and
+[Correlating metrics with traces](#correlating-metrics-with-traces). Neither
+adds a metric family or a log field outside a trace.
+
 ## What tracing answers that metrics cannot
 
 A histogram can say a tile took 300ms. It cannot say whether that was the
@@ -238,6 +244,81 @@ Two consequences worth knowing:
   out of an open group, and an ERROR record's stack trace was inside that group
   too — it is now `stack` at the top level rather than `shigola.stack`. Anything
   parsing that path needs updating; nothing else about the record changed.
+
+## Correlating metrics with traces
+
+Cache, per-tier and HTTP duration observations carry the active trace and span
+as a **Prometheus exemplar**, so a slow histogram bucket in Grafana links
+straight to the trace that landed in it (MAPCO-11496):
+
+```
+shigola_cache_tier_duration_seconds_bucket{tier="durable",sub_command="get",le="0.5"} 3 # {trace_id="4bf92f3577b34da6a3ce929d0e0e4736",span_id="00f067aa0ba902b7"} 0.41 1.7e+09
+```
+
+The labels are `internal/log.TraceIDKey` and `SpanIDKey` — the same constants the
+log records carry, deliberately. Logs-to-traces and metrics-to-traces are wired
+up separately in Grafana (a derived field on the Loki datasource, an exemplar
+link on the Prometheus one) and **both fail silently on a wrong name**, so one
+pair of constants is what stops a rename from fixing one surface and breaking
+the other.
+
+Which observations carry one: `shigola_cache_duration_seconds`,
+`shigola_cache_tier_duration_seconds` and `shigola_api_duration_seconds`. The
+size histograms and the counters do not — the ticket asked for the duration
+families, and an exemplar is worth having where there is a spike to click.
+
+**The exposition format is not optional.** OpenMetrics is the only format that
+encodes exemplars; the classic Prometheus text format has no syntax for them and
+drops them without a word. The metrics route therefore negotiates OpenMetrics
+(`observability/prometheus.metricsHandler`), which Prometheus offers in its own
+scrape `Accept` header. The vendored `expfmt` negotiates version `0.0.1` only —
+enough, because Prometheus offers both `1.0.0` and `0.0.1`, but a hand-rolled
+scrape offering `1.0.0` alone silently gets the classic format and no exemplars.
+
+Storing them is a server-side switch as well: Prometheus needs
+`--enable-feature=exemplar-storage`, and Mimir its equivalent, or the exemplars
+are scraped and discarded.
+
+Three properties of this are load-bearing.
+
+**Sampling *is* consulted — the opposite of the log records above.** An exemplar
+is only ever a link, and prometheus keeps one per bucket, overwritten by the next
+observation to land there. So the stored exemplar is almost always the most
+recent observation, and at `sample_ratio = 0.01` the most recent observation is
+almost never sampled: unfiltered, clicking a bucket would open nothing roughly
+99 times out of 100. A log line's trace id keeps its consolation use when the
+trace was dropped — it still groups that request's lines — and an exemplar has
+none, which is why the same span context is filtered here and not there.
+
+**The span, not just the trace.** The observation is made *inside* the
+operation's span because the tracing wrappers are installed outside the metric
+ones at both seams — `atlas.instrumentCache` and `server.NewRouter`, each with a
+comment saying so. A slow bucket on the per-tier histogram therefore names the
+tier read that was slow, not the request as a whole. Inverting either order
+leaves the span tree unchanged, so it is pinned by the exemplar instead:
+`atlas.TestTierExemplarNamesTheTierSpan` and
+`server.TestRequestExemplarNamesTheRequestSpan` both fail on it, and say which
+way round it went wrong.
+
+**Nothing is attached outside a trace.** `exemplarFrom` returns nil, which is
+the client's own "no exemplar" signal, so an untraced observation is recorded
+exactly as a plain `Observe` would record it — no empty label, nothing for the
+exposition to carry. The label set is 63 of the 128 runes the client allows;
+past that limit `ObserveWithExemplar` panics rather than returning an error,
+which `TestExemplarFitsTheRuneLimit` guards by making a real observation.
+
+Two consequences worth knowing:
+
+- **`le` label values changed.** Under OpenMetrics a bucket boundary that would
+  otherwise look like an integer is written with a trailing `.0`, and a label
+  value is part of a series' identity — so `le="1"` is now `le="1.0"`. The
+  affected boundaries are 1, 2.5 and 5 on the cache families and 1, 5 and 10 on
+  the HTTP one. Anything pinning an exact `le` — a recording rule, a panel
+  showing one bucket — has to be checked against the new spelling. This was the
+  price of exemplars being scrapeable at all.
+- **Pushed metrics carry no exemplars.** A deployment using `push_url` pushes
+  through the classic text format to a Pushgateway, which has no notion of
+  exemplars. Everything above applies to scraped deployments only.
 
 ## Costs when disabled
 
