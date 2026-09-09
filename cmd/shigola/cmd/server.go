@@ -16,6 +16,7 @@ import (
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/server"
+	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/cobra"
 )
 
@@ -34,6 +35,13 @@ var serverCmd = &cobra.Command{
 		gdcmd.New()
 		gdcmd.OnComplete(provider.Cleanup)
 		gdcmd.OnComplete(observability.Cleanup)
+		// Registered here, between the observability cleanup and the write-pool
+		// drain further down, because gdcmd.OnComplete runs in *reverse*
+		// registration order and the flush has to happen after the drain: a
+		// drained write emits its own tier spans, and flushing before it would
+		// export a trace that stops just short of the writes it was opened to
+		// explain.
+		gdcmd.OnComplete(func() { tracing.Flush(atlas.Tracing()) })
 
 		// check config for server port setting
 		// if you set the port via the command line it will override the port setting in the config

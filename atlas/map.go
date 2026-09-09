@@ -10,8 +10,10 @@ import (
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/geom"
 	"github.com/go-spatial/geom/slippy"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // NewWebMercatorMap creates a new map with the necessary default values
@@ -102,6 +104,21 @@ type Map struct {
 	mvtProvider     provider.MVTTiler
 
 	observer observability.Interface
+
+	// tracer is the tracing backend spans are started from. Populated by
+	// Atlas.Map and Atlas.AllMaps when the Map is handed out, so a Map built
+	// as a literal — every one in this package's tests — simply records
+	// nothing. Read it through tracing() rather than directly.
+	tracer tracing.Interface
+}
+
+// tracing returns the backend to start spans from, never nil.
+func (m Map) tracing() tracing.Interface {
+	if m.tracer == nil {
+		return tracing.NullTracer
+	}
+
+	return m.tracer
 }
 
 // TileGrids returns every TileMatrixSet this map may be requested in.
@@ -211,6 +228,14 @@ func (m Map) FilterLayersByName(names ...string) Map {
 	return m
 }
 
+// encodeMVTProviderTile asks the provider for the tile's encoded bytes.
+//
+// The span around the provider call starts here, at the atlas layer, rather
+// than inside provider/: one coarse span per query needs no provider package
+// to know about tracing at all, and the providers are the part of this tree
+// most likely to gain or lose members. Per-layer or per-statement granularity
+// would have to live in the provider and can be added there if these spans
+// prove too coarse to attribute a slow tile (MAPCO-11497).
 func (m Map) encodeMVTProviderTile(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Tile, params provider.Params) ([]byte, error) {
 	// get the list of our layers
 	ptile := provider.NewTileForGrid(tile.Z, tile.X, tile.Y, uint(m.TileBuffer), grid)
@@ -222,8 +247,17 @@ func (m Map) encodeMVTProviderTile(ctx context.Context, grid *tms.TileMatrixSet,
 			MVTName: m.Layers[i].MVTName(),
 		}
 	}
-	return m.mvtProvider.MVTForLayers(ctx, ptile, params, layers)
 
+	ctx, span := m.tracing().Tracer().Start(ctx, tracing.SpanProviderQuery, trace.WithAttributes(
+		tracing.AttrProviderName.String(m.mvtProviderName),
+		tracing.AttrLayerCount.Int(len(layers)),
+	))
+	defer span.End()
+
+	body, err := m.mvtProvider.MVTForLayers(ctx, ptile, params, layers)
+	tracing.RecordError(ctx, span, err)
+
+	return body, err
 }
 
 // Encode will encode the given tile, cut in grid, into mvt format.
@@ -239,12 +273,31 @@ func (m Map) Encode(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Ti
 		return nil, ErrNilGrid
 	}
 
+	// Everything a slow tile could be blamed on is inside this span: the
+	// provider query as a child, and the gzip as the part of the span left
+	// over. Which is the point — the counters can say a tile took 300ms and
+	// cannot say whether that was the database or the compression.
+	ctx, span := m.tracing().Tracer().Start(ctx, tracing.SpanEncode, trace.WithAttributes(
+		tracing.AttrMapName.String(m.Name),
+		tracing.AttrTileMatrixSet.String(grid.ID()),
+		tracing.AttrTileZ.Int(int(tile.Z)),
+		tracing.AttrTileX.Int64(int64(tile.X)),
+		tracing.AttrTileY.Int64(int64(tile.Y)),
+	))
+	defer span.End()
+
 	if !m.HasMVTProvider() {
-		return nil, ErrNoMVTProvider{Map: m.Name}
+		err := ErrNoMVTProvider{Map: m.Name}
+		tracing.RecordError(ctx, span, err)
+
+		return nil, err
 	}
 
 	tileBytes, err := m.encodeMVTProviderTile(ctx, grid, tile, params)
 	if err != nil {
+		// Not recorded again: encodeMVTProviderTile already put it on the
+		// child span, and repeating it here would show one failure twice in
+		// the trace and count it twice in any error-rate query over spans.
 		return nil, err
 	}
 
@@ -255,11 +308,15 @@ func (m Map) Encode(ctx context.Context, grid *tms.TileMatrixSet, tile slippy.Ti
 	w := gzip.NewWriter(&gzipBuf)
 	_, err = w.Write(tileBytes)
 	if err != nil {
+		tracing.RecordError(ctx, span, err)
+
 		return nil, err
 	}
 
 	// flush and close the writer
 	if err = w.Close(); err != nil {
+		tracing.RecordError(ctx, span, err)
+
 		return nil, err
 	}
 

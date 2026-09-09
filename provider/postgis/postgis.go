@@ -20,6 +20,7 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
+	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/geom"
 	pgxuuid "github.com/jackc/pgx-gofrs-uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/tracelog"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const Name = "postgis"
@@ -128,6 +132,54 @@ type Provider struct {
 	// Collectors for Query times
 	mvtProviderQueryHistogramSeconds *prometheus.HistogramVec
 	queryHistogramSeconds            *prometheus.HistogramVec
+
+	// dbAttrs describes this provider's database server for a span: host,
+	// port, database name and the system name. Built once at construction
+	// because pgxpool.Pool.Config deep-copies, so reading it per query would
+	// allocate a whole connection config to fetch three strings — and because
+	// none of it changes.
+	//
+	// Never appended to in place. It is shared by every concurrent query on
+	// this provider, so a call that needs more attributes passes them
+	// separately rather than growing this slice.
+	dbAttrs []attribute.KeyValue
+}
+
+// startQuerySpan opens the span covering one ST_AsMVT round trip, so that the
+// database's own time is separable from the provider's (MAPCO-11620).
+//
+// The tracer comes from the span already in ctx, not from a wired backend and
+// not from an OTEL global. The atlas started provider.MVTForLayers, so its
+// tracer provider is the right one to hang a child off; a request that is not
+// being traced yields a non-recording span; and the provider needs to know
+// nothing about how tracing is configured, which is what keeps this out of its
+// constructor and out of its config.
+func (p Provider) startQuerySpan(ctx context.Context, sql string) (context.Context, trace.Span) {
+	ctx, span := trace.SpanFromContext(ctx).
+		TracerProvider().
+		Tracer(tracing.ScopeName).
+		Start(ctx, tracing.SpanPostgisQuery,
+			// A database call, which is what makes Tempo and Grafana render
+			// it as one rather than as an internal step.
+			trace.WithSpanKind(trace.SpanKindClient),
+			// Cheap and constant, so they go on at Start where a sampler can
+			// see them.
+			trace.WithAttributes(p.dbAttrs...),
+		)
+
+	// The statement is the expensive attribute — the whole multi-layer query
+	// with its tokens substituted — so it is built only for a span that will
+	// be kept. Head sampling drops most of them.
+	if span.IsRecording() {
+		text, truncated := tracing.QueryText(sql)
+
+		span.SetAttributes(semconv.DBQueryText(text))
+		if truncated {
+			span.SetAttributes(tracing.AttrQueryTruncated.Bool(true))
+		}
+	}
+
+	return ctx, span
 }
 
 func (p *Provider) Collectors(
@@ -465,6 +517,13 @@ func CreateProvider(
 		srid:   uint64(srid),
 		config: *dbconfig,
 		name:   name,
+		// Host, port and database only. A ConnConfig also carries the user and
+		// the password, and neither belongs anywhere near a span.
+		dbAttrs: tracing.DBServerAttrs(
+			dbconfig.ConnConfig.Host,
+			int(dbconfig.ConnConfig.Port),
+			dbconfig.ConnConfig.Database,
+		),
 	}
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), &p.config)
@@ -984,8 +1043,13 @@ func (p Provider) MVTForLayers(
 		log.Debugf("%s:%s: %v", EnvSQLDebugName, EnvSQLDebugExecute, fsql)
 	}
 	{
+		// The span opens before the clock starts, so the histogram measures
+		// exactly what it measured before this span existed: the round trip
+		// and the scan, with none of the instrumentation around it.
+		queryCtx, span := p.startQuerySpan(ctx, fsql)
+
 		now := time.Now()
-		err = p.pool.QueryRow(ctx, fsql, args...).Scan(&data)
+		err = p.pool.QueryRow(queryCtx, fsql, args...).Scan(&data)
 		if p.mvtProviderQueryHistogramSeconds != nil {
 			z, _, _ := tile.ZXY()
 			lbls := prometheus.Labels{
@@ -994,6 +1058,9 @@ func (p Provider) MVTForLayers(
 			}
 			p.mvtProviderQueryHistogramSeconds.With(lbls).Observe(time.Since(now).Seconds())
 		}
+
+		tracing.RecordError(queryCtx, span, err)
+		span.End()
 	}
 
 	if debugExecuteSQL {

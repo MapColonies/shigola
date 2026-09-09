@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -118,5 +119,24 @@ func initConfig(configFile string, cacheRequired bool, logLevel string) (err err
 		return err
 	}
 	atlas.SetObservability(observer)
+
+	// Tracing after the observer, though the order does not matter: atlas
+	// re-derives cache instrumentation from the original cache on either
+	// setter, which is what keeps the two independently configurable.
+	//
+	// context.Background rather than a request or startup context: the OTLP
+	// exporters do not dial here — the connection is established lazily on the
+	// first export — so this context bounds nothing, and giving it a deadline
+	// would suggest otherwise.
+	tracer, err := register.Tracing(context.Background(), conf.Tracing)
+	if err != nil {
+		return err
+	}
+	// Publishes it as OTEL's process-wide provider and propagator, which is
+	// what lets an instrumented client library inject this service's trace
+	// context into an outgoing call without being handed either.
+	tracer.Install()
+	atlas.SetTracing(tracer)
+
 	return nil
 }
