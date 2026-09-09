@@ -97,6 +97,20 @@ func StringAttr(span tracetest.SpanStub, key attribute.Key) string {
 	return ""
 }
 
+// BoolAttr reads one boolean attribute off a span, or false if it carries none.
+//
+// False for absent as well as for false, which is fine for every flag shigola
+// records: they are set only when true.
+func BoolAttr(span tracetest.SpanStub, key attribute.Key) bool {
+	for _, kv := range span.Attributes {
+		if kv.Key == key {
+			return kv.Value.AsBool()
+		}
+	}
+
+	return false
+}
+
 // Int64Attr reads one integer attribute off a span, or -1 if it carries none.
 //
 // -1 rather than 0 because 0 is a legitimate value for every integer attribute
