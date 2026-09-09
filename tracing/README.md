@@ -104,12 +104,26 @@ On startup the backend is published as OTEL's process-wide tracer provider and
 text-map propagator. That is what makes an OTEL-instrumented client inject this
 service's trace context into an outgoing call without further wiring.
 
-**Not yet instrumented:** the outgoing calls shigola itself makes — PostGIS
-queries over pgx, and the S3, GCS and Azure Blob cache tiers — do not currently
-inject trace context or emit client spans of their own. Their latency is visible
-as the duration of the `provider.MVTForLayers` and `cache.tier.*` spans that
-contain them, but a trace does not continue into the database or the object
-store. Adding that is a separate change per client library.
+**What actually carries it.** Installing the global propagator is enough for any
+client library that reads it, and shigola's outgoing calls divide on whether
+theirs does:
+
+- **GCS cache** — carries it. `storage.NewClient` is built on
+  `google.golang.org/api`'s transport, which wraps itself in
+  `otelhttp.NewTransport`; that reads OTEL's globals, so once tracing is
+  installed GCS reads and writes inject `traceparent` and appear as client spans
+  under their `cache.tier.*` parent. It reads the global *meter* provider too,
+  which shigola leaves as a no-op, so this adds no metrics.
+- **PostGIS** — does not. pgx is configured with a `tracelog.TraceLog`, which
+  logs statements; it is not an OTEL tracer.
+- **S3 cache** — does not. It is on aws-sdk-go v1, which has no OTEL hook.
+- **Azure Blob cache** — does not. The Azure SDK has its own tracing
+  abstraction rather than OTEL's.
+
+For the three that do not, the call's latency is still visible as the duration of
+the `provider.MVTForLayers` or `cache.tier.*` span containing it — but the trace
+stops there rather than continuing into the database or the object store.
+Extending it is a separate change per client library.
 
 ## Costs when disabled
 
