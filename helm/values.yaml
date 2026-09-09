@@ -3,6 +3,14 @@ global:
     dockerRegistryUrl: ''
     imagePullSecretName: ''
     flavor: kubernetes
+  mclabels:
+    environment: development
+
+mclabels: &mclabels
+  owner: vector
+  partOf: vector-tiles
+  component: backend
+  
 
 enabled: true
 replicaCount: 1
@@ -43,9 +51,14 @@ config:
   key: config.toml
 
 cors:
+  enabled: true
   allowedOrigin: '*'
   allowedMethods: 'GET, OPTIONS'
   allowedHeaders: '*'
+
+cacheControl:
+  enabled: true
+  value: 'public, max-age=3600'
 
 database:
   enabled: true
@@ -57,7 +70,10 @@ database:
     password: ''
     passwordSecret:
       name: ''
-      key: password
+  ssl:
+    mode: 'prefer'
+    cert: ''
+    key: ''
   srid: 3857
   schema: public
   table:
@@ -79,7 +95,10 @@ osm:
     password: password
     passwordSecret:
       name: ''
-      key: password
+  ssl:
+    mode: 'prefer'
+    cert: ''
+    key: ''
 
 cache:
   redis:
@@ -88,7 +107,6 @@ cache:
     password: ''
     passwordSecret:
       name: ''
-      key: password
     ttl: 3600
   s3:
     enabled: false
@@ -100,8 +118,6 @@ cache:
     secretAccessKey: ''
     credentialsSecret:
       name: ''
-      accessKeyIdKey: access-key-id
-      secretAccessKeyKey: secret-access-key
 
 resources:
   limits:
@@ -115,6 +131,7 @@ route:
   enabled: false
   path: /
   host: ''
+  disableCookies: true
   timeout:
     enabled: false
     duration: 60s

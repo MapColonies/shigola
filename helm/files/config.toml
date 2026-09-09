@@ -1,10 +1,17 @@
 [webserver]
 port = ":8080"
 
+{{- if or .Values.cors.enabled .Values.cacheControl.enabled }}
 [webserver.headers]
+{{- if .Values.cors.enabled }}
 Access-Control-Allow-Origin = "{{ .Values.cors.allowedOrigin }}"
 Access-Control-Allow-Methods = "{{ .Values.cors.allowedMethods }}"
 Access-Control-Allow-Headers = "{{ .Values.cors.allowedHeaders }}"
+{{- end }}
+{{- if .Values.cacheControl.enabled }}
+Cache-Control = "{{ .Values.cacheControl.value }}"
+{{- end }}
+{{- end }}
 
 [cache]
 {{- if and .Values.cache.redis.enabled .Values.cache.s3.enabled }}
@@ -67,6 +74,13 @@ name = "database_postgis"
 type = "mvt_postgis"
 uri = "postgres://${DATABASE_PGUSER}:${DATABASE_PGPASSWORD}@${DATABASE_PGHOST}:${DATABASE_PGPORT}/${DATABASE_PGDATABASE}"
 srid = {{ .Values.database.srid }}
+ssl_mode = "{{ .Values.database.ssl.mode }}"
+{{- if .Values.database.ssl.cert }}
+ssl_cert = "{{ .Values.database.ssl.cert }}"
+{{- end }}
+{{- if .Values.database.ssl.key }}
+ssl_key = "{{ .Values.database.ssl.key }}"
+{{- end }}
 
   [[providers.layers]]
   name = "{{ .Values.database.table }}"
@@ -82,413 +96,23 @@ name = "osm_postgis"
 type = "mvt_postgis"
 uri = "postgres://${OSM_PGUSER}:${OSM_PGPASSWORD}@${OSM_PGHOST}:${OSM_PGPORT}/${OSM_PGDATABASE}"
 srid = 3857
+ssl_mode = "{{ .Values.osm.ssl.mode }}"
+{{- if .Values.osm.ssl.cert }}
+ssl_cert = "{{ .Values.osm.ssl.cert }}"
+{{- end }}
+{{- if .Values.osm.ssl.key }}
+ssl_key = "{{ .Values.osm.ssl.key }}"
+{{- end }}
 
+  # Placeholder only — this chart does not ship a full OSM tile schema.
+  # Replace this layer (and the one under [[maps]] below) with the actual
+  # tables/columns produced by whatever OSM import you run against this
+  # database (osm2pgsql, imposm, etc).
   [[providers.layers]]
-  name = "ocean"
+  name = "example"
   id_fieldname = "id"
   geometry_type = "polygon"
-  sql = """
-SELECT
-    id,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.ocean
-WHERE geom && !BBOX!
-"""
-
-  # NOTE on id columns: this schema (as actually produced by the init-db
-  # image in use) names the feature-id column differently per table —
-  # area_id for merged/area features, way_id for single-way features,
-  # node_id for single-node features, or a composite osm_type+osm_id when a
-  # feature can come from either. `boundaries` has no id column at all.
-  # Every layer below aliases its real id column `AS id` so id_fieldname can
-  # stay a uniform "id" everywhere, rather than varying id_fieldname per
-  # layer. Verified against the live schema, not assumed from upstream
-  # tegola-osm's config (which was written against an older/different
-  # version that used a plain `id` column throughout).
-
-  [[providers.layers]]
-  name = "land"
-  id_fieldname = "id"
-  geometry_type = "multipolygon"
-  sql = """
-SELECT
-    area_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.land
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "water_polygons"
-  id_fieldname = "id"
-  geometry_type = "multipolygon"
-  sql = """
-SELECT
-    area_id AS id,
-    kind,
-    way_area,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.water_polygons
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "water_lines"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    tunnel,
-    bridge,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.water_lines
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "boundaries"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    COALESCE(way_ids[1], relation_ids[1], 0) AS id,
-    admin_level,
-    maritime,
-    disputed,
-    false AS coastline,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.boundaries
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "boundary_labels"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    relation_id AS id,
-    name,
-    name_he,
-    name_en,
-    admin_level,
-    way_area,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.boundary_labels
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "addresses"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    osm_id AS id,
-    housename,
-    housenumber,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.addresses
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "aerialways"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.aerialways
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "bridges"
-  id_fieldname = "id"
-  geometry_type = "polygon"
-  sql = """
-SELECT
-    area_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.bridges
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "buildings"
-  id_fieldname = "id"
-  geometry_type = "polygon"
-  sql = """
-SELECT
-    area_id AS id,
-    NULL::text AS amenity,
-    NULL::text AS name,
-    NULL::text AS name_de,
-    NULL::text AS name_en,
-    0 AS dummy,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.buildings
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "dam_lines"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.dam_lines
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "dam_polygons"
-  id_fieldname = "id"
-  geometry_type = "polygon"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.dam_polygons
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "ferries"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.ferries
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "pier_lines"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.pier_lines
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "pier_polygons"
-  id_fieldname = "id"
-  geometry_type = "polygon"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.pier_polygons
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "place_labels"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    node_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    population,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.place_labels
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "pois"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    osm_id AS id,
-    name,
-    name_he,
-    name_en,
-    amenity,
-    leisure,
-    tourism,
-    shop,
-    man_made,
-    historic,
-    emergency,
-    highway,
-    office,
-    cuisine,
-    sport,
-    vending,
-    information,
-    "tower:type",
-    religion,
-    denomination,
-    "recycling:glass_bottles",
-    "recycling:paper",
-    "recycling:clothes",
-    "recycling:scrap_metal",
-    atm,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.pois
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "public_transport"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    osm_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    NULL::text AS station,
-    NULL::text AS iata,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.public_transport
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "sites"
-  id_fieldname = "id"
-  geometry_type = "multipolygon"
-  sql = """
-SELECT
-    area_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    NULL::text AS amenity,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.sites
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "street_labels"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    ref,
-    ref_rows,
-    ref_cols,
-    false AS tunnel,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.street_labels
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
-
-  [[providers.layers]]
-  name = "street_labels_points"
-  id_fieldname = "id"
-  geometry_type = "point"
-  sql = """
-SELECT
-    node_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    ref,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.streets_labels_points
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "street_polygons"
-  id_fieldname = "id"
-  geometry_type = "polygon"
-  sql = """
-SELECT
-    way_id AS id,
-    kind,
-    rail,
-    tunnel,
-    bridge,
-    surface,
-    NULL::text AS service,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.street_polygons
-WHERE geom && !BBOX!
-"""
-
-  [[providers.layers]]
-  name = "streets"
-  id_fieldname = "id"
-  geometry_type = "linestring"
-  sql = """
-SELECT
-    way_id AS id,
-    name,
-    name_he,
-    name_en,
-    kind,
-    link,
-    rail,
-    tunnel,
-    bridge,
-    oneway,
-    oneway_reverse,
-    tracktype,
-    surface,
-    service,
-    bicycle,
-    horse,
-    ref,
-    ref_rows,
-    ref_cols,
-    ST_AsMVTGeom(geom, !BBOX!) AS geom
-FROM public.streets
-WHERE geom && !BBOX!
-  AND minzoom <= !ZOOM!
-"""
+  sql = "SELECT id, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.example WHERE geom && !BBOX!"
 {{- end }}
 
 {{- if .Values.database.enabled }}
@@ -510,118 +134,8 @@ attribution = "{{ .Values.database.attribution }}"
 name = "osm"
 tile_buffer = 64
 
-[[maps.layers]]
-provider_layer = "osm_postgis.ocean"
-min_zoom = 0
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.land"
-min_zoom = 7
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.water_polygons"
-min_zoom = 4
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.water_lines"
-min_zoom = 9
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.boundaries"
-min_zoom = 0
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.boundary_labels"
-min_zoom = 2
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.addresses"
-min_zoom = 14
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.aerialways"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.bridges"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.buildings"
-min_zoom = 14
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.dam_lines"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.dam_polygons"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.ferries"
-min_zoom = 10
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.pier_lines"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.pier_polygons"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.place_labels"
-min_zoom = 4
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.pois"
-min_zoom = 14
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.public_transport"
-min_zoom = 11
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.sites"
-min_zoom = 14
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.street_labels"
-min_zoom = 10
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.street_labels_points"
-min_zoom = 12
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.street_polygons"
-min_zoom = 11
-max_zoom = 20
-
-[[maps.layers]]
-provider_layer = "osm_postgis.streets"
-min_zoom = 5
-max_zoom = 20
+  [[maps.layers]]
+  provider_layer = "osm_postgis.example"
+  min_zoom = 0
+  max_zoom = 20
 {{- end }}
