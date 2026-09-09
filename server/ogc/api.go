@@ -106,6 +106,6 @@ func (s *Service) HandleAPI(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(body); err != nil {
-		logf("ogc: writing the API definition: %v", err)
+		logf(r, "ogc: writing the API definition: %v", err)
 	}
 }

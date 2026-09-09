@@ -381,8 +381,8 @@ func (l *LoggerAdapter) Log(
 	}
 
 	if level == tracelog.LogLevelError {
-		log.Errorf("PostGIS(pgx): %s, %#v", msg, data)
+		log.ErrorfContext(ctx, "PostGIS(pgx): %s, %#v", msg, data)
 	} else {
-		log.Warnf("PostGIS(pgx): %s, %#v", msg, data)
+		log.WarnfContext(ctx, "PostGIS(pgx): %s, %#v", msg, data)
 	}
 }

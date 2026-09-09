@@ -282,7 +282,7 @@ func (c *Cache) Get(ctx context.Context, key *cache.Key) ([]byte, bool, error) {
 		if err != nil {
 			// Counted by the per-tier observability wrapper, which sits outside
 			// this call and can see the error; the chain only logs.
-			log.Errorf("cache/multi: tier (%v) get: %v", c.original[i].Name, err)
+			log.ErrorfContext(ctx, "cache/multi: tier (%v) get: %v", c.original[i].Name, err)
 			continue
 		}
 		if !hit {
@@ -319,7 +319,7 @@ func (c *Cache) promote(ctx context.Context, hitAt int, key *cache.Key, val []by
 
 		write := func(ctx context.Context) error {
 			if err := tier.Set(ctx, key, val); err != nil {
-				log.Errorf("cache/multi: promoting into tier (%v): %v", name, err)
+				log.ErrorfContext(ctx, "cache/multi: promoting into tier (%v): %v", name, err)
 				return err
 			}
 

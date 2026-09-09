@@ -149,7 +149,7 @@ func (gcsCache *GCSCache) Get(ctx context.Context, key *cache.Key) ([]byte, bool
 		return nil, false, err
 	}
 
-	log.Infof("GET %s: %d bytes\n", k, len(val))
+	log.InfofContext(ctx, "GET %s: %d bytes\n", k, len(val))
 
 	return val, true, nil
 }
@@ -171,7 +171,7 @@ func (gcsCache *GCSCache) Set(ctx context.Context, key *cache.Key, val []byte) e
 		return err
 	}
 
-	log.Infof("SET %s: %d bytes\n", k, len(val))
+	log.InfofContext(ctx, "SET %s: %d bytes\n", k, len(val))
 
 	return nil
 }
@@ -184,7 +184,7 @@ func (gcsCache *GCSCache) Purge(ctx context.Context, key *cache.Key) error {
 		return err
 	}
 
-	log.Infof("PURGE %s\n", k)
+	log.InfofContext(ctx, "PURGE %s\n", k)
 
 	return nil
 }
