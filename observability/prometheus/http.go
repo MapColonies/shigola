@@ -64,12 +64,10 @@ func newHttpHandler(registry prometheus.Registerer, prefix string, URLPrefix str
 		[]string{},
 	)
 
-	// registerOrReuse, not MustRegister, for the reason its own comment gives:
-	// the registry is process-wide, so a second observer — a second
-	// SetObservability, or a test building one of its own — registers these
-	// same four families again. MustRegister panics on that, which made
-	// constructing two observers in one process fatal. newCache has always gone
-	// through registerOrReuse; this constructor was simply missed.
+	// Through registerOrReuse, for the reason its own doc comment gives — a
+	// second observer in the same process re-registers these four families, and
+	// MustRegister panics on that. newCache has always done this; this
+	// constructor was simply missed.
 	handler.inFlightGauge = registerOrReuse(registry, handler.inFlightGauge)
 	handler.counter = registerOrReuse(registry, handler.counter)
 	handler.durationSeconds = registerOrReuse(registry, handler.durationSeconds)

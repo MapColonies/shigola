@@ -3,7 +3,6 @@ package server_test
 import (
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
 	promclient "github.com/prometheus/client_golang/prometheus"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/observability/prometheus"
 	"github.com/MapColonies/shigola/server"
 )
@@ -24,6 +24,12 @@ import (
 // bucket and overwrites it, so two tests sharing a series would each be reading
 // whichever ran last.
 const exemplarTileURI = "/collections/test-map/tiles/WebMercatorQuad/11/3/2"
+
+// exemplarHandlerLabel is exemplarTileURI as the observer labels it: the route
+// variables named in the observer's default observe-vars keep their value, and
+// the tile row and column are collapsed back to their names, because a label
+// per tile is a cardinality explosion rather than a metric.
+const exemplarHandlerLabel = "/collections/test-map/tiles/WebMercatorQuad/11/:tile_row/:tile_col"
 
 // TestRequestExemplarNamesTheRequestSpan is the HTTP half of MAPCO-11496, and
 // the regression test for the middleware order server.NewRouter documents.
@@ -57,7 +63,8 @@ func TestRequestExemplarNamesTheRequestSpan(t *testing.T) {
 
 	root := rootSpan(t, exporter)
 
-	exemplar := httpExemplar(t, "shigola_api_duration_seconds", "/11/")
+	exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, "shigola_api_duration_seconds",
+		map[string]string{"handler": exemplarHandlerLabel})
 
 	if got, want := exemplar["trace_id"], root.SpanContext.TraceID().String(); got != want {
 		t.Errorf("request exemplar trace_id = %q, want %q", got, want)
@@ -84,53 +91,4 @@ func rootSpan(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.Span
 	}
 
 	return roots[0]
-}
-
-// httpExemplar returns the exemplar labels off the api duration histogram whose
-// handler label contains match.
-func httpExemplar(t *testing.T, name, match string) map[string]string {
-	t.Helper()
-
-	families, err := promclient.DefaultGatherer.Gather()
-	if err != nil {
-		t.Fatalf("gather: %v", err)
-	}
-
-	for _, family := range families {
-		if family.GetName() != name {
-			continue
-		}
-
-		for _, metric := range family.GetMetric() {
-			handler := ""
-			for _, pair := range metric.GetLabel() {
-				if pair.GetName() == "handler" {
-					handler = pair.GetValue()
-				}
-			}
-			if !strings.Contains(handler, match) {
-				continue
-			}
-
-			for _, bucket := range metric.GetHistogram().GetBucket() {
-				exemplar := bucket.GetExemplar()
-				if exemplar == nil {
-					continue
-				}
-
-				got := make(map[string]string, len(exemplar.GetLabel()))
-				for _, pair := range exemplar.GetLabel() {
-					got[pair.GetName()] = pair.GetValue()
-				}
-
-				return got
-			}
-
-			t.Fatalf("no bucket of %v{handler~%q} carries an exemplar", name, match)
-		}
-	}
-
-	t.Fatalf("no sample of %v has a handler label containing %q", name, match)
-
-	return nil
 }

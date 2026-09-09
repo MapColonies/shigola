@@ -2,10 +2,8 @@ package prometheus
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/MapColonies/shigola/internal/log"
@@ -85,32 +83,4 @@ func observeWithExemplar(obs prometheus.Observer, seconds float64, exemplar prom
 	}
 
 	obs.Observe(seconds)
-}
-
-// metricsHandler serves the metrics route, negotiating OpenMetrics.
-//
-// EnableOpenMetrics is what makes the exemplars this package records reach
-// Prometheus at all: OpenMetrics is the only exposition format that encodes
-// them, and the classic text format drops them without a word. Recording
-// exemplars while serving the default handler would have been a change with no
-// observable effect whatsoever.
-//
-// It changes one other thing, which is the cost of the feature. Under
-// OpenMetrics a bucket boundary that would otherwise look like an integer is
-// written with a trailing ".0", so a histogram exposes le="1.0" where it used
-// to expose le="1" — and a label value is part of a series' identity. The
-// affected boundaries are 1, 2.5 and 5 on the cache families and 1, 5 and 10 on
-// the HTTP one. Anything matching an exact le — a recording rule, a dashboard
-// panel that pins one bucket — has to be checked against the new spelling. The
-// alternative was to record exemplars nobody could scrape.
-//
-// Split out from Handler so a test can scrape a registry of its own: the
-// exposition is the half of exemplar support that fails silently, and asserting
-// on it against the process-wide default registry would depend on whatever else
-// the test binary had registered.
-func metricsHandler(registerer prometheus.Registerer, gatherer prometheus.Gatherer) http.Handler {
-	return promhttp.InstrumentMetricHandler(
-		registerer,
-		promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{EnableOpenMetrics: true}),
-	)
 }

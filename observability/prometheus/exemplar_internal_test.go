@@ -8,12 +8,12 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"go.opentelemetry.io/otel/trace"
 
 	tegolaCache "github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/fakelog"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/internal/ttools"
 )
 
 // The trace fixture comes from internal/fakelog rather than internal/faketracer
@@ -23,6 +23,9 @@ import (
 // spelling of the same fixed id in the tree. See MAPCO-11494.
 
 var exemplarKey = &tegolaCache.Key{MapName: "osm", Z: 6, X: 5, Y: 4}
+
+// The label set a cache built with no observe-vars records a read under.
+var getLabels = map[string]string{"sub_command": "get"}
 
 // TestExemplarFromContext covers the three ways there is nothing to point at
 // and the one way there is.
@@ -115,7 +118,8 @@ func TestCacheDurationCarriesTheExemplar(t *testing.T) {
 	//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
 	c.Get(fakelog.TracedContext(true), exemplarKey)
 
-	if got := exemplarTraceID(t, registry, "test_exemplar_cache_duration_seconds"); got != fakelog.TraceIDHex {
+	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_cache_duration_seconds", getLabels)
+	if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
 		t.Fatalf("cache duration exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
 	}
 }
@@ -130,7 +134,7 @@ func TestCacheDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	//nolint:errcheck // as above
 	c.Get(context.Background(), exemplarKey)
 
-	histogram := gatherHistogram(t, registry, "test_plain_cache_duration_seconds")
+	histogram := ttools.Histogram(t, registry, "test_plain_cache_duration_seconds", getLabels)
 	if histogram.GetSampleCount() != 1 {
 		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
 	}
@@ -156,7 +160,9 @@ func TestHTTPDurationCarriesTheExemplar(t *testing.T) {
 		WithContext(fakelog.TracedContext(true))
 	instrumented.ServeHTTP(httptest.NewRecorder(), request)
 
-	if got := exemplarTraceID(t, registry, "test_exemplar_api_duration_seconds"); got != fakelog.TraceIDHex {
+	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_api_duration_seconds",
+		map[string]string{"handler": "/collections/osm/tiles"})
+	if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
 		t.Fatalf("http duration exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
 	}
 }
@@ -196,51 +202,4 @@ func TestExemplarReachesTheExposition(t *testing.T) {
 	if body := recorder.Body.String(); !strings.Contains(body, want) {
 		t.Fatalf("the exposition does not contain %q; exemplars are recorded but never scraped", want)
 	}
-}
-
-// gatherHistogram reads one histogram out of a registry by family name.
-func gatherHistogram(t *testing.T, gatherer prometheus.Gatherer, name string) *dto.Histogram {
-	t.Helper()
-
-	families, err := gatherer.Gather()
-	if err != nil {
-		t.Fatalf("gather: %v", err)
-	}
-
-	for _, family := range families {
-		if family.GetName() != name {
-			continue
-		}
-		if metrics := family.GetMetric(); len(metrics) > 0 {
-			return metrics[0].GetHistogram()
-		}
-	}
-
-	t.Fatalf("no %v in the registry", name)
-
-	return nil
-}
-
-// exemplarTraceID returns the trace id on the first bucket of the named
-// histogram that carries an exemplar.
-func exemplarTraceID(t *testing.T, gatherer prometheus.Gatherer, name string) string {
-	t.Helper()
-
-	histogram := gatherHistogram(t, gatherer, name)
-
-	for _, bucket := range histogram.GetBucket() {
-		exemplar := bucket.GetExemplar()
-		if exemplar == nil {
-			continue
-		}
-		for _, pair := range exemplar.GetLabel() {
-			if pair.GetName() == exemplarTraceIDKey {
-				return pair.GetValue()
-			}
-		}
-	}
-
-	t.Fatalf("no bucket of %v carries an exemplar labelled %v", name, exemplarTraceIDKey)
-
-	return ""
 }

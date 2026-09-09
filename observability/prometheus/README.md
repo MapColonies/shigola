@@ -66,11 +66,25 @@ quietly on its own:
 Then a bucket with a dot on it is one click from the trace.
 
 **Two limits.** Exemplars are not pushed: a `push_url` deployment goes through
-the classic text format to a Pushgateway, which has no notion of them. And
-negotiating OpenMetrics changed the `le` label spelling — a boundary that looks
-like an integer gains a trailing `.0`, so `le="1"` is now `le="1.0"` on the 1,
-2.5 and 5 boundaries of the cache families and the 1, 5 and 10 of the HTTP one.
-Anything matching an exact `le` needs checking.
+the classic text format to a Pushgateway, which has no notion of them.
+
+And negotiating OpenMetrics changed the `le` label spelling — a boundary that
+renders as a whole number gains a trailing `.0`, so `le="1"` is now `le="1.0"`,
+which is a different series. The format is negotiated per scrape rather than
+per family, so this reaches the size histograms too even though they carry no
+exemplars:
+
+| Family | Respelled |
+|:---|:---|
+| `shigola_cache_duration_seconds`, `shigola_cache_tier_duration_seconds` | `1`, `5` |
+| `shigola_api_duration_seconds` | `1`, `5`, `10` |
+| `shigola_cache_response_size_bytes`, `shigola_cache_tier_response_size_bytes` | `1024`, `5120`, `25600`, `102400`, `256000`, `512000` |
+| `shigola_api_response_size_bytes` | `512000` |
+
+`2.5` is untouched, because it already contains a `.`, and so are the megabyte
+boundaries, which render as `1.048576e+06` and `5.24288e+06`.
+`TestRespelledBucketBoundaries` derives this list from the bucket sets, so it
+cannot drift from them. Anything matching an exact `le` needs checking.
 
 ### Metrics exposed
 

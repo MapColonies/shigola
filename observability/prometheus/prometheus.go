@@ -18,6 +18,7 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type byteSize uint64
@@ -132,14 +133,45 @@ func New(config dict.Dicter) (observability.Interface, error) {
 
 func (*observer) Name() string { return Name }
 
-// Handler serves the metrics route. See metricsHandler for why the exposition
-// format is not the client's default.
+// Handler serves the metrics route.
 //
 // A pointer receiver like every sibling. It was a value receiver, which copied
 // the observer's sync.Once fields on every call — a vet copylocks finding, and
 // harmless only because the copy was discarded unread.
 func (*observer) Handler(string) http.Handler {
 	return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+}
+
+// metricsHandler serves the metrics route, negotiating OpenMetrics.
+//
+// EnableOpenMetrics is what makes the exemplars this package records reach
+// Prometheus at all: OpenMetrics is the only exposition format that encodes
+// them, and the classic text format drops them without a word. Recording
+// exemplars while serving the default handler would have been a change with no
+// observable effect whatsoever.
+//
+// It changes one other thing, which is the cost of the feature. Under
+// OpenMetrics a boundary that renders as a whole number is written with a
+// trailing ".0", so a histogram exposes le="1.0" where it used to expose
+// le="1" — and a label value is part of a series' identity, so those are
+// different series. Which boundaries those are is easy to get wrong in both
+// directions, so TestRespelledBucketBoundaries derives the list: 1 and 5 on the
+// duration families and 10 as well on the HTTP one, plus every response-size
+// boundary from 1024 up to 512000. 2.5 is untouched because it already contains
+// a ".", and the megabyte boundaries because they render as 1.048576e+06 and
+// 5.24288e+06. Anything matching an exact le — a recording rule, a panel
+// pinned to one bucket — has to be checked. The alternative was to record
+// exemplars nobody could scrape.
+//
+// Split out from Handler so a test can scrape a registry of its own: the
+// exposition is the half of exemplar support that fails silently, and asserting
+// on it against the process-wide default registry would depend on whatever else
+// the test binary had registered.
+func metricsHandler(registerer prometheus.Registerer, gatherer prometheus.Gatherer) http.Handler {
+	return promhttp.InstrumentMetricHandler(
+		registerer,
+		promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{EnableOpenMetrics: true}),
+	)
 }
 
 func (obs *observer) Init() { obs.initCall.Do(obs.init) }

@@ -309,13 +309,26 @@ which `TestExemplarFitsTheRuneLimit` guards by making a real observation.
 
 Two consequences worth knowing:
 
-- **`le` label values changed.** Under OpenMetrics a bucket boundary that would
-  otherwise look like an integer is written with a trailing `.0`, and a label
-  value is part of a series' identity — so `le="1"` is now `le="1.0"`. The
-  affected boundaries are 1, 2.5 and 5 on the cache families and 1, 5 and 10 on
-  the HTTP one. Anything pinning an exact `le` — a recording rule, a panel
-  showing one bucket — has to be checked against the new spelling. This was the
-  price of exemplars being scrapeable at all.
+- **`le` label values changed.** Under OpenMetrics a boundary that renders as a
+  whole number is written with a trailing `.0`, and a label value is part of a
+  series' identity — so `le="1"` is now `le="1.0"`, a different series.
+  `TestRespelledBucketBoundaries` derives the list rather than leaving it to be
+  worked out, because it is narrower than the rule sounds in one direction and
+  wider in another:
+
+  | Family | Respelled |
+  |:---|:---|
+  | `shigola_cache_duration_seconds`, `..._tier_...` | `1`, `5` |
+  | `shigola_api_duration_seconds` | `1`, `5`, `10` |
+  | `shigola_cache_response_size_bytes`, `..._tier_...` | `1024`, `5120`, `25600`, `102400`, `256000`, `512000` |
+  | `shigola_api_response_size_bytes` | `512000` |
+
+  `2.5` is untouched — it already contains a `.` — and so are the megabyte
+  boundaries, which render as `1.048576e+06` and `5.24288e+06`. The size
+  families are affected even though they carry no exemplars, because the format
+  is negotiated per scrape rather than per family. Anything pinning an exact
+  `le` has to be checked. This was the price of exemplars being scrapeable at
+  all.
 - **Pushed metrics carry no exemplars.** A deployment using `push_url` pushes
   through the classic text format to a Pushgateway, which has no notion of
   exemplars. Everything above applies to scraped deployments only.
