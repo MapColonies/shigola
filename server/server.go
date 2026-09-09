@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/server/ogc"
+	"github.com/MapColonies/shigola/tracing"
 )
 
 const (
@@ -60,6 +61,7 @@ var (
 // NewRouter set's up our routes.
 func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 	o := a.Observer()
+	t := a.Tracing()
 	r := httptreemux.New()
 	group := r.NewGroup(URIPrefix)
 
@@ -75,6 +77,10 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 			log.Infof("setting up observer: %v", o.Name())
 			group.UsingContext().Handler(http.MethodGet, metricsRoute, h)
 		}
+	}
+
+	if t.Enabled() {
+		log.Infof("setting up tracing: %v", t.Name())
 	}
 
 	// OGC API - Tiles surface, and the only tile surface: the native /maps/...
@@ -105,8 +111,18 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 			handler = GZipHandler(handler)
 		}
 
+		// Tracing goes on *outside* the metrics instrumentation, so the
+		// request's span is already the active one in ctx by the time the
+		// metrics middleware takes its duration observation. That is the
+		// ordering trace exemplars need (MAPCO-11496), and it is also what
+		// makes the span cover the whole chain rather than everything except
+		// the instrumentation it sits under.
+		method, path, instrumented := observability.InstrumentAPIHandler(
+			route.Method, route.Path, o, HeadersHandler(handler),
+		)
+
 		group.UsingContext().
-			Handler(observability.InstrumentAPIHandler(route.Method, route.Path, o, HeadersHandler(handler)))
+			Handler(tracing.InstrumentAPIHandler(method, path, t, instrumented))
 	}
 
 	return r
