@@ -34,6 +34,13 @@ var serverCmd = &cobra.Command{
 		gdcmd.New()
 		gdcmd.OnComplete(provider.Cleanup)
 		gdcmd.OnComplete(observability.Cleanup)
+		// Registered here, between the observability cleanup and the write-pool
+		// drain further down, because gdcmd.OnComplete runs in *reverse*
+		// registration order and the flush has to happen after the drain: a
+		// drained write emits its own tier spans, and flushing before it would
+		// export a trace that stops just short of the writes it was opened to
+		// explain.
+		gdcmd.OnComplete(flushTracing)
 
 		// check config for server port setting
 		// if you set the port via the command line it will override the port setting in the config
@@ -114,6 +121,30 @@ var serverCmd = &cobra.Command{
 		<-gdcmd.Cancelled()
 		gdcmd.Complete()
 	},
+}
+
+// tracingFlushTimeout bounds the export of whatever the batch processor still
+// holds at shutdown.
+//
+// Short on purpose. A collector that has gone away does not fail fast — the
+// exporter's own per-export timeout is measured in seconds and it retries — so
+// without a bound here a dead Tempo would hold the process open through its
+// whole termination grace period, turning a missing trace into a failed
+// rolling deploy.
+const tracingFlushTimeout = 2 * time.Second
+
+// flushTracing exports the spans the batch processor is still sitting on.
+//
+// The traces worth having are usually the ones from just before a shutdown,
+// and a batch processor holds up to a batch interval's worth of them. A no-op
+// when tracing is disabled, since the null backend has nothing to flush.
+func flushTracing() {
+	ctx, cancel := context.WithTimeout(context.Background(), tracingFlushTimeout)
+	defer cancel()
+
+	if err := atlas.Tracing().Shutdown(ctx); err != nil {
+		log.Errorf("flushing traces: %v", err)
+	}
 }
 
 func shutdown(srv *http.Server) {

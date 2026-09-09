@@ -16,6 +16,7 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/MapColonies/shigola/tracing"
 )
 
 const (
@@ -93,6 +94,10 @@ type Config struct {
 	Webserver    Webserver `toml:"webserver"`
 	Cache        env.Dict  `toml:"cache"`
 	Observer     env.Dict  `toml:"observer"`
+	// Tracing is its own section rather than a key under Observer: that one
+	// configures metrics, which Mimir scrapes, and the two are switched on
+	// independently of each other (MAPCO-11497). Absent means tracing off.
+	Tracing tracing.Config `toml:"tracing"`
 	// Map of providers.
 	//  all providers must have at least two entries.
 	// 1. name -- this is the name that is referenced in
@@ -191,6 +196,13 @@ func ValidateAndRegisterParams(mapName string, params []provider.QueryParameter)
 
 // Validate checks the config for issues
 func (c *Config) Validate() error {
+
+	// Checked whether or not tracing is enabled, so that a typo in a section
+	// someone is about to switch on fails now rather than the first time they
+	// switch it on.
+	if err := c.Tracing.Validate(); err != nil {
+		return err
+	}
 
 	knownTypes := provider.Drivers()
 

@@ -37,6 +37,7 @@ Shigola is a vector tile server delivering [Mapbox Vector Tiles](https://github.
 - Support for [AWS Lambda](cmd/shigola_lambda).
 - Support for serving HTTPS.
 - Support for [Prometheus](observability/prometheus/README.md) observability.
+- [OpenTelemetry tracing](tracing/README.md) exported over OTLP to Grafana Tempo, off by default.
 
 ## Usage
 
@@ -447,6 +448,9 @@ changed incompatibly. All three lists are below.
   per map with `tile_matrix_sets`, where Tegola serves one implicit scheme.
 - **[Layered cache](#layered-cache)** — `type = "multi"`: an ordered chain of cache backends with
   read-through promotion, per-tier read deadlines and non-blocking writes.
+- **[OpenTelemetry tracing](tracing/README.md)** — `[tracing]`: spans for the request, the encode,
+  the provider query and each cache tier, exported over OTLP to Tempo. Off by default, and
+  independent of the Prometheus observer, which keeps its job unchanged.
 
 ### What Shigola removes
 
