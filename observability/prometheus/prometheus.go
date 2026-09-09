@@ -18,7 +18,6 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type byteSize uint64
@@ -133,8 +132,17 @@ func New(config dict.Dicter) (observability.Interface, error) {
 
 func (*observer) Name() string { return Name }
 
-func (observer) Handler(string) http.Handler { return promhttp.Handler() }
-func (obs *observer) Init()                  { obs.initCall.Do(obs.init) }
+// Handler serves the metrics route. See metricsHandler for why the exposition
+// format is not the client's default.
+//
+// A pointer receiver like every sibling. It was a value receiver, which copied
+// the observer's sync.Once fields on every call — a vet copylocks finding, and
+// harmless only because the copy was discarded unread.
+func (*observer) Handler(string) http.Handler {
+	return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+}
+
+func (obs *observer) Init() { obs.initCall.Do(obs.init) }
 func (obs *observer) init() {
 	obs.PublishBuildInfo()
 	if obs == nil || obs.pushURL == "" {

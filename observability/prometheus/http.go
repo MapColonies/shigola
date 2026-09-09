@@ -112,7 +112,12 @@ func (handler *httpHandler) instrumentHandlerDuration(originalRoute string, next
 		labels := prometheus.Labels{
 			"handler": strings.Join(parts, "/"),
 		}
-		promhttp.InstrumentHandlerDuration(handler.durationSeconds.MustCurryWith(labels), next).ServeHTTP(w, r)
+		// The exemplar comes off the request context, which by this point
+		// carries the server span: the tracing handler wraps this one
+		// (server.NewRouter), so it has already replaced the request.
+		promhttp.InstrumentHandlerDuration(handler.durationSeconds.MustCurryWith(labels), next,
+			promhttp.WithExemplarFromContext(exemplarFrom),
+		).ServeHTTP(w, r)
 	})
 }
 
