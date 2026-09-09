@@ -84,10 +84,11 @@ is no release-candidate branch.
   |:---|:---|
   | `docs/ogc-api-tiles.md` | `docs/ogc-api-tiles.md` |
   | `docs/tile-matrix-sets.md` | `docs/ogc-api-tiles.md`, `tms/doc.go`, `tms/registry.go` |
-  | `docs/layered-cache.md` | `README.md` § "Layered cache" |
+  | `docs/layered-cache.md` | `README.md` § "Layered cache", `observability/prometheus/README.md` |
   | `docs/configuration.md` § Redis | `cache/redis/README.md` |
   | `docs/tracing.md`, `docs/configuration.md` § Tracing | `tracing/README.md` |
   | `docs/logging.md` | `internal/log/log.go`, `tracing/README.md` § "Correlating logs with traces" |
+  | `docs/tracing.md` § "Relationship to metrics" | `observability/prometheus/README.md` § "Trace exemplars", `tracing/README.md` § "Correlating metrics with traces" |
 
 Once the pull request is open a maintainer reviews it and may ask for changes. Keep it up to date as
 other work lands on `master` ahead of yours.
