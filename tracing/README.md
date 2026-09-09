@@ -111,9 +111,20 @@ theirs does:
 - **GCS cache** — carries it. `storage.NewClient` is built on
   `google.golang.org/api`'s transport, which wraps itself in
   `otelhttp.NewTransport`; that reads OTEL's globals, so once tracing is
-  installed GCS reads and writes inject `traceparent` and appear as client spans
-  under their `cache.tier.*` parent. It reads the global *meter* provider too,
-  which shigola leaves as a no-op, so this adds no metrics.
+  installed GCS reads and writes inject `traceparent` and appear as **HTTP
+  client spans** under their `cache.tier.*` parent.
+
+  Two details worth knowing. The spans are the transport's, at HTTP level —
+  `cloud.google.com/go/storage`'s own operation spans are gated behind
+  `GO_STORAGE_DEV_OTEL_TRACING=true` while that feature is experimental, and
+  shigola does not set it. And the transport is constructed *before* `Install`
+  runs — `register.Cache` happens earlier in startup than the tracing setup —
+  so this works only because OTEL's global propagator is a delegating wrapper
+  rather than a value captured at construction. That indirection is load-bearing
+  and easy to break, so `TestInstalledPropagatorReachesAnOutgoingClient` pins it.
+
+  The transport reads the global *meter* provider too, which shigola leaves as a
+  no-op, so none of this adds metrics.
 - **PostGIS** — does not. pgx is configured with a `tracelog.TraceLog`, which
   logs statements; it is not an OTEL tracer.
 - **S3 cache** — does not. It is on aws-sdk-go v1, which has no OTEL hook.
