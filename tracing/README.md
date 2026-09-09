@@ -48,12 +48,38 @@ timeout_ms = 10000
 |:---|:---|:---|
 | `enabled` | `false` | Absent or false installs the no-op backend and dials nothing. |
 | `exporter` | `otlp_grpc` | OTLP transport. Tempo listens for gRPC on 4317 and HTTP on 4318, and a collector in front of it may accept only one. |
-| `endpoint` | *(SDK default)* | Collector address. Empty hands the decision to the OTEL SDK, which reads `OTEL_EXPORTER_OTLP_ENDPOINT` and its per-signal siblings. |
-| `insecure` | `false` | Export without TLS. Normal for a collector reached over the pod network, wrong across anything else. |
+| `endpoint` | *(SDK default)* | Collector address, as either `host:port` or a full URL. Empty hands the decision to the OTEL SDK, which reads `OTEL_EXPORTER_OTLP_ENDPOINT` and its per-signal siblings. |
+| `insecure` | `false` | Export without TLS. Normal for a collector reached over the pod network, wrong across anything else. Ignored when `endpoint` is a URL — the scheme has already said. |
 | `sample_ratio` | `0.01` | Fraction of traces *this service starts* to record. See below. |
 | `service_name` | `shigola` | `service.name` on every span. Set it per deployment if several shigolas report to one Tempo. |
 | `timeout_ms` | `10000` | Bounds one export attempt. |
 | `[tracing.headers]` | *(none)* | Sent with each export request — an auth header, a Tempo tenant id. |
+
+### Endpoint shapes
+
+Both of these work:
+
+```toml
+endpoint = "tempo.observability:4317"                      # host and port
+endpoint = "https://collector.example.io/v1/traces"        # a full URL
+```
+
+They are not interchangeable underneath — the OTLP exporters take them through
+different options, `WithEndpoint` and `WithEndpointURL` — and getting it wrong
+used to be silent. Passing a URL where a host was expected does not fail: the
+exporter treats the whole string as a host, percent-encodes it, prefixes a
+scheme and appends the signal path, then fails on *every export* with
+
+```
+traces export: parse "http://https:%2F%2Fcollector.example.io%2Fv1%2Ftraces/v1/traces":
+invalid port ":%2F%2Fcollector.example.io%2Fv1%2Ftraces" after host
+```
+
+A deployment ran like that: healthy by every other signal, exporting nothing.
+Shigola now picks the right option from the scheme, and refuses at **startup**
+any endpoint that cannot work — a path with no scheme (`tempo:4318/v1/traces`),
+a scheme that is not http or https, a non-numeric port, or an `https` endpoint
+with `insecure = true`, which are asking for opposite things.
 
 `endpoint` is the one place shigola does **not** use its own `SHIGOLA_*`
 environment variable convention. The OTLP exporters read the standard
@@ -142,6 +168,26 @@ Nothing. A disabled config returns the no-op backend before an exporter is
 dialled or a batch processor is started, and that backend's `Instrumented*`
 methods return their argument — so a process with tracing off carries **no
 decorator at all**, rather than one that starts a discarded span per cache read.
+
+## When it is not working
+
+Two failures used to be quiet, and are not any more.
+
+**A misconfigured endpoint fails at startup**, not per export. `Config.Validate`
+checks the shape, so a bad value is a startup error naming the key rather than
+a running server that exports nothing.
+
+**OTEL's own errors are logged at ERROR.** They were at INFO, which is the more
+interesting failure: OTEL's default error handler calls the standard library's
+`log.Print`, and `slog.SetDefault` redirects the standard library's default
+logger through the slog handler *at INFO* — so a dead collector announced itself
+at INFO and a service running at `--log-level WARN` saw nothing at all. `Install`
+now sets an error handler of its own, and bridges OTEL's internal logger into
+slog so its diagnostics arrive structured and levelled rather than as plain text
+on stderr.
+
+So: if tracing is enabled and no traces arrive, look for `ERROR` lines prefixed
+`tracing:`.
 
 ## Shutdown
 
