@@ -71,6 +71,11 @@ const ServiceGroup = "shigola"
 // Returning an slog.Attr rather than a whole logger is deliberate too: an
 // slog.Attr can only reach a logger through With, so the placement cannot be
 // undone by a caller who reaches for WithGroup out of habit.
+//
+// version and revision are parameters while pid is read here because the first
+// two come from internal/build's ldflag targets: importing that from the
+// package every other package logs through would point the dependency the wrong
+// way round. The pid is the running process's own and needs nothing.
 func ServiceAttrs(version, revision string) slog.Attr {
 	return slog.Group(ServiceGroup,
 		"version", version,
