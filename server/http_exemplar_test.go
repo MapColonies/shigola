@@ -45,7 +45,8 @@ func TestRequestExemplarNamesTheRequestSpan(t *testing.T) {
 	server.URIPrefix = "/"
 
 	a := newTestMapWithLayers(testLayer2)
-	a.SetCache(twoTierCache(t, "exemplarhot", "exemplardurable"))
+	c, _, _ := twoTierCache(t, "exemplarhot", "exemplardurable")
+	a.SetCache(c)
 
 	observer, err := prometheus.New(dict.Dict{})
 	if err != nil {
