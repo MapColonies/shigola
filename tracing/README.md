@@ -166,12 +166,68 @@ the `provider.MVTForLayers` or `cache.tier.*` span containing it — but the tra
 stops there rather than continuing into the database or the object store.
 Extending it is a separate change per client library.
 
+## Correlating logs with traces
+
+Every log record written while serving a traced request carries that request's
+ids as top-level fields, so a trace in Tempo reaches the log lines it produced
+and a log line reaches its trace (MAPCO-11494):
+
+```json
+{"time":"...","level":"ERROR","msg":"cache/multi: tier (redis) get: dial tcp: connection refused",
+ "shigola":{"version":"1.4.0","pid":1,"rev":"9f3c1ab"},
+ "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
+```
+
+The keys are `internal/log.TraceIDKey` and `SpanIDKey`. `internal/log.Handler`
+adds them from the span context it finds on the context it is handed, so a call
+site correlates exactly when it logs through one of the `*fContext` helpers with
+the request's context — which every log site on the request path that has a
+context now does.
+
+Three properties of this are load-bearing.
+
+**Top level, not under the `shigola` group.** The group is attached as a single
+grouped attribute rather than with `WithGroup`, because an open group qualifies
+everything after it and would emit `shigola.trace_id` — not a name any log
+pipeline looks for. `internal/log.ServiceAttrs` returns an `slog.Attr` precisely
+so that placement cannot be undone by a caller reaching for `WithGroup`.
+
+**The span, not just the trace.** The ids are the innermost span active where
+the line was written, so a tier read failure hangs off `cache.Get`, a pgx
+warning off `postgis.query`. In Tempo the line lands on the span that produced
+it.
+
+**Sampling is not consulted.** At the default `sample_ratio = 0.01` most
+requests are unsampled, and their log lines still carry ids. That is deliberate:
+the ids group one request's lines together whether or not a trace was kept, and
+suppressing them would leave 99% of requests uncorrelated *with themselves*. The
+cost is that a "view trace" link resolves only for sampled traces — raise
+`sample_ratio` while chasing something specific.
+
+Two consequences worth knowing:
+
+- **Detached cache writes correlate too.** A write handed to the bounded write
+  pool completes after the response, but the pool derives its context with
+  `context.WithoutCancel`, which drops cancellation and keeps values — so a
+  write failure still names the request that caused it, even though the span it
+  names has already ended.
+- **Lines written outside a request carry nothing.** Startup, configuration,
+  shutdown and the pool-level saturation warnings have no request context by
+  definition, and no empty fields are added for them. So does anything logged
+  when `[tracing]` is disabled: there is no span, so there are no ids.
+
 ## Costs when disabled
 
 Nothing. A disabled config returns the no-op backend before an exporter is
 dialled or a batch processor is started, and that backend's `Instrumented*`
 methods return their argument — so a process with tracing off carries **no
 decorator at all**, rather than one that starts a discarded span per cache read.
+
+Log correlation costs nothing when disabled either, and it is not gated on the
+config: the handler reads the context whether or not tracing is on. With no span
+there is nothing to read, which measures as one context lookup and zero
+allocations — `BenchmarkHandleWithoutATrace` in `internal/log` is within run
+noise of the same handler without the lookup.
 
 ## When it is not working
 
