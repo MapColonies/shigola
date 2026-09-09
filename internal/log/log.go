@@ -7,11 +7,28 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // LevelSilent is a custom log level that will not
 // generate any logs.
 const LevelSilent = -8
+
+// TraceIDKey and SpanIDKey are the record keys that carry OpenTelemetry
+// correlation, so a trace in Tempo reaches the log lines of the request that
+// produced it and back again (MAPCO-11494).
+//
+// The names are the de-facto convention Grafana's Loki datasource and the OTel
+// ecosystem both assume, in snake_case rather than the OTLP log model's
+// TraceId/SpanId: what reads these is a Loki derived field or a `| json` label,
+// not an OTLP consumer. They are exported because the pipeline that greps for
+// them cannot be tested, so the docs and the tests must at least agree with the
+// code on the spelling.
+const (
+	TraceIDKey = "trace_id"
+	SpanIDKey  = "span_id"
+)
 
 // NewLogger returns a new tegola JSON logger.
 func NewLogger(lvl slog.Level, options ...func(opts *slog.HandlerOptions)) *slog.Logger {
@@ -37,6 +54,31 @@ func NewLogger(lvl slog.Level, options ...func(opts *slog.HandlerOptions)) *slog
 	return logger
 }
 
+// ServiceGroup is the attribute group under which every record carries the
+// identity of the process that wrote it.
+const ServiceGroup = "shigola"
+
+// ServiceAttrs returns that process identity, for the binaries to hang on the
+// logger they install as slog's default.
+//
+// One grouped attribute rather than a logger-wide WithGroup, which is what this
+// used to be: an open group qualifies everything that follows it, including the
+// attributes Handle adds per record, so correlation would be logged as
+// shigola.trace_id — not a name any log pipeline looks for. As a single
+// attribute the group nests only its own contents, and what it writes is
+// otherwise byte-for-byte what WithGroup wrote.
+//
+// Returning an slog.Attr rather than a whole logger is deliberate too: an
+// slog.Attr can only reach a logger through With, so the placement cannot be
+// undone by a caller who reaches for WithGroup out of habit.
+func ServiceAttrs(version, revision string) slog.Attr {
+	return slog.Group(ServiceGroup,
+		"version", version,
+		"pid", os.Getpid(),
+		"rev", revision,
+	)
+}
+
 // NewHandler returns a new custom slog.Handler that wraps the provided baseHandler.
 // The returned handler augments error-level logs by appending a stack trace.
 func NewHandler(baseHandler slog.Handler) slog.Handler {
@@ -60,12 +102,31 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 
 // Handle processes the log record r. If the log level is error or higher,
 // it adds a "stack" attribute containing the current stack trace to the record.
-// The modified record is then passed to the underlying handler for output.
+// Records emitted inside a trace also carry that trace's ids. The modified
+// record is then passed to the underlying handler for output.
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	// For errors and more severe logs, include the current stack trace.
 	if r.Level >= slog.LevelError {
 		r.Add("stack", string(debug.Stack()))
 	}
+
+	// Correlation is added here, on the record, rather than by the caller:
+	// every log line in a request should carry it, and the context is the only
+	// thing every logging call site has in common.
+	//
+	// IsValid covers both halves of the requirement to add nothing outside a
+	// trace — a context with no span at all yields the zero span context, and
+	// so does one whose ids were dropped in transit. Sampling is deliberately
+	// not consulted: the ids name the request whether or not a trace was
+	// exported for it, and dropping them for the 99% a ratio sampler declines
+	// would leave most requests' logs uncorrelated with each other.
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		r.AddAttrs(
+			slog.String(TraceIDKey, sc.TraceID().String()),
+			slog.String(SpanIDKey, sc.SpanID().String()),
+		)
+	}
+
 	return h.handler.Handle(ctx, r)
 }
 
@@ -99,6 +160,28 @@ func ParseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// The Context variants carry the trace and span ids of the request they were
+// called in (see Handle). They take a format string rather than attributes so
+// that a request-path call site can gain correlation without its message
+// changing — nothing that greps today's logs for a message should have to be
+// re-taught for the sake of two new fields. They go the same way as their
+// context-free siblings when the TODO above is done.
+func ErrorfContext(ctx context.Context, format string, args ...any) {
+	slog.ErrorContext(ctx, fmt.Sprintf(format, args...))
+}
+
+func WarnfContext(ctx context.Context, format string, args ...any) {
+	slog.WarnContext(ctx, fmt.Sprintf(format, args...))
+}
+
+func InfofContext(ctx context.Context, format string, args ...any) {
+	slog.InfoContext(ctx, fmt.Sprintf(format, args...))
+}
+
+func DebugfContext(ctx context.Context, format string, args ...any) {
+	slog.DebugContext(ctx, fmt.Sprintf(format, args...))
 }
 
 // TODO: remove those methods and use slog straight up

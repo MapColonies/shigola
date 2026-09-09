@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cmd/internal/register"
@@ -69,9 +68,7 @@ func initConfig(configFile string, cacheRequired bool, logLevel string) (err err
 	// Parse the provided log level; default to INFO if parsing fails.
 	lvl := log.ParseLogLevel(logLevel)
 
-	logger := log.NewLogger(lvl).
-		WithGroup("shigola").
-		With("version", build.Version, "pid", os.Getpid(), "rev", build.GitRevision)
+	logger := log.NewLogger(lvl).With(log.ServiceAttrs(build.Version, build.GitRevision))
 
 	// set out logger as the new default slog logger
 	slog.SetDefault(logger)
