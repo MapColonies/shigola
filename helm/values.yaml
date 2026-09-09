@@ -71,6 +71,7 @@ database:
     passwordSecret:
       name: ''
   ssl:
+    enabled: true
     mode: 'prefer'
     cert: ''
     key: ''
@@ -96,6 +97,7 @@ osm:
     passwordSecret:
       name: ''
   ssl:
+    enabled: true
     mode: 'prefer'
     cert: ''
     key: ''

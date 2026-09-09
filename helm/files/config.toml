@@ -74,12 +74,14 @@ name = "database_postgis"
 type = "mvt_postgis"
 uri = "postgres://${DATABASE_PGUSER}:${DATABASE_PGPASSWORD}@${DATABASE_PGHOST}:${DATABASE_PGPORT}/${DATABASE_PGDATABASE}"
 srid = {{ .Values.database.srid }}
+{{- if .Values.database.ssl.enabled }}
 ssl_mode = "{{ .Values.database.ssl.mode }}"
 {{- if .Values.database.ssl.cert }}
 ssl_cert = "{{ .Values.database.ssl.cert }}"
 {{- end }}
 {{- if .Values.database.ssl.key }}
 ssl_key = "{{ .Values.database.ssl.key }}"
+{{- end }}
 {{- end }}
 
   [[providers.layers]]
@@ -96,12 +98,14 @@ name = "osm_postgis"
 type = "mvt_postgis"
 uri = "postgres://${OSM_PGUSER}:${OSM_PGPASSWORD}@${OSM_PGHOST}:${OSM_PGPORT}/${OSM_PGDATABASE}"
 srid = 3857
+{{- if .Values.osm.ssl.enabled }}
 ssl_mode = "{{ .Values.osm.ssl.mode }}"
 {{- if .Values.osm.ssl.cert }}
 ssl_cert = "{{ .Values.osm.ssl.cert }}"
 {{- end }}
 {{- if .Values.osm.ssl.key }}
 ssl_key = "{{ .Values.osm.ssl.key }}"
+{{- end }}
 {{- end }}
 
   # Placeholder only — this chart does not ship a full OSM tile schema.
