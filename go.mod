@@ -9,6 +9,7 @@ require (
 	github.com/akrylysov/algnhsa v1.0.0
 	github.com/aws/aws-sdk-go v1.34.0
 	github.com/dimfeld/httptreemux v5.0.1+incompatible
+	github.com/go-logr/logr v1.4.3
 	github.com/go-spatial/cobra v0.0.3-0.20181105183926-68194e4fbcc6
 	github.com/go-spatial/geom v0.1.0
 	github.com/go-spatial/proj v0.3.0
@@ -52,7 +53,6 @@ require (
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect

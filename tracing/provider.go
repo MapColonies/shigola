@@ -81,6 +81,7 @@ func (p *provider) Install() {
 
 	otel.SetTracerProvider(p.tp)
 	otel.SetTextMapPropagator(p.prop)
+	installDiagnostics()
 }
 
 // Shutdown flushes spans the processor still holds and stops it.
