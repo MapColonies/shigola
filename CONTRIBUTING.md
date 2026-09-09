@@ -86,6 +86,7 @@ is no release-candidate branch.
   | `docs/tile-matrix-sets.md` | `docs/ogc-api-tiles.md`, `tms/doc.go`, `tms/registry.go` |
   | `docs/layered-cache.md` | `README.md` § "Layered cache" |
   | `docs/configuration.md` § Redis | `cache/redis/README.md` |
+  | `docs/tracing.md`, `docs/configuration.md` § Tracing | `tracing/README.md` |
 
 Once the pull request is open a maintainer reviews it and may ask for changes. Keep it up to date as
 other work lands on `master` ahead of yours.
