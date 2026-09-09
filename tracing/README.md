@@ -24,7 +24,8 @@ GET /collections/:collection_id/tiles/:tile_matrix_set_id/:tile_matrix/:tile_row
 │   ├── cache.tier.Get  tier=hot        miss
 │   └── cache.tier.Get  tier=durable    miss
 ├── atlas.Encode                    map, scheme and tile on the span
-│   └── provider.MVTForLayers       the ST_AsMVT round trip
+│   └── provider.MVTForLayers       the SQL assembly and the query
+│       └── postgis.query           the round trip: statement, server, duration
 └── cache.tier.Set      tier=durable    the write, off the response path
 ```
 
@@ -152,7 +153,10 @@ theirs does:
   The transport reads the global *meter* provider too, which shigola leaves as a
   no-op, so none of this adds metrics.
 - **PostGIS** — does not. pgx is configured with a `tracelog.TraceLog`, which
-  logs statements; it is not an OTEL tracer.
+  logs statements; it is not an OTEL tracer. Note the distinction: shigola does
+  emit a `postgis.query` client span *around* the call, so the query is visible
+  and timed — what does not happen is the trace continuing into the database's
+  own instrumentation.
 - **S3 cache** — does not. It is on aws-sdk-go v1, which has no OTEL hook.
 - **Azure Blob cache** — does not. The Azure SDK has its own tracing
   abstraction rather than OTEL's.
@@ -208,10 +212,48 @@ trace into a failed rolling deploy.
 | `cache.tier.Get` / `cache.tier.Set` / `cache.tier.Purge` | one tier of a chain, carrying `shigola.cache.tier` |
 | `atlas.Encode` | the encode, carrying map, scheme and tile coordinates |
 | `provider.MVTForLayers` | the provider query, carrying `shigola.provider` and `shigola.layer_count` |
+| `postgis.query` | the `ST_AsMVT` round trip, so the database's own time is separable from the provider's (MAPCO-11620) |
 
 Attributes are in shigola's own `shigola.*` namespace: the OTEL semantic
 conventions have nothing for a tile or a cache tier, and an unprefixed key
 risks colliding with a convention that later does.
+
+### The query span
+
+`postgis.query` is the exception to that: it uses the OTEL **database**
+conventions, which do exist and which Grafana and Tempo render specially.
+
+| Attribute | What |
+|:---|:---|
+| `db.query.text` | the statement, parameterised |
+| `db.system.name` | `postgresql` |
+| `db.namespace` | the database name |
+| `server.address`, `server.port` | the server the query went to |
+| `shigola.db.query_truncated` | present when the statement hit the size cap |
+
+Its **duration is the database's own time**, where the enclosing
+`provider.MVTForLayers` also covers assembling the SQL. That is the split worth
+having: a tile that took 300ms because the query took 295ms is a database
+problem, and one where the query took 5ms is not.
+
+Three things about `db.query.text` worth knowing:
+
+- **It carries no parameter values.** Configured query parameters are passed to
+  pgx as arguments, so the statement holds `$1` placeholders. That is what the
+  OTEL conventions ask for, and it is what keeps client-supplied values out of
+  traces.
+- **It carries no credentials.** The server attributes are built from three
+  fields of the connection config — host, port, database — and deliberately not
+  from the user or the password it also holds.
+- **It is capped at 8KiB**, cut on a UTF-8 boundary, with
+  `shigola.db.query_truncated` set when it cuts. A tile query is one statement
+  per layer, unioned, with the tile's tokens substituted, so a wide map
+  produces a large one — and OTEL's SDK applies no value-length limit of its
+  own by default.
+
+The statement is built only for a span that is being recorded, so tracing off
+or a sampling miss costs no string work. `shigola_mvt_provider_query_seconds`
+is unaffected: the span opens before the histogram's clock starts.
 
 A failed operation records the error on its span. The span's *status* is set to
 error only when the failure is shigola's own — a read that failed because the
