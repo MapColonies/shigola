@@ -2,6 +2,9 @@ package tracing_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/MapColonies/shigola/cache"
@@ -107,4 +110,66 @@ func TestNewEnabledBuildsAWorkingBackend(t *testing.T) {
 		t.Error("the backend's tracer produced an invalid span context")
 	}
 	span.End()
+}
+
+// TestEnabledExporterExportsToAFullURLEndpoint is the end-to-end regression
+// test for the deployment failure: an endpoint given as a full URL must
+// actually reach the collector.
+//
+// It failed before because WithEndpoint takes a host and port, so the exporter
+// treated the whole URL as a host, percent-encoded it, and produced
+// "http://https:%2F%2F…/v1/traces" — rejected by url.Parse on every export.
+// A URL now goes to WithEndpointURL, which is what this checks by being the
+// collector.
+func TestEnabledExporterExportsToAFullURLEndpoint(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		method string
+		path   string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		method, path = r.Method, r.URL.Path
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	// Sampled at 1, not left at the 1% default: the span below is a root, so
+	// the default ratio drops it about 99 times in 100 and this test would
+	// pass only occasionally. (It did, until run with -count=20.)
+	always := env.Float(1)
+
+	backend, err := tracing.New(context.Background(), tracing.Config{
+		Enabled:  true,
+		Exporter: tracing.ExporterOTLPHTTP,
+		// srv.URL is "http://127.0.0.1:PORT" — a full URL, the shape a
+		// platform hands an operator, and the shape that used to break.
+		Endpoint:    env.String(srv.URL + "/v1/traces"),
+		SampleRatio: &always,
+	})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+
+	_, span := backend.Tracer().Start(context.Background(), "probe")
+	span.End()
+
+	// Shutdown flushes the batch processor synchronously, so the export has
+	// happened by the time it returns.
+	if err := backend.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown() = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if path != "/v1/traces" {
+		t.Errorf("collector saw path %q, want /v1/traces — the endpoint URL was not honoured", path)
+	}
+	if method != http.MethodPost {
+		t.Errorf("collector saw method %q, want POST", method)
+	}
 }

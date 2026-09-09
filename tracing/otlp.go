@@ -138,25 +138,42 @@ func newExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error)
 	return newer(ctx, cfg)
 }
 
-// The two constructors below build the same four options twice.
+// The two constructors below build the same options twice.
 // otlptracegrpc.Option and otlptracehttp.Option are unrelated types with no
 // common interface, so factoring the shared shape out would mean either a
-// generic helper per option — four of them, each a closure pair — or
-// reflection, both longer and harder to read than the repetition.
+// generic helper per option — one closure pair each — or reflection, both
+// longer and harder to read than the repetition.
+//
+// What they must not get wrong is which endpoint option to use.
+// WithEndpoint takes a host and port and nothing else; WithEndpointURL takes a
+// full URL. Passing a URL to the former is accepted and then fails on every
+// export, because it treats the whole string as a host — see
+// Config.validateEndpoint, which is what now stops that reaching an exporter
+// at all.
 //
 // An empty endpoint is passed through rather than defaulted here: the OTLP
 // exporters read OTEL_EXPORTER_OTLP_ENDPOINT and its per-signal and per-header
 // siblings themselves, and an in-cluster collector is normally configured that
 // way for every service at once. Substituting a shigola-specific default would
 // take that away.
+//
+// WithInsecure is skipped for a URL endpoint, whose scheme has already decided
+// — and where the two disagree Validate has already refused the config, rather
+// than letting option order pick a winner.
 func newGRPCExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
 	opts := []otlptracegrpc.Option{otlptracegrpc.WithTimeout(cfg.Timeout())}
-	if cfg.Endpoint != "" {
-		opts = append(opts, otlptracegrpc.WithEndpoint(string(cfg.Endpoint)))
+
+	if cfg.IsEndpointURL() {
+		opts = append(opts, otlptracegrpc.WithEndpointURL(string(cfg.Endpoint)))
+	} else {
+		if cfg.Endpoint != "" {
+			opts = append(opts, otlptracegrpc.WithEndpoint(string(cfg.Endpoint)))
+		}
+		if bool(cfg.Insecure) {
+			opts = append(opts, otlptracegrpc.WithInsecure())
+		}
 	}
-	if bool(cfg.Insecure) {
-		opts = append(opts, otlptracegrpc.WithInsecure())
-	}
+
 	if headers := cfg.HeaderMap(); headers != nil {
 		opts = append(opts, otlptracegrpc.WithHeaders(headers))
 	}
@@ -166,12 +183,18 @@ func newGRPCExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, er
 
 func newHTTPExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error) {
 	opts := []otlptracehttp.Option{otlptracehttp.WithTimeout(cfg.Timeout())}
-	if cfg.Endpoint != "" {
-		opts = append(opts, otlptracehttp.WithEndpoint(string(cfg.Endpoint)))
+
+	if cfg.IsEndpointURL() {
+		opts = append(opts, otlptracehttp.WithEndpointURL(string(cfg.Endpoint)))
+	} else {
+		if cfg.Endpoint != "" {
+			opts = append(opts, otlptracehttp.WithEndpoint(string(cfg.Endpoint)))
+		}
+		if bool(cfg.Insecure) {
+			opts = append(opts, otlptracehttp.WithInsecure())
+		}
 	}
-	if bool(cfg.Insecure) {
-		opts = append(opts, otlptracehttp.WithInsecure())
-	}
+
 	if headers := cfg.HeaderMap(); headers != nil {
 		opts = append(opts, otlptracehttp.WithHeaders(headers))
 	}

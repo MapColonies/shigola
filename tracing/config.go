@@ -2,6 +2,10 @@ package tracing
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MapColonies/shigola/internal/env"
@@ -62,8 +66,13 @@ type Config struct {
 	// "otlp_http".
 	Exporter env.String `toml:"exporter"`
 
-	// Endpoint is the collector to export to — "tempo:4317" for gRPC,
-	// "tempo:4318" for HTTP, or a full URL for the latter.
+	// Endpoint is the collector to export to, in either of two shapes: a bare
+	// "tempo:4317" host and port, or a full URL such as
+	// "https://collector.example/v1/traces".
+	//
+	// Both work for both exporters, and they reach them through different
+	// options — see endpointFor. Getting that wrong is not a loud failure,
+	// which is why the shape is checked at startup: see validateEndpoint.
 	//
 	// Empty hands the decision to the OTEL SDK, which reads
 	// OTEL_EXPORTER_OTLP_ENDPOINT (and its per-signal variants) and otherwise
@@ -75,6 +84,10 @@ type Config struct {
 
 	// Insecure sends to the endpoint without TLS. Normal for an in-cluster
 	// collector reached over the pod network; wrong across anything else.
+	//
+	// Ignored when Endpoint is a full URL, because the URL's scheme has
+	// already said. Setting insecure alongside an https endpoint is a
+	// contradiction rather than an override, and Validate rejects it.
 	Insecure env.Bool `toml:"insecure"`
 
 	// SampleRatio is the fraction of locally-started traces to record, 0 to 1.
@@ -120,6 +133,88 @@ func (c Config) Validate() error {
 
 	if int(c.TimeoutMS) < 0 {
 		return fmt.Errorf("tracing: timeout_ms (%v) must not be negative", int(c.TimeoutMS))
+	}
+
+	return c.validateEndpoint()
+}
+
+// IsEndpointURL reports whether Endpoint is a full URL rather than a bare host
+// and port.
+//
+// On the scheme separator, not on url.Parse succeeding: url.Parse accepts
+// "tempo:4318" quite happily, reading "tempo" as the scheme and "4318" as an
+// opaque path, so it cannot tell the two shapes apart.
+func (c Config) IsEndpointURL() bool {
+	return strings.Contains(string(c.Endpoint), "://")
+}
+
+// validateEndpoint rejects an endpoint neither exporter can use.
+//
+// This is checked at startup because getting it wrong does not fail at
+// startup. Handing a URL to WithEndpoint, which wants host and port only,
+// makes the exporter treat the whole string as a host — percent-encoding it,
+// prefixing a scheme and appending the signal path — and then fail on every
+// single export with
+//
+//	traces export: parse "http://https:%2F%2Fcollector.example%2Fv1%2Ftraces/v1/traces":
+//	invalid port ":%2F%2Fcollector.example%2Fv1%2Ftraces" after host
+//
+// which is what a real deployment hit: a server healthy by every other signal,
+// exporting nothing, for as long as nobody read the logs closely. The shape is
+// decided here instead.
+func (c Config) validateEndpoint() error {
+	endpoint := string(c.Endpoint)
+	if endpoint == "" {
+		// Left to the SDK, which reads OTEL_EXPORTER_OTLP_ENDPOINT and
+		// otherwise defaults to localhost.
+		return nil
+	}
+
+	if c.IsEndpointURL() {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return fmt.Errorf("tracing: endpoint (%v) is not a valid URL: %w", endpoint, err)
+		}
+
+		switch u.Scheme {
+		case "http", "https":
+		default:
+			return fmt.Errorf("tracing: endpoint (%v) has scheme %q, want http or https", endpoint, u.Scheme)
+		}
+
+		if u.Host == "" {
+			return fmt.Errorf("tracing: endpoint (%v) names no host", endpoint)
+		}
+
+		// Rejected rather than resolved either way: the two keys are asking
+		// for opposite things, and silently picking one would mean either
+		// sending credentials in the clear or failing a handshake, depending
+		// on which.
+		if u.Scheme == "https" && bool(c.Insecure) {
+			return fmt.Errorf("tracing: endpoint (%v) is https but insecure is true; drop one", endpoint)
+		}
+
+		return nil
+	}
+
+	// No scheme, so this is the host-and-port shape, which carries no path.
+	// A path here is the other half of the same mistake — "tempo:4318/v1/traces"
+	// fails exactly as mysteriously as the URL did.
+	if strings.ContainsAny(endpoint, "/?#") {
+		return fmt.Errorf("tracing: endpoint (%v) has a path but no scheme; write host:port, or a full URL", endpoint)
+	}
+
+	if strings.Contains(endpoint, ":") {
+		_, port, err := net.SplitHostPort(endpoint)
+		if err != nil {
+			return fmt.Errorf("tracing: endpoint (%v) is not host:port: %w", endpoint, err)
+		}
+
+		// SplitHostPort only splits; it does not check that the port is a
+		// number, so "tempo:htpp" reaches it intact and fails at dial time.
+		if _, err := strconv.Atoi(port); err != nil {
+			return fmt.Errorf("tracing: endpoint (%v) has a non-numeric port (%v)", endpoint, port)
+		}
 	}
 
 	return nil
