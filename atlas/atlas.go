@@ -11,6 +11,7 @@ import (
 	"github.com/MapColonies/shigola/internal/observer"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/geom/slippy"
 )
 
@@ -36,6 +37,14 @@ type Atlas struct {
 
 	// holds a reference to the observer backend
 	observer observability.Interface
+
+	// holds a reference to the tracing backend.
+	//
+	// Separate from observer, not folded into it: one is a metrics
+	// abstraction and the other is not, they are configured and switched on
+	// independently, and a build with only one of them configured has to
+	// behave as though the other did not exist (MAPCO-11497).
+	tracer tracing.Interface
 
 	// publishBuildInfo indicates if we should publish the build info on change of observer
 	// this is set by calling PublishBuildInfo, which will publish
@@ -68,6 +77,7 @@ func (a *Atlas) AllMaps() []Map {
 		layers := make([]Layer, len(m.Layers))
 		copy(layers, m.Layers)
 		m.Layers = layers
+		m.tracer = a.tracer
 
 		maps = append(maps, m)
 	}
@@ -179,6 +189,12 @@ func (a *Atlas) Map(mapName string) (Map, error) {
 	copy(layers, m.Layers)
 	m.Layers = layers
 
+	// Handed out here rather than stored by AddMap: maps are registered before
+	// either backend is configured, so a tracer captured at AddMap time would
+	// always be the no-op. A Map is a value that gets copied and filtered on
+	// the way to Encode, and the copies carry this with them.
+	m.tracer = a.tracer
+
 	return m, nil
 }
 
@@ -226,19 +242,62 @@ func (a *Atlas) CacheWritePool() *cache.WritePool {
 // Instrumentation applied only from the outside yields a single hits_total for
 // the entire chain, where "hit" means "hit in some tier" — which answers none
 // of the questions the layered cache exists to answer. The chain cannot
-// instrument itself (observability imports cache), and it is constructed before
-// the observer exists, so this is the only place the two can meet.
-func instrumentCache(o observability.Interface, c cache.Interface) cache.Interface {
+// instrument itself — observability and tracing both import cache, so the
+// dependency cannot run the other way — and it is constructed before either
+// backend exists, so this is the only place the three can meet.
+func instrumentCache(o observability.Interface, t tracing.Interface, c cache.Interface) cache.Interface {
 	// Strip a previous instrumentation rather than wrapping it. Without this a
 	// second SetObservability puts an instrumented cache inside another one and
 	// double-counts everything — which is what the whole tree did until
 	// prometheus's accessor was renamed to Original(), since the assertion
 	// could never succeed.
-	if w, ok := c.(observability.Cache); ok && w.IsObserver() {
-		c = w.Original()
+	c = stripInstrumentation(c)
+
+	c = instrumentTiers(o, t, c, "")
+
+	if o != nil {
+		c = o.InstrumentedCache(c)
 	}
 
-	return o.InstrumentedCache(instrumentTiers(o, c, ""))
+	// Spans go on *outside* the metric wrapper, so that by the time the
+	// metric wrapper takes its duration observation the operation's span is
+	// already the active one in ctx. That is the ordering trace exemplars
+	// need (MAPCO-11496): an observation made before the span exists can only
+	// be exemplared against the request's span, not against the tier read it
+	// actually measured. Costs nothing today and cannot be reordered later
+	// without silently coarsening every exemplar.
+	if t != nil {
+		c = t.InstrumentedCache(c)
+	}
+
+	return c
+}
+
+// stripInstrumentation peels every instrumentation wrapper off c, leaving the
+// cache as it was constructed.
+//
+// Both kinds have to come off, and in either order they were applied: metrics
+// and tracing are installed by separate calls, so a cache reaching here can
+// carry one, the other, or both. Missing one would nest a second wrapper
+// inside it — which for metrics means double counting and for tracing means
+// two spans per read, each claiming to be the whole operation.
+func stripInstrumentation(c cache.Interface) cache.Interface {
+	for {
+		switch w := c.(type) {
+		case tracing.Cache:
+			if !w.IsTracer() {
+				return c
+			}
+			c = w.Original()
+		case observability.Cache:
+			if !w.IsObserver() {
+				return c
+			}
+			c = w.Original()
+		default:
+			return c
+		}
+	}
 }
 
 // instrumentTiers returns c with each of its tiers wrapped in per-tier
@@ -250,11 +309,12 @@ func instrumentCache(o observability.Interface, c cache.Interface) cache.Interfa
 // share a label, silently making both series wrong.
 //
 // Idempotent, because Tiers() returns the chain's *original* tiers: free of
-// observability wrappers, though still carrying their read deadlines. Each call
-// re-derives from those rather than wrapping whatever is currently installed.
-func instrumentTiers(o observability.Interface, c cache.Interface, path string) cache.Interface {
-	to, ok := o.(observability.TieredCacheObserver)
-	if !ok {
+// both instrumentation wrappers, though still carrying their read deadlines.
+// Each call re-derives from those rather than wrapping whatever is currently
+// installed.
+func instrumentTiers(o observability.Interface, t tracing.Interface, c cache.Interface, path string) cache.Interface {
+	to, _ := o.(observability.TieredCacheObserver)
+	if to == nil && t == nil {
 		return c
 	}
 
@@ -274,7 +334,18 @@ func instrumentTiers(o observability.Interface, c cache.Interface, path string) 
 
 		// Depth first: a nested chain has its own tiers instrumented before it
 		// is itself wrapped.
-		wrapped[i] = to.InstrumentedTierCache(name, instrumentTiers(o, tier.Cache, name))
+		inner := instrumentTiers(o, t, tier.Cache, name)
+
+		if to != nil {
+			inner = to.InstrumentedTierCache(name, inner)
+		}
+
+		// Outside the metric wrapper, for the reason instrumentCache gives.
+		if t != nil {
+			inner = t.InstrumentedTierCache(name, inner)
+		}
+
+		wrapped[i] = inner
 	}
 
 	// WithTiers re-wraps, so the decorators For applied survive this.
@@ -289,12 +360,13 @@ func (a *Atlas) SetCache(c cache.Interface) {
 		defaultAtlas.SetCache(c)
 		return
 	}
-	// let's see if we have an observer set. If so, we need to wrap
-	// the given cache with the observer.
-	if a.observer != nil {
-		c = a.observer.InstrumentedCache(c)
-	}
-	a.cacher = c
+	// Instrument it with whatever backends are already set. Through the same
+	// path SetObservability and SetTracing use, rather than the whole-cache
+	// wrapper this applied on its own until MAPCO-11497: root.go happens to
+	// call SetCache first and instrument afterwards, so the shallow version
+	// was always overwritten and never wrong — but only by ordering, and the
+	// shared path is idempotent, which the shallow one was not.
+	a.cacher = instrumentCache(a.observer, a.tracer, c)
 }
 
 // SetObservability will set the observability backend
@@ -311,7 +383,7 @@ func (a *Atlas) SetObservability(o observability.Interface) {
 		a.observer.Init()
 	}
 	if a.cacher != nil {
-		a.cacher = instrumentCache(o, a.cacher)
+		a.cacher = instrumentCache(o, a.tracer, a.cacher)
 
 		// Registered once per atlas. The collectors are process-wide by
 		// nature — one cache, one pool — and prometheus rejects a second
@@ -335,6 +407,26 @@ func (a *Atlas) SetObservability(o observability.Interface) {
 	}
 }
 
+// SetTracing sets the tracing backend.
+//
+// It re-derives cache instrumentation the same way SetObservability does, and
+// for the same reason: the chain is built before either backend exists, so this
+// is the only place the two can meet. Order between the two setters does not
+// matter — instrumentCache strips whatever is installed and rebuilds from the
+// original cache — which is what lets them stay independently configurable.
+func (a *Atlas) SetTracing(t tracing.Interface) {
+	if a == nil {
+		defaultAtlas.SetTracing(t)
+		return
+	}
+
+	a.tracer = t
+
+	if a.cacher != nil {
+		a.cacher = instrumentCache(a.observer, t, a.cacher)
+	}
+}
+
 func (a *Atlas) Observer() observability.Interface {
 	if a == nil {
 		return defaultAtlas.Observer()
@@ -346,6 +438,22 @@ func (a *Atlas) Observer() observability.Interface {
 		return nil
 	}
 	return a.observer
+}
+
+// Tracing returns the tracing backend, never nil.
+//
+// Unlike Observer, which reports nil for the null backend so that callers can
+// skip work, this hands back the no-op: every caller here starts spans through
+// it rather than deciding whether to, and a nil check at each of those sites
+// would be the branch the null backend exists to remove.
+func (a *Atlas) Tracing() tracing.Interface {
+	if a == nil {
+		return defaultAtlas.Tracing()
+	}
+	if a.tracer == nil {
+		return tracing.NullTracer
+	}
+	return a.tracer
 }
 
 func (a *Atlas) StartSubProcesses() {
@@ -404,5 +512,11 @@ func CacheWritePool() *cache.WritePool { return defaultAtlas.CacheWritePool() }
 
 // SetObservability sets the observability backend for the defaultAtlas
 func SetObservability(o observability.Interface) { defaultAtlas.SetObservability(o) }
+
+// SetTracing sets the tracing backend for the defaultAtlas
+func SetTracing(t tracing.Interface) { defaultAtlas.SetTracing(t) }
+
+// Tracing returns the defaultAtlas tracing backend, never nil.
+func Tracing() tracing.Interface { return defaultAtlas.Tracing() }
 
 func StartSubProcesses() { defaultAtlas.StartSubProcesses() }

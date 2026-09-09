@@ -42,15 +42,16 @@ type NamedTier struct {
 // Tiered is satisfied by composite caches that want their tiers instrumented
 // individually. It is optional: asserted for, never required.
 //
-// It exists because cache cannot import observability — observability imports
+// It exists because cache cannot import observability or tracing — both import
 // cache — so a chain cannot instrument itself. atlas descends through this
 // interface instead, and both of the decorators For applies forward it, or the
-// descent stops at the decorator and every per-tier metric silently disappears.
+// descent stops at the decorator and every per-tier metric and tier span
+// silently disappears.
 type Tiered interface {
-	// Tiers returns this chain's own tiers in read order, free of
-	// observability wrappers but still carrying their read deadlines.
+	// Tiers returns this chain's own tiers in read order, free of the
+	// metric and tracing wrappers but still carrying their read deadlines.
 	// Instrumentation goes *outside* the deadline, so a timed-out read still
-	// lands in the latency histogram.
+	// lands in the latency histogram and in the span tree.
 	Tiers() []NamedTier
 
 	// WithTiers returns a new cache over the given tiers, still decorated.
