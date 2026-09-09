@@ -1,17 +1,19 @@
 package server_test
 
 import (
-	"context"
 	"net/http"
 	"net/url"
+	"slices"
 	"testing"
 
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	promclient "github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/observability/prometheus"
 	"github.com/MapColonies/shigola/server"
 	"github.com/MapColonies/shigola/tracing"
 )
@@ -23,19 +25,6 @@ import (
 // out-of-range zoom here would record only the request span and look exactly
 // like tracing being unwired.
 const tracedTileURI = "/collections/test-map/tiles/WebMercatorQuad/10/3/2"
-
-func tracedBackend(t *testing.T) (tracing.Interface, *tracetest.InMemoryExporter) {
-	t.Helper()
-
-	exporter := tracetest.NewInMemoryExporter()
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSyncer(exporter),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-	)
-	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
-
-	return tracing.NewWithProvider(tp, "test"), exporter
-}
 
 // twoTierCache builds hot → durable through cache.For, so the request walks the
 // same decorator stack it would in production.
@@ -79,7 +68,7 @@ func TestTileRequestProducesOneSpanTree(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
 	server.URIPrefix = "/"
 
-	tracer, exporter := tracedBackend(t)
+	tracer, exporter := faketracer.New(t)
 
 	a := newTestMapWithLayers(testLayer2)
 	a.SetCache(twoTierCache(t, "tracedhot", "traceddurable"))
@@ -131,7 +120,7 @@ func TestTileRequestProducesOneSpanTree(t *testing.T) {
 		tracing.SpanProviderQuery,
 	} {
 		if _, ok := byName[want]; !ok {
-			t.Errorf("no %v span in the tree; recorded %v", want, names(spans))
+			t.Errorf("no %v span in the tree; recorded %v", want, faketracer.Names(spans))
 		}
 	}
 
@@ -157,7 +146,7 @@ func TestTileRequestWithoutTracingRecordsNothing(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
 	server.URIPrefix = "/"
 
-	_, exporter := tracedBackend(t)
+	_, exporter := faketracer.New(t)
 
 	a := newTestMapWithLayers(testLayer2)
 	a.SetCache(twoTierCache(t, "untracedhot", "untraceddurable"))
@@ -171,18 +160,94 @@ func TestTileRequestWithoutTracingRecordsNothing(t *testing.T) {
 	}
 
 	if got := exporter.GetSpans(); len(got) != 0 {
-		t.Errorf("recorded %d spans with tracing disabled: %v", len(got), names(got))
+		t.Errorf("recorded %d spans with tracing disabled: %v", len(got), faketracer.Names(got))
 	}
 	if a.Tracing().Enabled() {
 		t.Error("Tracing().Enabled() = true on an atlas that was never given a backend")
 	}
 }
 
-func names(spans tracetest.SpanStubs) []string {
-	out := make([]string, len(spans))
-	for i := range spans {
-		out[i] = spans[i].Name
+// TestTracedRequestPublishesNoNewMetrics is the half of "Prometheus metrics are
+// unaffected" that atlas's own test cannot reach.
+//
+// otelhttp records HTTP metrics of its own from the *global* OTEL meter
+// provider. Nothing in shigola installs one, and the HTTP decorator pins it to
+// a no-op explicitly — but both of those are invariants about the program
+// rather than about this request, so the check that matters is whether a real
+// traced request adds a metric family. atlas's test issues no request and so
+// could never see this.
+func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
+	server.HostName = &url.URL{Host: serverHostName}
+	server.URIPrefix = "/"
+
+	a := newTestMapWithLayers(testLayer2)
+	a.SetCache(twoTierCache(t, "metrichot", "metricdurable"))
+
+	observer, err := prometheus.New(dict.Dict{})
+	if err != nil {
+		t.Fatalf("prometheus observer: %v", err)
+	}
+	a.SetObservability(observer)
+
+	// Two untraced requests before the snapshot, not one.
+	//
+	// A prometheus *Vec publishes a family only once a label set on it has
+	// been observed, so the snapshot has to be taken in a state where every
+	// family the traced request will touch already exists. One request is not
+	// enough: the first is a miss on an empty cache and populates only the
+	// misses families, and it then writes the tile — so the second is a hit
+	// and publishes shigola_cache_hits_total and its per-tier sibling for the
+	// first time. Snapshotting after one request blames tracing for the cache
+	// warming up.
+	for range 2 {
+		if _, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil); err != nil {
+			t.Fatalf("untraced request: %v", err)
+		}
 	}
 
-	return out
+	before := familyNames(t)
+
+	tracer, exporter := faketracer.New(t)
+	tracer.Install()
+	a.SetTracing(tracer)
+
+	if _, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil); err != nil {
+		t.Fatalf("traced request: %v", err)
+	}
+
+	// Without this the test would pass just as happily if tracing had not been
+	// wired into the request at all.
+	if len(exporter.GetSpans()) == 0 {
+		t.Fatal("the traced request recorded no spans, so this proved nothing about metrics")
+	}
+
+	after := familyNames(t)
+	for _, name := range after {
+		if !slices.Contains(before, name) {
+			t.Errorf("a traced request published a new metric family: %v", name)
+		}
+	}
+	for _, name := range before {
+		if !slices.Contains(after, name) {
+			t.Errorf("a traced request removed a metric family: %v", name)
+		}
+	}
+}
+
+// familyNames is every metric family the process publishes right now.
+func familyNames(t *testing.T) []string {
+	t.Helper()
+
+	families, err := promclient.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+
+	names := make([]string, 0, len(families))
+	for _, family := range families {
+		names = append(names, family.GetName())
+	}
+	slices.Sort(names)
+
+	return names
 }

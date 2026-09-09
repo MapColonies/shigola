@@ -11,6 +11,10 @@ import (
 
 // recording returns a backend whose spans land in memory, synchronously.
 //
+// A local copy of internal/faketracer.New, which is what atlas's and server's
+// tests use. It cannot be shared: faketracer imports tracing, so this
+// in-package test importing faketracer would be an import cycle.
+//
 // WithSyncer, not WithBatcher: a test that had to wait for a batch interval
 // before it could read what it just recorded would either be slow or flaky, and
 // batching is the exporter's concern rather than the instrumentation's. Every

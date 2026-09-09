@@ -6,7 +6,9 @@
 // wanted here: nothing in this package registers a prometheus collector, and
 // nothing installs a global OTEL MeterProvider — which is what keeps a build
 // with tracing enabled emitting exactly the metrics it emitted before
-// (MAPCO-11497). metrics_test.go asserts that rather than trusting it.
+// (MAPCO-11497). atlas.TestMetricsAreUnaffectedByTracing and
+// server.TestTracedRequestPublishesNoNewMetrics assert that rather than
+// trusting it.
 //
 // The dependency rule that stops cache importing observability holds here for
 // the same reason — this package imports cache, so cache cannot import it — so
