@@ -13,7 +13,9 @@ type = "prometheus"
 
 ```
 
-The metrics will be exposed on the `/metrics` end point.
+The metrics will be exposed on the `/metrics` end point, in the **OpenMetrics**
+format when the scraper asks for it — see [Trace exemplars](#trace-exemplars),
+which is the reason it does.
 
 ### Configuration Properties
 
@@ -27,6 +29,68 @@ The metrics will be exposed on the `/metrics` end point.
 - `push_url` (string) : [Optional] To push to a Prometheus Gateway, set the push_url to the gateway's URL. Note: this should only be used for ephemeral jobs, such as `shigola cache seed` or `shigola cache pruge` commands.
 - `push_cadence` (int) : [Optional] How often to push to the Prometheus Gateway. Defaults to 10 secs. Use a zero or less to only push at the end of the process.
 
+
+### Trace exemplars
+
+When [tracing](../../tracing/README.md) is enabled, each duration observation
+made inside a **sampled** trace carries that trace and span as a Prometheus
+exemplar, so a slow bucket in Grafana links to the trace that produced it.
+
+| Family | Exemplar |
+|:---|:---|
+| `shigola_cache_duration_seconds` | the `cache.Get`/`Set`/`Purge` span |
+| `shigola_cache_tier_duration_seconds` | the `cache.tier.*` span for that tier |
+| `shigola_api_duration_seconds` | the request span |
+
+The labels are `trace_id` and `span_id`, the same names the log records carry.
+Nothing is attached to an observation made outside a trace, or inside an
+unsampled one — the observation is recorded exactly as it would have been, with
+no empty label.
+
+`span_id` names the operation that was measured rather than the request, which
+is what makes an exemplar on the per-tier histogram useful: it points at the
+tier read that was slow, on the one family whose purpose is telling tiers apart.
+
+**Wiring it up.** Three things outside this repo have to be true, and each fails
+quietly on its own:
+
+1. The scraper must ask for OpenMetrics. Prometheus does by default; the format
+   is the only one that encodes exemplars, and the classic text format drops
+   them silently.
+2. The server must store them — Prometheus needs
+   `--enable-feature=exemplar-storage`, Mimir its equivalent.
+3. Grafana's Prometheus datasource needs an exemplar link on `trace_id`
+   pointing at the Tempo datasource. Without it the exemplars render as dots on
+   the panel with no link behind them.
+
+Then a bucket with a dot on it is one click from the trace.
+
+**On pushed metrics.** A `push_url` deployment does not go through the
+exposition format above at all: `push.New` defaults to protobuf
+(`expfmt.FmtProtoDelim`) and nothing here overrides it. Protobuf *can* carry
+exemplars — `(*histogram).Write` fills in `dto.Bucket.Exemplar` — so they are on
+the wire, and whether they are stored and re-exposed is the Pushgateway's own
+business rather than anything this repo decides. Untested here either way. Note
+that `push_url` is documented above for ephemeral jobs such as `shigola cache
+seed`, which is not the latency-spike-to-trace workflow this section is about.
+
+**The `le` label spelling changed.** Negotiating OpenMetrics respells a
+boundary that renders as a whole number with a trailing `.0`, so `le="1"` is now `le="1.0"`,
+which is a different series. The format is negotiated per scrape rather than
+per family, so this reaches the size histograms too even though they carry no
+exemplars:
+
+| Family | Respelled |
+|:---|:---|
+| `shigola_cache_duration_seconds`, `shigola_cache_tier_duration_seconds` | `1`, `5` |
+| `shigola_api_duration_seconds` | `1`, `5`, `10` |
+| `shigola_cache_response_size_bytes`, `shigola_cache_tier_response_size_bytes` | `1024`, `5120`, `25600`, `102400`, `256000`, `512000` |
+| `shigola_api_response_size_bytes` | `512000` |
+
+`2.5` is untouched, because it already contains a `.`, and so are the megabyte
+boundaries, which render as `1.048576e+06` and `5.24288e+06`.
+`TestRespelledBucketBoundaries` derives this list from the bucket sets, so it
+cannot drift from them. Anything matching an exact `le` needs checking.
 
 ### Metrics exposed
 
@@ -51,6 +115,8 @@ versions of the application.
 #### shigola server api http handlers
 
 ##### shigola_api_duration_seconds
+
+Carries a [trace exemplar](#trace-exemplars) naming the request span.
 
 A histogram of latencies for requests.
 
@@ -121,6 +187,8 @@ A counter of the number of tile hits
 * y is an optional label, that is the y coordinate; this is only present if configured via `variables` config option.
 
 ##### shigola_cache_duration_seconds
+
+Carries a [trace exemplar](#trace-exemplars) naming the cache operation's span.
 
 Buckets: 1-2-5 per decade from 100µs to 5 seconds — 100µs, 250µs, 500µs, 1ms, 2.5ms, 5ms, 10ms,
 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s.

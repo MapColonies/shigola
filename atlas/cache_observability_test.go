@@ -11,6 +11,7 @@ import (
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/observability/prometheus"
 )
@@ -96,21 +97,7 @@ func counter(t *testing.T, name string, labels map[string]string) float64 {
 		}
 
 		for _, m := range family.GetMetric() {
-			matched := true
-			for k, v := range labels {
-				found := false
-				for _, pair := range m.GetLabel() {
-					if pair.GetName() == k && pair.GetValue() == v {
-						found = true
-						break
-					}
-				}
-				if !found {
-					matched = false
-					break
-				}
-			}
-			if !matched {
+			if !ttools.HasLabels(m.GetLabel(), labels) {
 				continue
 			}
 

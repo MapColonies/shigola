@@ -64,12 +64,14 @@ func newHttpHandler(registry prometheus.Registerer, prefix string, URLPrefix str
 		[]string{},
 	)
 
-	registry.MustRegister(
-		handler.inFlightGauge,
-		handler.counter,
-		handler.durationSeconds,
-		handler.responseSizeBytes,
-	)
+	// Through registerOrReuse, for the reason its own doc comment gives — a
+	// second observer in the same process re-registers these four families, and
+	// MustRegister panics on that. newCache has always done this; this
+	// constructor was simply missed.
+	handler.inFlightGauge = registerOrReuse(registry, handler.inFlightGauge)
+	handler.counter = registerOrReuse(registry, handler.counter)
+	handler.durationSeconds = registerOrReuse(registry, handler.durationSeconds)
+	handler.responseSizeBytes = registerOrReuse(registry, handler.responseSizeBytes)
 
 	return &handler
 }
@@ -108,7 +110,12 @@ func (handler *httpHandler) instrumentHandlerDuration(originalRoute string, next
 		labels := prometheus.Labels{
 			"handler": strings.Join(parts, "/"),
 		}
-		promhttp.InstrumentHandlerDuration(handler.durationSeconds.MustCurryWith(labels), next).ServeHTTP(w, r)
+		// The exemplar comes off the request context, which by this point
+		// carries the server span: the tracing handler wraps this one
+		// (server.NewRouter), so it has already replaced the request.
+		promhttp.InstrumentHandlerDuration(handler.durationSeconds.MustCurryWith(labels), next,
+			promhttp.WithExemplarFromContext(exemplarFrom),
+		).ServeHTTP(w, r)
 	})
 }
 
