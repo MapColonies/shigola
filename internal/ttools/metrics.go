@@ -64,7 +64,7 @@ func HistogramSample(t *testing.T, gatherer prometheus.Gatherer, name string, la
 		}
 
 		for _, metric := range family.GetMetric() {
-			if hasLabels(metric.GetLabel(), labels) {
+			if HasLabels(metric.GetLabel(), labels) {
 				return metric.GetHistogram()
 			}
 		}
@@ -122,8 +122,13 @@ func ExemplarLabels(t *testing.T, gatherer prometheus.Gatherer, name string, lab
 	return got
 }
 
-// hasLabels reports whether pairs contain every label in want.
-func hasLabels(pairs []*dto.LabelPair, want map[string]string) bool {
+// HasLabels reports whether pairs contain every label in want — a subset
+// match, so a caller names only the labels it cares about and ignores whatever
+// else the observe-vars added.
+//
+// Exported because the sample lookups here are not the only place that needs
+// it: atlas's own counter() reader matches labels the same way.
+func HasLabels(pairs []*dto.LabelPair, want map[string]string) bool {
 	for name, value := range want {
 		found := false
 		for _, pair := range pairs {

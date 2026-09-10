@@ -116,74 +116,100 @@ func TestExemplarFitsTheRuneLimit(t *testing.T) {
 	histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(0.002, labels)
 }
 
-// TestCacheDurationCarriesTheExemplar is the cache half of the ticket: a tier
-// read observed inside a sampled trace names it.
-func TestCacheDurationCarriesTheExemplar(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	tier := faketier.New("hot")
-	c := newCache(registry, "test_exemplar_cache", nil, tier)
-
-	//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
-	c.Get(fakelog.TracedContext(true), exemplarKey)
-
-	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_cache_duration_seconds", readLabels)
-	if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
-		t.Fatalf("cache duration exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
+// TestDurationExemplars is the ticket's two halves against its two states —
+// the cache path and the HTTP path, each inside a sampled trace and outside any
+// trace.
+//
+// One table rather than four functions because the four rows assert one claim
+// between them, and the interesting comparison is down the columns: the two
+// paths attach their exemplar through entirely different machinery — the cache
+// calls ObserveWithExemplar itself, the HTTP side hands the hook to promhttp —
+// so neither's behaviour tells you the other's, in either state.
+func TestDurationExemplars(t *testing.T) {
+	type tcase struct {
+		// observe makes one duration observation against the registry, in the
+		// context the row is about, and returns the family and label set it
+		// landed on.
+		observe func(*testing.T, *prometheus.Registry) (string, map[string]string)
+		traced  bool
 	}
-}
 
-// TestCacheDurationOutsideATraceHasNoExemplar is the other acceptance
-// criterion: an untraced observation records normally, with nothing attached.
-func TestCacheDurationOutsideATraceHasNoExemplar(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	tier := faketier.New("hot")
-	c := newCache(registry, "test_plain_cache", nil, tier)
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			registry := prometheus.NewRegistry()
 
-	//nolint:errcheck // as above
-	c.Get(context.Background(), exemplarKey)
+			family, labels := tc.observe(t, registry)
 
-	assertRecordedWithoutExemplar(t, registry, "test_plain_cache_duration_seconds", readLabels)
-}
+			if !tc.traced {
+				assertRecordedWithoutExemplar(t, registry, family, labels)
 
-// TestHTTPDurationCarriesTheExemplar is the request half. The span context
-// reaches the middleware on the request, which is how it arrives in
-// production: the tracing handler is installed outside the metrics one and has
-// already replaced the request by the time this runs.
-func TestHTTPDurationCarriesTheExemplar(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	handler := newHttpHandler(registry, "test_exemplar_api", "", nil)
+				return
+			}
 
-	instrumented := handler.InstrumentedHttpHandler(http.MethodGet, "/collections/osm/tiles",
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
-
-	request := httptest.NewRequest(http.MethodGet, "/collections/osm/tiles", nil).
-		WithContext(fakelog.TracedContext(true))
-	instrumented.ServeHTTP(httptest.NewRecorder(), request)
-
-	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_api_duration_seconds",
-		map[string]string{"handler": "/collections/osm/tiles"})
-	if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
-		t.Fatalf("http duration exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
+			exemplar := ttools.ExemplarLabels(t, registry, family, labels)
+			if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
+				t.Errorf("exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
+			}
+			if got := exemplar[exemplarSpanIDKey]; got != fakelog.SpanIDHex {
+				t.Errorf("exemplar names span %q, want %q", got, fakelog.SpanIDHex)
+			}
+		}
 	}
-}
 
-// TestHTTPDurationOutsideATraceHasNoExemplar is the request half of the same
-// acceptance criterion the cache half above covers. Worth both: the two paths
-// attach their exemplar through entirely different machinery — one calls
-// ObserveWithExemplar itself, the other hands the hook to promhttp — so
-// neither's behaviour outside a trace tells you the other's.
-func TestHTTPDurationOutsideATraceHasNoExemplar(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	handler := newHttpHandler(registry, "test_plain_api", "", nil)
+	// cacheRead observes one tier read through the metric wrapper.
+	cacheRead := func(prefix string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
+		return func(t *testing.T, registry *prometheus.Registry) (string, map[string]string) {
+			c := newCache(registry, prefix, nil, faketier.New("hot"))
 
-	instrumented := handler.InstrumentedHttpHandler(http.MethodGet, "/collections/osm/tiles",
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+			//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
+			c.Get(ctx, exemplarKey)
 
-	instrumented.ServeHTTP(httptest.NewRecorder(),
-		httptest.NewRequest(http.MethodGet, "/collections/osm/tiles", nil))
+			return prefix + "_duration_seconds", readLabels
+		}
+	}
 
-	assertRecordedWithoutExemplar(t, registry, "test_plain_api_duration_seconds",
-		map[string]string{"handler": "/collections/osm/tiles"})
+	// request serves one request through the metrics middleware. The span
+	// context arrives on the request, which is how it arrives in production:
+	// the tracing handler is installed outside the metrics one and has already
+	// replaced the request by the time this runs.
+	request := func(prefix string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
+		return func(t *testing.T, registry *prometheus.Registry) (string, map[string]string) {
+			const route = "/collections/osm/tiles"
+
+			handler := newHttpHandler(registry, prefix, "", nil)
+			instrumented := handler.InstrumentedHttpHandler(http.MethodGet, route,
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+			r := httptest.NewRequest(http.MethodGet, route, nil)
+			if ctx != nil {
+				r = r.WithContext(ctx)
+			}
+			instrumented.ServeHTTP(httptest.NewRecorder(), r)
+
+			return prefix + "_duration_seconds", map[string]string{"handler": route}
+		}
+	}
+
+	tests := map[string]tcase{
+		"a cache read in a sampled trace": {
+			observe: cacheRead("test_exemplar_cache", fakelog.TracedContext(true)),
+			traced:  true,
+		},
+		"a cache read outside any trace": {
+			observe: cacheRead("test_plain_cache", context.Background()),
+		},
+		"a request in a sampled trace": {
+			observe: request("test_exemplar_api", fakelog.TracedContext(true)),
+			traced:  true,
+		},
+		"a request outside any trace": {
+			observe: request("test_plain_api", nil),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
 }
 
 // TestExemplarReachesTheExposition is the one that would have made every other

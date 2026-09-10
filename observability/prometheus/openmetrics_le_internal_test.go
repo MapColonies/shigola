@@ -26,9 +26,10 @@ import (
 // lePattern pulls the le label out of an exposition line.
 var lePattern = regexp.MustCompile(`le="([^"]+)"`)
 
-// scrapeLabels serves a registry in one exposition format and returns the le
-// label values it wrote, in bucket order.
-func scrapeLabels(t *testing.T, registry *prometheus.Registry, openMetrics bool) []string {
+// scrapeLE serves a registry in one exposition format and returns the le label
+// values it wrote, in bucket order. openMetrics picks the encoder; false is the
+// classic text format this route served before exemplars.
+func scrapeLE(t *testing.T, registry *prometheus.Registry, openMetrics bool) []string {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -74,8 +75,8 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 			// One observation, so every bucket is written out.
 			histogram.Observe(0)
 
-			classic := scrapeLabels(t, registry, false)
-			openMetrics := scrapeLabels(t, registry, true)
+			classic := scrapeLE(t, registry, false)
+			openMetrics := scrapeLE(t, registry, true)
 
 			if len(classic) != len(openMetrics) {
 				t.Fatalf("%d le labels classic, %d under OpenMetrics; the two are not comparable",

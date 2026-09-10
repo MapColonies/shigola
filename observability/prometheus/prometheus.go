@@ -138,8 +138,19 @@ func (*observer) Name() string { return Name }
 // A pointer receiver like every sibling. It was a value receiver, which copied
 // the observer's sync.Once fields on every call — a vet copylocks finding, and
 // harmless only because the copy was discarded unread.
-func (*observer) Handler(string) http.Handler {
-	return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+func (obs *observer) Handler(string) http.Handler {
+	// The observer's own registerer, not the package default, even though New
+	// only ever sets it to that: an observer built against some other registry
+	// should serve that registry rather than quietly serving the global one.
+	// The gatherer has no such field to read, so it stays the default.
+	//
+	// nil-guarded like every sibling here — the pointer receiver this took to
+	// clear a vet copylocks finding is also a receiver that can now be nil.
+	if obs == nil {
+		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+	}
+
+	return metricsHandler(obs.registry, prometheus.DefaultGatherer)
 }
 
 // metricsHandler serves the metrics route, negotiating OpenMetrics.
