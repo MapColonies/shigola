@@ -1,69 +1,95 @@
 package prometheus
 
 import (
-	"bytes"
-	"strconv"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // This file is the evidence for a claim the docs make and an operator acts on:
 // which bucket boundaries are respelled by serving OpenMetrics, and therefore
 // which `le` series change identity. Getting that list wrong understates an
-// upgrade break, so it is derived here rather than worked out by hand.
+// upgrade break — the first version of these docs named a boundary that is not
+// affected at all — so it is derived rather than worked out by hand.
 //
-// openMetricsFloat reproduces expfmt.writeOpenMetricsFloat, which is
-// unexported: shortest 'g' formatting, with ".0" appended when the result
-// contains neither "." nor "e".
-func openMetricsFloat(f float64) string {
-	switch {
-	case f == 1:
-		return "1.0"
-	case f == 0:
-		return "0.0"
-	case f == -1:
-		return "-1.0"
+// Derived by *scraping both encoders* rather than by reimplementing the rule
+// they apply. An earlier version of this test copied expfmt's unexported
+// writeOpenMetricsFloat, which put the docs one vendored change away from being
+// wrong with the test still green; the copy also silently dropped that
+// function's NaN and ±Inf cases. Nothing here knows the rule, so a change to it
+// shows up as a failure naming the boundary that moved.
+
+// lePattern pulls the le label out of an exposition line.
+var lePattern = regexp.MustCompile(`le="([^"]+)"`)
+
+// scrapeLabels serves a registry in one exposition format and returns the le
+// label values it wrote, in bucket order.
+func scrapeLabels(t *testing.T, registry *prometheus.Registry, openMetrics bool) []string {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	if openMetrics {
+		// The one Accept header that reaches the OpenMetrics encoder in this
+		// vendored expfmt, which negotiates version 0.0.1 only.
+		request.Header.Set("Accept", "application/openmetrics-text;version=0.0.1")
 	}
 
-	b := strconv.AppendFloat(nil, f, 'g', -1, 64)
-	if !bytes.ContainsAny(b, "e.") {
-		b = append(b, '.', '0')
+	recorder := httptest.NewRecorder()
+	promhttp.HandlerFor(registry, promhttp.HandlerOpts{EnableOpenMetrics: openMetrics}).
+		ServeHTTP(recorder, request)
+
+	var labels []string
+	for _, match := range lePattern.FindAllStringSubmatch(recorder.Body.String(), -1) {
+		labels = append(labels, match[1])
 	}
 
-	return string(b)
+	return labels
 }
 
-// classicFloat is expfmt.writeFloat, the format served before OpenMetrics.
-func classicFloat(f float64) string {
-	return strconv.FormatFloat(f, 'g', -1, 64)
-}
-
-// TestRespelledBucketBoundaries lists every boundary whose `le` label changed,
-// so the set the docs name can be compared against the set that exists.
-//
-// The rule catches integer-looking values only, which is narrower than it
-// first appears: 2.5 already contains a ".", and 5242880 renders as
-// "5.24288e+06" and already contains an "e". It is also *not* confined to the
-// duration families — the response-size boundaries are whole numbers of bytes
-// and nearly all of them are respelled.
+// TestRespelledBucketBoundaries scrapes each bucket set under both exposition
+// formats and reports every boundary the two spell differently.
 func TestRespelledBucketBoundaries(t *testing.T) {
 	type tcase struct {
 		buckets []float64
 		// respelled is every boundary whose le label changed, as
 		// "before -> after". unchanged records the boundaries that surprise by
-		// *not* changing, so the reason is written down next to the list it is
-		// absent from.
+		// *not* changing, so the reason sits next to the list they are absent
+		// from.
 		respelled []string
 		unchanged []string
 	}
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			histogram := prometheus.NewHistogram(prometheus.HistogramOpts{
+				Name:    "test_le_seconds",
+				Buckets: tc.buckets,
+			})
+			registry.MustRegister(histogram)
+			// One observation, so every bucket is written out.
+			histogram.Observe(0)
+
+			classic := scrapeLabels(t, registry, false)
+			openMetrics := scrapeLabels(t, registry, true)
+
+			if len(classic) != len(openMetrics) {
+				t.Fatalf("%d le labels classic, %d under OpenMetrics; the two are not comparable",
+					len(classic), len(openMetrics))
+			}
+
 			var changed []string
-			for _, le := range tc.buckets {
-				before, after := classicFloat(le), openMetricsFloat(le)
-				if before != after {
-					changed = append(changed, before+" -> "+after)
+			unchanged := map[string]bool{}
+			for i := range classic {
+				if classic[i] != openMetrics[i] {
+					changed = append(changed, classic[i]+" -> "+openMetrics[i])
+					continue
 				}
+				unchanged[classic[i]] = true
 			}
 
 			if len(changed) != len(tc.respelled) {
@@ -76,8 +102,8 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 			}
 
 			for _, le := range tc.unchanged {
-				if got := openMetricsFloat(mustParse(t, le)); got != le {
-					t.Errorf("%v was documented as unchanged but is written %q", le, got)
+				if !unchanged[le] {
+					t.Errorf("%v was documented as unchanged but the two formats spell it differently", le)
 				}
 			}
 		}
@@ -115,17 +141,4 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
 	}
-}
-
-// mustParse reads a boundary back out of its rendered form, so the unchanged
-// lists above can be written the way the exposition writes them.
-func mustParse(t *testing.T, s string) float64 {
-	t.Helper()
-
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		t.Fatalf("parsing %q: %v", s, err)
-	}
-
-	return f
 }

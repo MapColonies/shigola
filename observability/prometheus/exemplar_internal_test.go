@@ -134,15 +134,7 @@ func TestCacheDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	//nolint:errcheck // as above
 	c.Get(context.Background(), exemplarKey)
 
-	histogram := ttools.HistogramSample(t, registry, "test_plain_cache_duration_seconds", getLabels)
-	if histogram.GetSampleCount() != 1 {
-		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
-	}
-	for _, bucket := range histogram.GetBucket() {
-		if bucket.GetExemplar() != nil {
-			t.Fatalf("bucket le=%v carries an exemplar outside a trace", bucket.GetUpperBound())
-		}
-	}
+	assertRecordedWithoutExemplar(t, registry, "test_plain_cache_duration_seconds", getLabels)
 }
 
 // TestHTTPDurationCarriesTheExemplar is the request half. The span context
@@ -182,16 +174,8 @@ func TestHTTPDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	instrumented.ServeHTTP(httptest.NewRecorder(),
 		httptest.NewRequest(http.MethodGet, "/collections/osm/tiles", nil))
 
-	histogram := ttools.HistogramSample(t, registry, "test_plain_api_duration_seconds",
+	assertRecordedWithoutExemplar(t, registry, "test_plain_api_duration_seconds",
 		map[string]string{"handler": "/collections/osm/tiles"})
-	if histogram.GetSampleCount() != 1 {
-		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
-	}
-	for _, bucket := range histogram.GetBucket() {
-		if bucket.GetExemplar() != nil {
-			t.Fatalf("bucket le=%v carries an exemplar outside a trace", bucket.GetUpperBound())
-		}
-	}
 }
 
 // TestExemplarReachesTheExposition is the one that would have made every other
@@ -228,5 +212,29 @@ func TestExemplarReachesTheExposition(t *testing.T) {
 	want := exemplarTraceIDKey + `="` + fakelog.TraceIDHex + `"`
 	if body := recorder.Body.String(); !strings.Contains(body, want) {
 		t.Fatalf("the exposition does not contain %q; exemplars are recorded but never scraped", want)
+	}
+}
+
+// assertRecordedWithoutExemplar is the acceptance criterion for an observation
+// made outside a trace: recorded exactly as it would have been, carrying
+// nothing. Both halves matter — a guard that dropped the observation entirely
+// would satisfy "no exemplar" while losing the measurement.
+//
+// Shared by the cache and HTTP cases, which assert the same thing about two
+// entirely different mechanisms: one calls ObserveWithExemplar itself, the
+// other hands the hook to promhttp.
+func assertRecordedWithoutExemplar(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) {
+	t.Helper()
+
+	histogram := ttools.HistogramSample(t, gatherer, name, labels)
+
+	if histogram.GetSampleCount() != 1 {
+		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
+	}
+
+	for _, bucket := range histogram.GetBucket() {
+		if bucket.GetExemplar() != nil {
+			t.Fatalf("bucket le=%v carries an exemplar outside a trace", bucket.GetUpperBound())
+		}
 	}
 }

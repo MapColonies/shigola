@@ -45,9 +45,11 @@ func MetricFamilyNames(t *testing.T) []string {
 // read a histogram back out of a registry to assert what an observation
 // recorded, and the family-then-label walk was otherwise written out in each.
 //
-// gatherer rather than the default registry, because a test asserting on
-// exemplars usually wants a registry of its own — the default one is
-// process-wide and accumulates whatever else the binary registered.
+// gatherer rather than the default registry, because both are needed: a test
+// that can build its own registry should, since the default one is
+// process-wide and accumulates whatever else the binary registered, but a test
+// going through atlas or a real request reaches the metrics only through the
+// default registry the observer installs itself against.
 func HistogramSample(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Histogram {
 	t.Helper()
 
