@@ -37,6 +37,10 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 		labels               map[string]string
 		// wantSpan picks the span the exemplar must name out of the exporter.
 		wantSpan func(*testing.T, *tracetest.InMemoryExporter) tracetest.SpanStub
+		// rejectCacheSpan is the inversion this row can catch: a tier exemplar
+		// naming the cache-wide span is the bug, and a whole-cache exemplar
+		// naming it is correct, so only one row can look for it.
+		rejectCacheSpan bool
 	}
 
 	fn := func(tc tcase) func(*testing.T) {
@@ -67,11 +71,13 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 				t.Errorf("exemplar span_id = %q, want %q", got, want)
 			}
 
-			// The specific inversion the ordering prevents, named so a failure
-			// says which way round it went wrong.
+			if !tc.rejectCacheSpan {
+				return
+			}
+
+			// Named so a failure says which way round it went wrong.
 			whole := faketracer.SpanNamed(t, exporter, tracing.SpanCacheGet)
-			if tc.family == "shigola_cache_tier_duration_seconds" &&
-				exemplar["span_id"] == whole.SpanContext.SpanID().String() {
+			if exemplar["span_id"] == whole.SpanContext.SpanID().String() {
 				t.Error("tier exemplar names the cache-wide span; the metric wrapper is outside the tracing one")
 			}
 		}
@@ -83,8 +89,9 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 			family: "shigola_cache_tier_duration_seconds",
 			labels: map[string]string{"tier": "exhot1", "sub_command": "get"},
 			wantSpan: func(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
-				return spanForTier(t, exporter, "exhot1")
+				return faketracer.TierSpan(t, exporter, "exhot1")
 			},
+			rejectCacheSpan: true,
 		},
 		"the chain as a whole": {
 			hotType: "exhot2", durableType: "exdurable2",
@@ -99,19 +106,4 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
 	}
-}
-
-// spanForTier returns the tier span carrying the given tier name.
-func spanForTier(t *testing.T, exporter *tracetest.InMemoryExporter, tier string) tracetest.SpanStub {
-	t.Helper()
-
-	for _, span := range faketracer.SpansNamed(exporter, tracing.SpanTierGet) {
-		if faketracer.StringAttr(span, tracing.AttrCacheTier) == tier {
-			return span
-		}
-	}
-
-	t.Fatalf("no %v span carries tier %v", tracing.SpanTierGet, tier)
-
-	return tracetest.SpanStub{}
 }

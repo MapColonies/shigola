@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	promclient "github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketracer"
@@ -62,7 +61,7 @@ func TestRequestExemplarNamesTheRequestSpan(t *testing.T) {
 		t.Fatalf("traced request: %v", err)
 	}
 
-	root := rootSpan(t, exporter)
+	root := faketracer.RootSpan(t, exporter)
 
 	exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, "shigola_api_duration_seconds",
 		map[string]string{"handler": exemplarHandlerLabel})
@@ -74,22 +73,4 @@ func TestRequestExemplarNamesTheRequestSpan(t *testing.T) {
 	if got, want := exemplar["span_id"], root.SpanContext.SpanID().String(); got != want {
 		t.Errorf("request exemplar span_id = %q, want the request span %q", got, want)
 	}
-}
-
-// rootSpan returns the one recorded span with no parent.
-func rootSpan(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
-	t.Helper()
-
-	var roots []tracetest.SpanStub
-	for _, span := range exporter.GetSpans() {
-		if !span.Parent.IsValid() {
-			roots = append(roots, span)
-		}
-	}
-
-	if len(roots) != 1 {
-		t.Fatalf("%d root spans, want exactly 1 — the request", len(roots))
-	}
-
-	return roots[0]
 }

@@ -125,3 +125,46 @@ func Int64Attr(span tracetest.SpanStub, key attribute.Key) int64 {
 
 	return -1
 }
+
+// TierSpan returns the cache-tier span carrying the given tier name.
+//
+// Here rather than in the tests that need it because two of them do — atlas
+// asserting a tier exemplar, atlas asserting the tier span tree — and because
+// the lookup is two facts about this package's own data: the span name a tier
+// read takes, and the attribute the tier name lands in.
+func TierSpan(t *testing.T, exporter *tracetest.InMemoryExporter, tier string) tracetest.SpanStub {
+	t.Helper()
+
+	for _, span := range SpansNamed(exporter, tracing.SpanTierGet) {
+		if StringAttr(span, tracing.AttrCacheTier) == tier {
+			return span
+		}
+	}
+
+	t.Fatalf("no %v span carries tier %v", tracing.SpanTierGet, tier)
+
+	return tracetest.SpanStub{}
+}
+
+// RootSpan returns the one recorded span with no parent, failing if there is
+// not exactly one.
+//
+// "Exactly one" is the useful part: a request should root a single trace, and
+// two roots means something started a sibling trace instead of joining this
+// one — which is the failure the propagation tests exist to catch.
+func RootSpan(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
+	t.Helper()
+
+	var roots []tracetest.SpanStub
+	for _, span := range exporter.GetSpans() {
+		if !span.Parent.IsValid() {
+			roots = append(roots, span)
+		}
+	}
+
+	if len(roots) != 1 {
+		t.Fatalf("%d root spans, want exactly 1", len(roots))
+	}
+
+	return roots[0]
+}

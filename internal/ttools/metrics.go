@@ -73,8 +73,18 @@ func Histogram(t *testing.T, gatherer prometheus.Gatherer, name string, labels m
 	return nil
 }
 
-// ExemplarLabels returns the labels of the exemplar on the first bucket of that
-// histogram to carry one — the trace and span a traced observation named.
+// ExemplarLabels returns the labels of the most recently stored exemplar on
+// that histogram — the trace and span the caller's own observation named.
+//
+// "Most recently stored", not "the first bucket that has one", and the
+// difference is a real test failure rather than a nicety. Prometheus keeps one
+// exemplar *per bucket*, and a family on the process-wide registry outlives the
+// test that observed into it — so two tests observing the same family leave two
+// exemplars behind whenever their observations land in different buckets, and
+// the lower bucket's is whichever happened to be faster rather than whichever
+// was later. Taking the newest by timestamp makes a caller read back what it
+// just recorded; scanning bucket order made that flaky under -race, where the
+// spread between two observations is wide enough to separate them.
 //
 // Fatal when no bucket carries one: every caller is asserting that an exemplar
 // was attached, and "absent" and "attached with the wrong labels" are different
@@ -85,23 +95,29 @@ func ExemplarLabels(t *testing.T, gatherer prometheus.Gatherer, name string, lab
 
 	histogram := Histogram(t, gatherer, name, labels)
 
+	var newest *dto.Exemplar
 	for _, bucket := range histogram.GetBucket() {
 		exemplar := bucket.GetExemplar()
 		if exemplar == nil {
 			continue
 		}
-
-		got := make(map[string]string, len(exemplar.GetLabel()))
-		for _, pair := range exemplar.GetLabel() {
-			got[pair.GetName()] = pair.GetValue()
+		if newest == nil || exemplar.GetTimestamp().AsTime().After(newest.GetTimestamp().AsTime()) {
+			newest = exemplar
 		}
-
-		return got
 	}
 
-	t.Fatalf("no bucket of %v matching %v carries an exemplar", name, labels)
+	if newest == nil {
+		t.Fatalf("no bucket of %v matching %v carries an exemplar", name, labels)
 
-	return nil
+		return nil
+	}
+
+	got := make(map[string]string, len(newest.GetLabel()))
+	for _, pair := range newest.GetLabel() {
+		got[pair.GetName()] = pair.GetValue()
+	}
+
+	return got
 }
 
 // hasLabels reports whether pairs contain every label in want.

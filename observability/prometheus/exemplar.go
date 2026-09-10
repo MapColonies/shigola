@@ -51,7 +51,7 @@ const (
 // histogram names the request — rather than both resolving to whatever span
 // happened to be open. Without the span id that ordering would make no
 // observable difference, which is why it is asserted rather than assumed:
-// atlas.TestTierExemplarNamesTheTierSpan.
+// atlas.TestExemplarNamesTheSpanThatMeasuredIt.
 func exemplarFrom(ctx context.Context) prometheus.Labels {
 	sc := trace.SpanContextFromContext(ctx)
 	if !sc.IsValid() || !sc.IsSampled() {

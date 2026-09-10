@@ -167,6 +167,33 @@ func TestHTTPDurationCarriesTheExemplar(t *testing.T) {
 	}
 }
 
+// TestHTTPDurationOutsideATraceHasNoExemplar is the request half of the same
+// acceptance criterion the cache half above covers. Worth both: the two paths
+// attach their exemplar through entirely different machinery — one calls
+// ObserveWithExemplar itself, the other hands the hook to promhttp — so
+// neither's behaviour outside a trace tells you the other's.
+func TestHTTPDurationOutsideATraceHasNoExemplar(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	handler := newHttpHandler(registry, "test_plain_api", "", nil)
+
+	instrumented := handler.InstrumentedHttpHandler(http.MethodGet, "/collections/osm/tiles",
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	instrumented.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/collections/osm/tiles", nil))
+
+	histogram := ttools.Histogram(t, registry, "test_plain_api_duration_seconds",
+		map[string]string{"handler": "/collections/osm/tiles"})
+	if histogram.GetSampleCount() != 1 {
+		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
+	}
+	for _, bucket := range histogram.GetBucket() {
+		if bucket.GetExemplar() != nil {
+			t.Fatalf("bucket le=%v carries an exemplar outside a trace", bucket.GetUpperBound())
+		}
+	}
+}
+
 // TestExemplarReachesTheExposition is the one that would have made every other
 // test in this file worthless.
 //

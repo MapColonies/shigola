@@ -296,7 +296,7 @@ ones at both seams — `atlas.instrumentCache` and `server.NewRouter`, each with
 comment saying so. A slow bucket on the per-tier histogram therefore names the
 tier read that was slow, not the request as a whole. Inverting either order
 leaves the span tree unchanged, so it is pinned by the exemplar instead:
-`atlas.TestTierExemplarNamesTheTierSpan` and
+`atlas.TestExemplarNamesTheSpanThatMeasuredIt` and
 `server.TestRequestExemplarNamesTheRequestSpan` both fail on it, and say which
 way round it went wrong.
 
@@ -329,9 +329,14 @@ Two consequences worth knowing:
   is negotiated per scrape rather than per family. Anything pinning an exact
   `le` has to be checked. This was the price of exemplars being scrapeable at
   all.
-- **Pushed metrics carry no exemplars.** A deployment using `push_url` pushes
-  through the classic text format to a Pushgateway, which has no notion of
-  exemplars. Everything above applies to scraped deployments only.
+- **Pushed metrics are a different path, and an unverified one.** A `push_url`
+  deployment never reaches the exposition format above: `push.New` defaults to
+  protobuf (`expfmt.FmtProtoDelim`) and nothing here overrides it. Protobuf
+  does carry exemplars — `(*histogram).Write` fills in `dto.Bucket.Exemplar` —
+  so they go out on the wire, and whether the Pushgateway stores and re-exposes
+  them is its business, not this repo's. Nothing here tests it. `push_url` is
+  in any case documented for ephemeral jobs such as `shigola cache seed`,
+  rather than for the serving path this section is about.
 
 ## Costs when disabled
 

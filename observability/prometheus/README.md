@@ -65,11 +65,17 @@ quietly on its own:
 
 Then a bucket with a dot on it is one click from the trace.
 
-**Two limits.** Exemplars are not pushed: a `push_url` deployment goes through
-the classic text format to a Pushgateway, which has no notion of them.
+**On pushed metrics.** A `push_url` deployment does not go through the
+exposition format above at all: `push.New` defaults to protobuf
+(`expfmt.FmtProtoDelim`) and nothing here overrides it. Protobuf *can* carry
+exemplars — `(*histogram).Write` fills in `dto.Bucket.Exemplar` — so they are on
+the wire, and whether they are stored and re-exposed is the Pushgateway's own
+business rather than anything this repo decides. Untested here either way. Note
+that `push_url` is documented above for ephemeral jobs such as `shigola cache
+seed`, which is not the latency-spike-to-trace workflow this section is about.
 
-And negotiating OpenMetrics changed the `le` label spelling — a boundary that
-renders as a whole number gains a trailing `.0`, so `le="1"` is now `le="1.0"`,
+**The `le` label spelling changed.** Negotiating OpenMetrics respells a
+boundary that renders as a whole number with a trailing `.0`, so `le="1"` is now `le="1.0"`,
 which is a different series. The format is negotiated per scrape rather than
 per family, so this reaches the size histograms too even though they carry no
 exemplars:
