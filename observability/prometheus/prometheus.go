@@ -154,14 +154,14 @@ func (*observer) Handler(string) http.Handler {
 // OpenMetrics a boundary that renders as a whole number is written with a
 // trailing ".0", so a histogram exposes le="1.0" where it used to expose
 // le="1" — and a label value is part of a series' identity, so those are
-// different series. Which boundaries those are is easy to get wrong in both
-// directions, so TestRespelledBucketBoundaries derives the list: 1 and 5 on the
-// duration families and 10 as well on the HTTP one, plus every response-size
-// boundary from 1024 up to 512000. 2.5 is untouched because it already contains
-// a ".", and the megabyte boundaries because they render as 1.048576e+06 and
-// 5.24288e+06. Anything matching an exact le — a recording rule, a panel
-// pinned to one bucket — has to be checked. The alternative was to record
-// exemplars nobody could scrape.
+// different series. Anything matching an exact le, such as a recording rule or
+// a panel pinned to one bucket, has to be checked.
+//
+// Which boundaries those are is deliberately not written out here.
+// TestRespelledBucketBoundaries derives the list from the bucket sets, and
+// README.md § "Trace exemplars" states it for operators — a prose copy in a
+// third place is how the previous version of this comment came to name a
+// boundary that is not affected at all.
 //
 // Split out from Handler so a test can scrape a registry of its own: the
 // exposition is the half of exemplar support that fails silently, and asserting

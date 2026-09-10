@@ -134,7 +134,7 @@ func TestCacheDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	//nolint:errcheck // as above
 	c.Get(context.Background(), exemplarKey)
 
-	histogram := ttools.Histogram(t, registry, "test_plain_cache_duration_seconds", getLabels)
+	histogram := ttools.HistogramSample(t, registry, "test_plain_cache_duration_seconds", getLabels)
 	if histogram.GetSampleCount() != 1 {
 		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())
 	}
@@ -182,7 +182,7 @@ func TestHTTPDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	instrumented.ServeHTTP(httptest.NewRecorder(),
 		httptest.NewRequest(http.MethodGet, "/collections/osm/tiles", nil))
 
-	histogram := ttools.Histogram(t, registry, "test_plain_api_duration_seconds",
+	histogram := ttools.HistogramSample(t, registry, "test_plain_api_duration_seconds",
 		map[string]string{"handler": "/collections/osm/tiles"})
 	if histogram.GetSampleCount() != 1 {
 		t.Fatalf("sample count = %d, want the observation to have been recorded anyway", histogram.GetSampleCount())

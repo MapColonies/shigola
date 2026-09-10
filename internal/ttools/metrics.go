@@ -38,7 +38,7 @@ func MetricFamilyNames(t *testing.T) []string {
 	return names
 }
 
-// Histogram returns the one sample of the named histogram family whose labels
+// HistogramSample returns the one sample of the named histogram family whose labels
 // include every pair in labels.
 //
 // Shared for the reason MetricFamilyNames is: three tests in three packages
@@ -48,7 +48,7 @@ func MetricFamilyNames(t *testing.T) []string {
 // gatherer rather than the default registry, because a test asserting on
 // exemplars usually wants a registry of its own — the default one is
 // process-wide and accumulates whatever else the binary registered.
-func Histogram(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Histogram {
+func HistogramSample(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Histogram {
 	t.Helper()
 
 	families, err := gatherer.Gather()
@@ -88,12 +88,12 @@ func Histogram(t *testing.T, gatherer prometheus.Gatherer, name string, labels m
 //
 // Fatal when no bucket carries one: every caller is asserting that an exemplar
 // was attached, and "absent" and "attached with the wrong labels" are different
-// failures worth different messages. Use Histogram directly to assert the
+// failures worth different messages. Use HistogramSample directly to assert the
 // opposite, that nothing was attached.
 func ExemplarLabels(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) map[string]string {
 	t.Helper()
 
-	histogram := Histogram(t, gatherer, name, labels)
+	histogram := HistogramSample(t, gatherer, name, labels)
 
 	var newest *dto.Exemplar
 	for _, bucket := range histogram.GetBucket() {
