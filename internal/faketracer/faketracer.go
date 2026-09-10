@@ -128,10 +128,13 @@ func Int64Attr(span tracetest.SpanStub, key attribute.Key) int64 {
 
 // TierSpan returns the cache-tier span carrying the given tier name.
 //
-// Here rather than in the tests that need it because two of them do — atlas
-// asserting a tier exemplar, atlas asserting the tier span tree — and because
-// the lookup is two facts about this package's own data: the span name a tier
-// read takes, and the attribute the tier name lands in.
+// One caller today, and here anyway because the lookup is two facts about the
+// tracing package's own data rather than about any test: the span name a tier
+// read takes, and the attribute the tier name lands in. A test that hard-codes
+// either is a test that breaks when tracing renames them.
+//
+// Not used by atlas/tracing_test.go, which wants every tier name at once for a
+// set comparison rather than one span by name.
 func TierSpan(t *testing.T, exporter *tracetest.InMemoryExporter, tier string) tracetest.SpanStub {
 	t.Helper()
 
@@ -150,8 +153,11 @@ func TierSpan(t *testing.T, exporter *tracetest.InMemoryExporter, tier string) t
 // not exactly one.
 //
 // "Exactly one" is the useful part: a request should root a single trace, and
-// two roots means something started a sibling trace instead of joining this
-// one — which is the failure the propagation tests exist to catch.
+// two roots mean something started a sibling trace instead of joining this one.
+//
+// One caller today. server/tracing_test.go checks the same property but finds
+// its roots inside a loop that also tallies span names and trace ids in one
+// pass, and splitting that to call this would make it worse.
 func RootSpan(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
 	t.Helper()
 

@@ -25,7 +25,7 @@ import (
 var exemplarKey = &tegolaCache.Key{MapName: "osm", Z: 6, X: 5, Y: 4}
 
 // The label set a cache built with no observe-vars records a read under.
-var getLabels = map[string]string{"sub_command": "get"}
+var readLabels = map[string]string{"sub_command": "get"}
 
 // TestExemplarFromContext covers the three ways there is nothing to point at
 // and the one way there is.
@@ -92,7 +92,15 @@ func TestExemplarFitsTheRuneLimit(t *testing.T) {
 	if runes > prometheus.ExemplarMaxRunes {
 		t.Fatalf("exemplar labels are %d runes, over the limit of %d", runes, prometheus.ExemplarMaxRunes)
 	}
-	t.Logf("exemplar labels are %d of the %d runes allowed", runes, prometheus.ExemplarMaxRunes)
+
+	// Pinned, not just logged: the exact figure is quoted in tracing/README.md
+	// and in the PR, and a quoted number nothing asserts is a number that goes
+	// stale. Change it here and there together — a rise is only a problem at
+	// the limit, but it should be a deliberate edit either way.
+	const documented = 63
+	if runes != documented {
+		t.Errorf("exemplar labels are %d runes; tracing/README.md says %d", runes, documented)
+	}
 
 	histogram := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "test_exemplar_limit_seconds",
@@ -118,7 +126,7 @@ func TestCacheDurationCarriesTheExemplar(t *testing.T) {
 	//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
 	c.Get(fakelog.TracedContext(true), exemplarKey)
 
-	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_cache_duration_seconds", getLabels)
+	exemplar := ttools.ExemplarLabels(t, registry, "test_exemplar_cache_duration_seconds", readLabels)
 	if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
 		t.Fatalf("cache duration exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
 	}
@@ -134,7 +142,7 @@ func TestCacheDurationOutsideATraceHasNoExemplar(t *testing.T) {
 	//nolint:errcheck // as above
 	c.Get(context.Background(), exemplarKey)
 
-	assertRecordedWithoutExemplar(t, registry, "test_plain_cache_duration_seconds", getLabels)
+	assertRecordedWithoutExemplar(t, registry, "test_plain_cache_duration_seconds", readLabels)
 }
 
 // TestHTTPDurationCarriesTheExemplar is the request half. The span context

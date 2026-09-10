@@ -9,6 +9,7 @@ import (
 
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/internal/faketracer"
+	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/tracing"
 )
@@ -63,11 +64,11 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 			measured := tc.wantSpan(t, exporter)
 			exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, tc.family, tc.labels)
 
-			if got, want := exemplar["trace_id"], measured.SpanContext.TraceID().String(); got != want {
+			if got, want := exemplar[log.TraceIDKey], measured.SpanContext.TraceID().String(); got != want {
 				t.Errorf("exemplar trace_id = %q, want the request's trace %q", got, want)
 			}
 
-			if got, want := exemplar["span_id"], measured.SpanContext.SpanID().String(); got != want {
+			if got, want := exemplar[log.SpanIDKey], measured.SpanContext.SpanID().String(); got != want {
 				t.Errorf("exemplar span_id = %q, want %q", got, want)
 			}
 
@@ -77,7 +78,7 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 
 			// Named so a failure says which way round it went wrong.
 			whole := faketracer.SpanNamed(t, exporter, tracing.SpanCacheGet)
-			if exemplar["span_id"] == whole.SpanContext.SpanID().String() {
+			if exemplar[log.SpanIDKey] == whole.SpanContext.SpanID().String() {
 				t.Error("tier exemplar names the cache-wide span; the metric wrapper is outside the tracing one")
 			}
 		}
