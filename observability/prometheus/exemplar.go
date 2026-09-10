@@ -9,21 +9,6 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 )
 
-// The exemplar labels. exemplarTraceIDKey is the one Grafana's Prometheus
-// datasource is pointed at to reach Tempo; exemplarSpanIDKey narrows the
-// landing to the operation that was actually measured.
-//
-// Deliberately the same constants the log records carry rather than a second
-// spelling of "trace_id": the two surfaces are configured separately in Grafana
-// — a derived field on the Loki datasource, an exemplar link on the Prometheus
-// one — and both fail *silently* when the name is wrong. One pair of constants
-// makes it impossible for a rename to fix one surface and quietly break the
-// other.
-const (
-	exemplarTraceIDKey = log.TraceIDKey
-	exemplarSpanIDKey  = log.SpanIDKey
-)
-
 // exemplarFrom returns the exemplar labels naming the trace active in ctx, or
 // nil when there is no trace worth pointing at.
 //
@@ -58,9 +43,17 @@ func exemplarFrom(ctx context.Context) prometheus.Labels {
 		return nil
 	}
 
+	// log.TraceIDKey and log.SpanIDKey, not a second spelling of "trace_id".
+	// The exemplar link on Grafana's Prometheus datasource and the derived
+	// field on its Loki datasource are configured separately, and both fail
+	// *silently* when the name is wrong — so one pair of constants is what
+	// makes it impossible for a rename to fix one surface and quietly break
+	// the other. There is deliberately no alias for them in this package
+	// either: the tests here and in atlas and server all assert through these
+	// same two names.
 	return prometheus.Labels{
-		exemplarTraceIDKey: sc.TraceID().String(),
-		exemplarSpanIDKey:  sc.SpanID().String(),
+		log.TraceIDKey: sc.TraceID().String(),
+		log.SpanIDKey:  sc.SpanID().String(),
 	}
 }
 

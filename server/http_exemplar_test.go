@@ -9,7 +9,6 @@ import (
 
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketracer"
-	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/internal/ttools"
 	"github.com/MapColonies/shigola/observability/prometheus"
 	"github.com/MapColonies/shigola/server"
@@ -64,14 +63,7 @@ func TestRequestExemplarNamesTheRequestSpan(t *testing.T) {
 
 	root := faketracer.RootSpan(t, exporter)
 
-	exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, "shigola_api_duration_seconds",
-		map[string]string{"handler": exemplarHandlerLabel})
-
-	if got, want := exemplar[log.TraceIDKey], root.SpanContext.TraceID().String(); got != want {
-		t.Errorf("request exemplar trace_id = %q, want %q", got, want)
-	}
-
-	if got, want := exemplar[log.SpanIDKey], root.SpanContext.SpanID().String(); got != want {
-		t.Errorf("request exemplar span_id = %q, want the request span %q", got, want)
-	}
+	ttools.AssertExemplar(t, promclient.DefaultGatherer, "shigola_api_duration_seconds",
+		map[string]string{"handler": exemplarHandlerLabel},
+		root.SpanContext.TraceID().String(), root.SpanContext.SpanID().String())
 }

@@ -30,7 +30,7 @@ const tracedTileURI = "/collections/test-map/tiles/WebMercatorQuad/10/3/2"
 // tracedTileKey is tracedTileURI as the cache addresses it — the whole map, so
 // no layer name, and tileRow/tileCol the other way round from X/Y.
 //
-// seedDurableTier asserts it against the key a tier is actually asked for
+// assertSeededKeyWasRead checks it against the key a tier is actually asked for
 // rather than trusting it: seeding the wrong key would leave the tile
 // unreadable and silently reintroduce the race it exists to remove.
 var tracedTileKey = &cache.Key{
@@ -43,7 +43,8 @@ var tracedTileKey = &cache.Key{
 
 // twoTierCache builds hot → durable through cache.For, so the request walks the
 // same decorator stack it would in production. The tiers come back so a caller
-// can seed one — see seededTwoTierCache.
+// can seed one directly, which is how TestTracedRequestPublishesNoNewMetrics
+// gets a warm cache without waiting on a detached write.
 func twoTierCache(t *testing.T, hotType, durableType string) (cache.Interface, *faketier.Tier, *faketier.Tier) {
 	t.Helper()
 
@@ -70,9 +71,10 @@ func twoTierCache(t *testing.T, hotType, durableType string) (cache.Interface, *
 }
 
 // assertSeededKeyWasRead fails if the tile a request looked for is not the one
-// seedDurableTier seeded, which is the only way seeding could quietly stop
-// working.
-func assertSeededKeyWasRead(t *testing.T, calls []faketier.Call) {
+// the caller seeded, which is the only way seeding could quietly stop working.
+//
+// tier names the tier whose calls these are, so a failure says where to look.
+func assertSeededKeyWasRead(t *testing.T, tier string, calls []faketier.Call) {
 	t.Helper()
 
 	for _, call := range calls {
@@ -81,8 +83,8 @@ func assertSeededKeyWasRead(t *testing.T, calls []faketier.Call) {
 		}
 	}
 
-	t.Fatalf("no tier was asked for %v; the seeded key is wrong and this test is racing a detached write again",
-		tracedTileKey.String())
+	t.Fatalf("the %v tier was never asked for %v; the seeded key is wrong and this test is racing a detached write again",
+		tier, tracedTileKey.String())
 }
 
 // TestTileRequestProducesOneSpanTree is the acceptance criterion end to end: a
@@ -243,7 +245,7 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 		t.Fatalf("untraced request: %v", err)
 	}
 
-	assertSeededKeyWasRead(t, hot.Calls())
+	assertSeededKeyWasRead(t, "metrichot", hot.Calls())
 
 	before := ttools.MetricFamilyNames(t)
 	httpBefore := map[string]float64{}

@@ -55,16 +55,21 @@ behaviour to this repository's maintainers.
 
 MapColonies tracks work on Shigola in the **MAPCO** Jira project, and a pull request title carries
 its issue key in parentheses — that is what makes the ticket findable from the pull request list and
-from the squashed commit left on `master`. Contributors without access to that tracker should
+from the squashed commit left on the trunk. Contributors without access to that tracker should
 reference the GitHub issue number instead; nothing here requires a Jira account.
 
 ## Making a change
 
-`master` is always the most recent state of the code, and pull requests are opened against it. There
-is no release-candidate branch.
+**`development` is the trunk**, and pull requests are opened against it. There is no
+release-candidate branch.
 
-* **Never commit or push to `master`.** Branch as `<type>/<slug>` — `fix/cache-histogram-buckets`,
-  `feat/ogc-tiles` — push the branch, and open a pull request.
+GitHub's default branch is still `master`, which is *not* the trunk: on 2026-09-07 it was rewound
+to the initial commit, so a pull request merged there lands on a branch with none of the project's
+history in it. `gh pr create` targets it unless `--base development` is passed, so pass that
+explicitly rather than relying on the default.
+
+* **Never commit or push to `development`, nor to the stale `master`.** Branch as `<type>/<slug>` —
+  `fix/cache-histogram-buckets`, `feat/ogc-tiles` — push the branch, and open a pull request.
 * **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):**
   `<type>(<optional scope>): <subject>`, where type is one of `feat`, `fix`, `docs`, `chore`,
   `refactor`, `test`, `ci`, `perf`, `build`, `style`, `revert`. Subject in lowercase imperative, no
@@ -91,7 +96,7 @@ is no release-candidate branch.
   | `docs/tracing.md` § "Relationship to metrics" | `observability/prometheus/README.md` § "Trace exemplars", `tracing/README.md` § "Correlating metrics with traces" |
 
 Once the pull request is open a maintainer reviews it and may ask for changes. Keep it up to date as
-other work lands on `master` ahead of yours.
+other work lands on `development` ahead of yours.
 
 ### Not sure where to start?
 

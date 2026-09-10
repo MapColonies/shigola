@@ -6,6 +6,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/MapColonies/shigola/internal/log"
 )
 
 // MetricFamilyNames is every metric family the process publishes right now,
@@ -143,4 +145,27 @@ func HasLabels(pairs []*dto.LabelPair, want map[string]string) bool {
 	}
 
 	return true
+}
+
+// AssertExemplar checks that the named histogram's most recent exemplar points
+// at the given trace and span.
+//
+// Shared because three tests in three packages make exactly this pair of
+// comparisons — the prometheus observer's own against a fixed fixture, atlas's
+// against the tier span the read produced, server's against the request span —
+// and the label names are the load-bearing part: log.TraceIDKey and
+// log.SpanIDKey are what Grafana is configured with, so a test spelling them
+// itself is a test that keeps passing after a rename that broke correlation.
+func AssertExemplar(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string, wantTrace, wantSpan string) {
+	t.Helper()
+
+	exemplar := ExemplarLabels(t, gatherer, name, labels)
+
+	if got := exemplar[log.TraceIDKey]; got != wantTrace {
+		t.Errorf("%v exemplar names trace %q, want %q", name, got, wantTrace)
+	}
+
+	if got := exemplar[log.SpanIDKey]; got != wantSpan {
+		t.Errorf("%v exemplar names span %q, want %q", name, got, wantSpan)
+	}
 }

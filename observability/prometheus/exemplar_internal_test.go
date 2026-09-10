@@ -13,6 +13,7 @@ import (
 	tegolaCache "github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/fakelog"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/internal/ttools"
 )
 
@@ -25,7 +26,7 @@ import (
 var exemplarKey = &tegolaCache.Key{MapName: "osm", Z: 6, X: 5, Y: 4}
 
 // The label set a cache built with no observe-vars records a read under.
-var readLabels = map[string]string{"sub_command": "get"}
+var readOpLabels = map[string]string{"sub_command": "get"}
 
 // TestExemplarFromContext covers the three ways there is nothing to point at
 // and the one way there is.
@@ -46,11 +47,11 @@ func TestExemplarFromContext(t *testing.T) {
 				return
 			}
 
-			if got[exemplarTraceIDKey] != tc.want {
-				t.Fatalf("exemplarFrom()[%q] = %q, want %q", exemplarTraceIDKey, got[exemplarTraceIDKey], tc.want)
+			if got[log.TraceIDKey] != tc.want {
+				t.Fatalf("exemplarFrom()[%q] = %q, want %q", log.TraceIDKey, got[log.TraceIDKey], tc.want)
 			}
-			if got[exemplarSpanIDKey] != fakelog.SpanIDHex {
-				t.Errorf("exemplarFrom()[%q] = %q, want %q", exemplarSpanIDKey, got[exemplarSpanIDKey], fakelog.SpanIDHex)
+			if got[log.SpanIDKey] != fakelog.SpanIDHex {
+				t.Errorf("exemplarFrom()[%q] = %q, want %q", log.SpanIDKey, got[log.SpanIDKey], fakelog.SpanIDHex)
 			}
 			if len(got) != 2 {
 				t.Errorf("exemplarFrom() = %v, want the trace and span ids alone", got)
@@ -146,13 +147,7 @@ func TestDurationExemplars(t *testing.T) {
 				return
 			}
 
-			exemplar := ttools.ExemplarLabels(t, registry, family, labels)
-			if got := exemplar[exemplarTraceIDKey]; got != fakelog.TraceIDHex {
-				t.Errorf("exemplar names trace %q, want %q", got, fakelog.TraceIDHex)
-			}
-			if got := exemplar[exemplarSpanIDKey]; got != fakelog.SpanIDHex {
-				t.Errorf("exemplar names span %q, want %q", got, fakelog.SpanIDHex)
-			}
+			ttools.AssertExemplar(t, registry, family, labels, fakelog.TraceIDHex, fakelog.SpanIDHex)
 		}
 	}
 
@@ -164,7 +159,7 @@ func TestDurationExemplars(t *testing.T) {
 			//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
 			c.Get(ctx, exemplarKey)
 
-			return prefix + "_duration_seconds", readLabels
+			return prefix + "_duration_seconds", readOpLabels
 		}
 	}
 
@@ -243,7 +238,7 @@ func TestExemplarReachesTheExposition(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want the OpenMetrics encoding that carries exemplars", contentType)
 	}
 
-	want := exemplarTraceIDKey + `="` + fakelog.TraceIDHex + `"`
+	want := log.TraceIDKey + `="` + fakelog.TraceIDHex + `"`
 	if body := recorder.Body.String(); !strings.Contains(body, want) {
 		t.Fatalf("the exposition does not contain %q; exemplars are recorded but never scraped", want)
 	}

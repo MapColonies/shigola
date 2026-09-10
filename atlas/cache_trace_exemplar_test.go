@@ -62,15 +62,9 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 			}
 
 			measured := tc.wantSpan(t, exporter)
-			exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, tc.family, tc.labels)
 
-			if got, want := exemplar[log.TraceIDKey], measured.SpanContext.TraceID().String(); got != want {
-				t.Errorf("exemplar trace_id = %q, want the request's trace %q", got, want)
-			}
-
-			if got, want := exemplar[log.SpanIDKey], measured.SpanContext.SpanID().String(); got != want {
-				t.Errorf("exemplar span_id = %q, want %q", got, want)
-			}
+			ttools.AssertExemplar(t, promclient.DefaultGatherer, tc.family, tc.labels,
+				measured.SpanContext.TraceID().String(), measured.SpanContext.SpanID().String())
 
 			if !tc.rejectCacheSpan {
 				return
@@ -78,6 +72,7 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 
 			// Named so a failure says which way round it went wrong.
 			whole := faketracer.SpanNamed(t, exporter, tracing.SpanCacheGet)
+			exemplar := ttools.ExemplarLabels(t, promclient.DefaultGatherer, tc.family, tc.labels)
 			if exemplar[log.SpanIDKey] == whole.SpanContext.SpanID().String() {
 				t.Error("tier exemplar names the cache-wide span; the metric wrapper is outside the tracing one")
 			}

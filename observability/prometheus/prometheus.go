@@ -139,10 +139,15 @@ func (*observer) Name() string { return Name }
 // the observer's sync.Once fields on every call — a vet copylocks finding, and
 // harmless only because the copy was discarded unread.
 func (obs *observer) Handler(string) http.Handler {
-	// The observer's own registerer, not the package default, even though New
+	// The observer's own registry, not the package default, even though New
 	// only ever sets it to that: an observer built against some other registry
 	// should serve that registry rather than quietly serving the global one.
-	// The gatherer has no such field to read, so it stays the default.
+	//
+	// Both halves have to follow it or it serves the wrong thing either way —
+	// registering its scrape counter into one registry while gathering
+	// another's metrics would be worse than not following it at all. There is
+	// no gatherer field to read, so it comes off the registerer, which is a
+	// *prometheus.Registry in every case this has: that type is both.
 	//
 	// nil-guarded like every sibling here — the pointer receiver this took to
 	// clear a vet copylocks finding is also a receiver that can now be nil.
@@ -150,7 +155,12 @@ func (obs *observer) Handler(string) http.Handler {
 		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 	}
 
-	return metricsHandler(obs.registry, prometheus.DefaultGatherer)
+	gatherer := prometheus.DefaultGatherer
+	if own, ok := obs.registry.(prometheus.Gatherer); ok {
+		gatherer = own
+	}
+
+	return metricsHandler(obs.registry, gatherer)
 }
 
 // metricsHandler serves the metrics route, negotiating OpenMetrics.
