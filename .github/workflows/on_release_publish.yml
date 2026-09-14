@@ -222,18 +222,12 @@ jobs:
     needs: [gen_version]
     runs-on: ubuntu-22.04
     env:
-      # MapColonies' Azure Container Registry, which is where the rest of the
-      # org publishes. This used to push to `gospatial`, the upstream project's
-      # Docker Hub namespace -- a namespace we do not own (MAPCO-11500).
+      # MapColonies' ACR. Used to push to `gospatial`, upstream's Docker Hub
+      # namespace (MAPCO-11500).
       #
-      # The org's shared publish workflow
-      # (MapColonies/shared-workflows/.github/workflows/build-and-push-docker.yaml)
-      # is deliberately not used here: it runs a bare `docker build` with no
-      # --build-arg, so every image it produces reports "version not set" --
-      # exactly the defect this job exists to fix. The image reference below is
-      # assembled in the same shape that workflow produces,
-      # `<registry>/<scope>/<name>`, so images still land where the org
-      # convention puts them.
+      # Not using the org's shared build-and-push-docker workflow: it runs a
+      # bare `docker build` with no --build-arg, so its images report no
+      # version. Image name matches its `<registry>/<scope>/<name>` shape.
       ACR_URL: ${{ secrets.ACR_URL }}
       IMAGE_SCOPE: vector
       IMAGE_NAME: shigola
@@ -251,24 +245,15 @@ jobs:
     - name: Setup env
       uses: ./.github/actions/shigola-setup-env
 
-    # Both the image reference and the build args have to be assembled in a step,
-    # and this step has to come after "Setup env". The job's `env:` block used to
-    # carry them and that failed twice over: a job-level `env:` is evaluated
-    # before any step runs, so VERSION and friends -- which "Setup env" writes to
-    # $GITHUB_ENV -- were not set yet; and GitHub does not perform shell-style
-    # `${VAR}` expansion in a YAML env value at all, so `VER=${VERSION}` reached
-    # `docker build` as that literal ten-character string (MAPCO-11500).
+    # Must run after "Setup env", and must be a step: a job-level `env:` is
+    # evaluated too early AND gets no `${VAR}` expansion, so the old
+    # `VER=${VERSION}` reached docker build literally (MAPCO-11500).
     #
-    # Assembled once rather than repeated on each build step below, so the image
-    # that gets asserted on and the images that get published cannot be built
-    # from different args -- which is the one way this could still go wrong
-    # without anything failing.
+    # Assembled once so the image we assert on and the images we push cannot be
+    # built from different args.
     - name: Assemble image reference and build args
       run: |
-        # Downcased for the same reason, and by the same means, that
-        # shared-workflows' build-and-push-docker.yaml@v4 downcases its own
-        # (`echo "DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME,,}"`): a registry host
-        # may be spelled with capitals, and a Docker reference may not be.
+        # Downcased: a registry host may have capitals, a Docker ref may not.
         image="${ACR_URL:-local}/${IMAGE_SCOPE}/${IMAGE_NAME}"
         echo "IMAGE=${image,,}" >> "$GITHUB_ENV"
 
@@ -281,14 +266,11 @@ jobs:
           echo 'BUILD_ARGS_EOF'
         } >> "$GITHUB_ENV"
 
-    # Buildx can only load a single-platform result into docker, so the image we
-    # test is linux/amd64 only. It is cached, so the publish steps below do not
-    # rebuild that platform.
+    # amd64 only: buildx can only load one platform into docker. Cached, so the
+    # publish steps below do not rebuild it.
     #
-    # Deliberately not gated on registry credentials. The test build needs no
-    # registry, and gating it is how the broken version stamp survived: without
-    # the secrets -- on a fork, or on any repo that never had them -- the build
-    # and its check were skipped entirely and the job still reported success.
+    # Not gated on credentials -- gating it is how the broken stamp survived: no
+    # secrets meant build and check were skipped and the job still went green.
     - name: Build docker image for testing
       uses: docker/build-push-action@v5
       with:
@@ -298,16 +280,14 @@ jobs:
         build-args: ${{ env.BUILD_ARGS }}
         tags: ${{ env.IMAGE }}:${{ env.VERSION }}
 
-    # Asserts on what the image reports, rather than just running the command.
-    # `shigola version` exits 0 whether or not the stamp took, so the old
-    # `docker run ... version` step passed just as happily against an image
-    # reporting "version not set" -- which is what it had been doing.
+    # `shigola version` exits 0 even when unstamped, so the old step that merely
+    # ran it passed against images reporting "version not set". Assert instead.
     - name: Assert the image reports its version, branch and revision
       run: |
         reported=$(docker run --rm "${IMAGE}:${VERSION}" version)
         echo "$reported"
 
-        # Matched against the exact lines cmd/shigola/cmd/version.go prints.
+        # Exact lines cmd/shigola/cmd/version.go prints.
         want_version="   version: ${VERSION}"
         want_git="       git: ${GIT_BRANCH} @ ${GIT_REVISION}"
 
@@ -340,13 +320,9 @@ jobs:
         platforms: linux/amd64,linux/arm64
         build-args: ${{ env.BUILD_ARGS }}
 
-    # Deliberately NOT gated on env.ACR_URL, unlike the edge push above. The
-    # asymmetry is the point: an edge push happens on every commit to the
-    # default branch, so a repo without credentials skipping it is reasonable,
-    # but a release is an explicit act and must not quietly publish nothing and
-    # report success. Without the secret the login step above is skipped and
-    # this push fails on an unauthenticated registry -- loudly, which is the
-    # behaviour this ticket is about.
+    # Not gated on ACR_URL, unlike the edge push: skipping an edge push without
+    # credentials is fine, but a release must publish or fail -- never silently
+    # do nothing and report success.
     - name: Publish Docker container
       if: github.event_name == 'release'
       uses: docker/build-push-action@v5

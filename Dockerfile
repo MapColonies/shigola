@@ -27,11 +27,9 @@
 # rather than downloading one. Also pinned in .devcontainer/Dockerfile.
 FROM golang:1.26.6-alpine3.23 AS build
 
-# Must match the module path in go.mod exactly, including case: Go import
-# paths are case-sensitive, and the linker silently discards an -X whose
-# symbol does not resolve. A wrong case here does not fail the build -- it
-# produces an image reporting "version not set" (MAPCO-11500).
-# internal/build.TestStampPathMatchesModulePath pins this.
+# Must match go.mod's module path exactly, case included: the linker silently
+# ignores an -X it cannot resolve, so a wrong case builds fine and reports
+# "version not set" (MAPCO-11500). Pinned by TestStampPathMatchesModulePath.
 ARG BUILDPKG="github.com/MapColonies/shigola/internal/build"
 ARG VER="Version Not Set"
 ARG BRANCH="not set"

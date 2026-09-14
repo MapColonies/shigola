@@ -10,52 +10,23 @@ import (
 	"github.com/MapColonies/shigola/internal/build"
 )
 
-// The release builds stamp Version, GitRevision and GitBranch into this package
-// with `go build -ldflags "-X <pkg>.Version=..."`. That stamp is silent when it
-// misses: the linker discards an -X whose symbol does not resolve, and the
-// binary is built, published and run reporting "version not set" with nothing
-// anywhere having failed. Go import paths are case-sensitive, so
-// `github.com/mapcolonies/...` and `github.com/MapColonies/...` are two
-// different packages and only one of them is this one.
-//
-// That is what happened: the Dockerfile's BUILDPKG default was lower-cased
-// against the module path, so every image built from the ARG default reported no
-// version at all (MAPCO-11500). Nothing caught it because there was nothing
-// that could -- no build fails, no test fails, and the only evidence is the
-// output of `shigola version` on a published image.
-//
-// So this is checked by reading the tree. A stamp path is a string in a
-// Dockerfile or a workflow, never a Go import the compiler could verify, and a
-// test that built the tree would not see it.
+// Release builds stamp this package with `-ldflags "-X <pkg>.Version=..."`. The
+// linker silently discards an -X whose symbol does not resolve, so a wrong
+// package path produces an image reporting "version not set" and no failure
+// anywhere. Import paths are case-sensitive, and that is how MAPCO-11500
+// happened. Checked by reading the tree, because a stamp path lives in a
+// Dockerfile or a workflow, not in a Go import the compiler could verify.
 
 var (
-	// stampPkgPath matches anything shaped like a Go package path ending in the
-	// version-stamp package -- whatever its owner, its depth or its case -- so
-	// that a wrongly-cased path and a path still naming the upstream project
-	// are both found and then compared against the one correct value.
-	//
-	// The depth is `(?:/[\w.-]+)+` rather than a fixed two segments because a
-	// module path is not always host/owner/repo: a v2+ module carries a
-	// /v2 suffix, and a fixed depth would match nothing at all on one of
-	// those. Matching nothing is the one outcome a guard like this must not
-	// have, which is what TestStampPathMatchesModulePath's found-something
-	// assertion is for.
+	// Any package path ending in /internal/build, whatever its owner or case.
+	// Depth is open-ended so a /v2 module suffix still matches.
 	stampPkgPath = regexp.MustCompile(`(?i)[\w.-]+\.[\w.-]+(?:/[\w.-]+)+/internal/build`)
 
-	// ldflagStamp matches the left-hand side of an -X, up to the `=`:
-	// `${BUILD_PKG}.Version`, `$Env:BUILD_PKG.GitBranch`, or a path written out
-	// in full. Either quote style and either separator, because all of them are
-	// valid in the files this scans -- the Dockerfile quotes each -X with
-	// single quotes and the workflow leaves them bare, and neither spelling is
-	// more correct than the other.
-	//
-	// The `=` is what keeps `curl -X POST` and friends out: an -X that stamps
-	// nothing has no assignment in it.
+	// The left-hand side of an -X, up to the `=`. Either quote style, either
+	// separator. The `=` keeps `curl -X POST` out.
 	ldflagStamp = regexp.MustCompile(`-X[\s=]+["']?([^\s'"=]+)=`)
 )
 
-// repoRoot returns the path of the repository root, which these tests read
-// rather than build.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 
@@ -67,9 +38,8 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-// modulePath returns the module path declared in go.mod, which is the authority
-// the stamp paths are checked against -- rather than a constant here, which
-// would only move the place the two can disagree.
+// modulePath reads the module path from go.mod, so there is no second copy of
+// it here to disagree with.
 func modulePath(t *testing.T) string {
 	t.Helper()
 
@@ -89,20 +59,14 @@ func modulePath(t *testing.T) string {
 	return ""
 }
 
-// stampPathFile reports whether a file can carry a version-stamp package path:
-// the build configuration that passes one to the linker, plus Go source, which
-// is where the CI helper and the tag generator keep theirs as flag defaults.
+// stampPathFile reports whether a file can carry a stamp path: build config,
+// plus Go source for the CI helper and tag generator flag defaults.
 func stampPathFile(name string) bool {
 	return buildConfig(name) || filepath.Ext(name) == ".go"
 }
 
-// stampComment returns the line-comment marker a file stampPathFile admits
-// uses, so that prose about a stamp path is not read as one.
-//
-// This matters more here than the equivalent does in cgo_free_test.go: the
-// rationale comments this repo asks for are exactly the place someone explains
-// which path was wrong and why, and a scan that read those would make the
-// documented convention fail the build.
+// stampComment returns a file's line-comment marker, so prose about a stamp
+// path is not read as one.
 func stampComment(name string) string {
 	if filepath.Ext(name) == ".go" {
 		return "//"
@@ -110,9 +74,8 @@ func stampComment(name string) string {
 	return commentPrefix(name)
 }
 
-// stampedSymbols returns the names of the symbols a line stamps with -X, in
-// order. The symbol is whatever follows the last dot of the left-hand side, so
-// this does not have to understand how any one shell spells a variable.
+// stampedSymbols returns the symbols a line stamps with -X. The symbol is
+// whatever follows the last dot, so shell variable syntax does not matter.
 func stampedSymbols(line string) []string {
 	var symbols []string
 
@@ -127,15 +90,13 @@ func stampedSymbols(line string) []string {
 	return symbols
 }
 
-// scanStampFiles walks the files that may carry a stamp, calling check for each
-// non-comment line. Shared by the two tree-reading tests below.
+// scanStampFiles calls check for each non-comment line of every file that may
+// carry a stamp.
 func scanStampFiles(t *testing.T, check func(rel string, n int, line string)) {
 	t.Helper()
 
 	walkTree(t, stampPathFile, func(rel, body string) {
-		// This file quotes wrong paths on purpose, in its prose and in the
-		// tables below. Reading it would fail the tests with their own
-		// examples.
+		// This file quotes wrong paths on purpose, in its tables below.
 		if filepath.Base(rel) == "stamp_path_test.go" {
 			return
 		}
@@ -152,12 +113,9 @@ func scanStampFiles(t *testing.T, check func(rel string, n int, line string)) {
 	})
 }
 
-// TestStampPathMatchesModulePath asserts that every version-stamp package path
-// in this tree is the real one, exactly, including case.
-//
-// Deliberately broader than the case bug that prompted it: the check is that
-// each path *equals* the module path plus /internal/build, so a path left
-// pointing at the upstream project fails here too.
+// TestStampPathMatchesModulePath asserts every stamp path in the tree is the
+// module path plus /internal/build, exactly. Broader than the case bug: a path
+// still naming upstream fails here too.
 func TestStampPathMatchesModulePath(t *testing.T) {
 	want := modulePath(t) + "/internal/build"
 
@@ -173,11 +131,9 @@ func TestStampPathMatchesModulePath(t *testing.T) {
 		}
 	})
 
-	// A scan that matches nothing passes every assertion above it, so the
-	// matcher going quiet would look exactly like the tree being correct. The
-	// Dockerfile is named specifically because it is the file that carried the
-	// defect, and the one a future edit is most likely to reshape past the
-	// regexp.
+	// A matcher that goes quiet looks exactly like a correct tree, so require
+	// it to have found something -- and to have found it in the Dockerfile,
+	// which is the file that carried the defect.
 	if len(seen) == 0 {
 		t.Fatal("found no version-stamp package paths anywhere in the tree; stampPkgPath has stopped matching")
 	}
@@ -186,16 +142,10 @@ func TestStampPathMatchesModulePath(t *testing.T) {
 	}
 }
 
-// TestStampedSymbolsExist asserts that every symbol the ldflags stamp into is a
-// variable this package actually has.
-//
-// The same silence covers a renamed variable as covers a wrongly-cased path:
-// `-X pkg.Verison=1.2.3` links cleanly and stamps nothing. The compile-time
-// references below are the other half -- they are what makes this test fail to
-// build, rather than fail to notice, if one of the three is removed.
+// TestStampedSymbolsExist asserts every stamped symbol is a variable this
+// package has. `-X pkg.Verison=1.2.3` links cleanly and stamps nothing.
 func TestStampedSymbolsExist(t *testing.T) {
-	// Referenced so this set cannot drift from the package by deletion: remove
-	// one of the three and this test stops compiling.
+	// Referenced so deleting one of the three breaks the build, not the scan.
 	known := map[string]*string{
 		"Version":     &build.Version,
 		"GitRevision": &build.GitRevision,
@@ -219,10 +169,8 @@ func TestStampedSymbolsExist(t *testing.T) {
 	}
 }
 
-// TestStampPkgPath covers the forms stampPkgPath claims to read. A regexp that
-// quietly stops matching one of them turns TestStampPathMatchesModulePath into
-// a test that passes by seeing nothing, which is the failure a guard like that
-// exists to rule out.
+// TestStampPkgPath pins stampPkgPath. A matcher that stops matching turns the
+// scan above into a test that passes by seeing nothing.
 func TestStampPkgPath(t *testing.T) {
 	type tcase struct {
 		line string
@@ -257,8 +205,6 @@ func TestStampPkgPath(t *testing.T) {
 			line: `versionPkg = flag.String("pkg", "github.com/go-spatial/tegola/internal/build", "")`,
 			want: []string{"github.com/go-spatial/tegola/internal/build"},
 		},
-		// The reason the depth is not fixed at two segments: a v2+ module
-		// carries a version suffix, and a fixed depth would match nothing.
 		"a versioned module path": {
 			line: `ARG BUILDPKG="github.com/MapColonies/shigola/v2/internal/build"`,
 			want: []string{"github.com/MapColonies/shigola/v2/internal/build"},
@@ -290,9 +236,7 @@ func TestStampPkgPath(t *testing.T) {
 	}
 }
 
-// TestStampedSymbols covers the forms stampedSymbols claims to read, for the
-// same reason TestStampPkgPath covers stampPkgPath: the cost of this matcher
-// getting quietly narrower is a test that notices nothing.
+// TestStampedSymbols pins stampedSymbols, for the same reason.
 func TestStampedSymbols(t *testing.T) {
 	type tcase struct {
 		line string
@@ -343,8 +287,6 @@ func TestStampedSymbols(t *testing.T) {
 			line: `-X ${BUILD_PKG}.Verison=${VERSION}`,
 			want: []string{"Verison"},
 		},
-		// An -X that assigns nothing is not a stamp. This is what keeps the
-		// HTTP verb flag out.
 		"an unrelated -X flag": {
 			line: `curl -X POST https://example.com/`,
 			want: nil,
@@ -360,8 +302,7 @@ func TestStampedSymbols(t *testing.T) {
 	}
 }
 
-// TestStampPathFile pins which files the two tree-reading tests look at. The
-// cost of getting this wrong is silence, not a failure.
+// TestStampPathFile pins which files get scanned. Getting this wrong is silent.
 func TestStampPathFile(t *testing.T) {
 	type tcase struct {
 		name string
@@ -392,9 +333,7 @@ func TestStampPathFile(t *testing.T) {
 	}
 }
 
-// TestStampComment pins the comment marker each kind of file gets, because
-// reading a comment as configuration and failing to read configuration at all
-// are both silent.
+// TestStampComment pins each file kind's comment marker.
 func TestStampComment(t *testing.T) {
 	type tcase struct {
 		name string
