@@ -223,8 +223,43 @@ jobs:
 
   build_docker_image:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
+    # Builds, never pushes: publishing is on_release_publish.yml's job. The
+    # assertion is the point -- this job used to have no checkout and no
+    # configuration at all, and passed without building anything (MAPCO-11501).
     steps:
-      - name: Build and Push Docker image
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set the version the image should report
+        run: echo "VERSION=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_ENV"
+
+      - name: Build the image
         uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: shigola:ci
+          build-args: |
+            VER=${{ env.VERSION }}
+            BRANCH=${{ github.ref_name }}
+            REVISION=${{ env.VERSION }}
+
+      # `shigola version` exits 0 even when unstamped, so running it proves
+      # nothing on its own. Assert on what it reports.
+      - name: Check the image was built and reports this commit
+        run: |
+          docker image inspect shigola:ci > /dev/null
+          reported=$(docker run --rm shigola:ci version)
+          echo "$reported"
+
+          want="   version: ${VERSION}"
+          grep -qxF "$want" <<< "$reported" || {
+            echo "::error::image does not report this commit; expected: ${want}"
+            exit 1
+          }
