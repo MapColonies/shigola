@@ -155,7 +155,7 @@ func TestDurationExemplars(t *testing.T) {
 	// The errors are ignored in all three: a miss, and two writes to a fake
 	// that cannot fail. The exemplar on the duration observation is the
 	// subject, and that is recorded either way.
-	cacheOp := func(prefix, op string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
+	cacheOp := func(ctx context.Context, prefix, op string) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
 		return func(t *testing.T, registry *prometheus.Registry) (string, map[string]string) {
 			c := newCache(registry, prefix, nil, faketier.New("hot"))
 
@@ -181,7 +181,7 @@ func TestDurationExemplars(t *testing.T) {
 	// context arrives on the request, which is how it arrives in production:
 	// the tracing handler is installed outside the metrics one and has already
 	// replaced the request by the time this runs.
-	request := func(prefix string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
+	request := func(ctx context.Context, prefix string) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
 		return func(t *testing.T, registry *prometheus.Registry) (string, map[string]string) {
 			const route = "/collections/osm/tiles"
 
@@ -201,30 +201,30 @@ func TestDurationExemplars(t *testing.T) {
 
 	tests := map[string]tcase{
 		"a cache read in a sampled trace": {
-			observe: cacheOp("test_exemplar_cache", "get", fakelog.TracedContext(true)),
+			observe: cacheOp(fakelog.TracedContext(true), "test_exemplar_cache", "get"),
 			traced:  true,
 		},
 		"a cache read outside any trace": {
-			observe: cacheOp("test_plain_cache", "get", context.Background()),
+			observe: cacheOp(context.Background(), "test_plain_cache", "get"),
 		},
 		// Set and Purge run through the same observeDuration, and the docs name
 		// all three spans — but every test here observed a read until these two
 		// rows existed. The write is the one that matters most: on the detached
 		// pool its observation outlives the response it belongs to.
 		"a cache write in a sampled trace": {
-			observe: cacheOp("test_exemplar_write", "set", fakelog.TracedContext(true)),
+			observe: cacheOp(fakelog.TracedContext(true), "test_exemplar_write", "set"),
 			traced:  true,
 		},
 		"a cache purge in a sampled trace": {
-			observe: cacheOp("test_exemplar_purge", "purge", fakelog.TracedContext(true)),
+			observe: cacheOp(fakelog.TracedContext(true), "test_exemplar_purge", "purge"),
 			traced:  true,
 		},
 		"a request in a sampled trace": {
-			observe: request("test_exemplar_api", fakelog.TracedContext(true)),
+			observe: request(fakelog.TracedContext(true), "test_exemplar_api"),
 			traced:  true,
 		},
 		"a request outside any trace": {
-			observe: request("test_plain_api", nil),
+			observe: request(nil, "test_plain_api"),
 		},
 	}
 

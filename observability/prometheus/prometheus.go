@@ -165,6 +165,14 @@ func (obs *observer) Handler(string) http.Handler {
 	// one registry while another's metrics go out on the wire.
 	own, ok := obs.registry.(prometheus.Gatherer)
 	if !ok {
+		// Said out loud rather than swallowed. This is unreachable for every
+		// registry New can produce, so it exists to avoid a panic rather than
+		// to handle a real case — but serving a different registry's metrics
+		// than the one the caller configured is precisely the kind of silent
+		// substitution the exemplar label names are commented against, and an
+		// operator staring at an empty /metrics deserves the reason.
+		log.Warnf("prometheus: registry %T cannot gather; serving the default registry on the metrics route instead", obs.registry)
+
 		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 	}
 
