@@ -1,5 +1,7 @@
 name: On release publish
-on: 
+# The push trigger is `master`, but `development` is the trunk, so nothing here
+# fires on a merge to trunk and `edge` is effectively unpublished (MAPCO-11500).
+on:
   pull_request:
   push:
     branches:
