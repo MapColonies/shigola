@@ -43,9 +43,9 @@ func MetricFamilyNames(t *testing.T) []string {
 // HistogramSample returns the one sample of the named histogram family whose labels
 // include every pair in labels.
 //
-// Shared for the reason MetricFamilyNames is: three tests in three packages
-// read a histogram back out of a registry to assert what an observation
-// recorded, and the family-then-label walk was otherwise written out in each.
+// The family-then-label walk, in one place: ExemplarLabels starts from it, the
+// observer's own untraced-observation assertion reads a sample count off it,
+// and it was otherwise written out at each site that needed either.
 //
 // gatherer rather than the default registry, because both are needed: a test
 // that can build its own registry should, since the default one is

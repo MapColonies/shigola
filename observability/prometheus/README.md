@@ -96,7 +96,7 @@ histograms too even though they carry no exemplars:
 
 `2.5` is untouched, because it already contains a `.`, and so are the megabyte
 boundaries, which render as `1.048576e+06` and `5.24288e+06`; so is the provider
-families' `.1`, which renders as `0.1`.
+family's `.1`, which renders as `0.1`.
 
 `TestRespelledBucketBoundaries` derives the first four rows from the bucket sets
 they name, and `postgis.TestRespelledQueryBuckets` derives the last, so none of
