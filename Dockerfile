@@ -27,7 +27,12 @@
 # rather than downloading one. Also pinned in .devcontainer/Dockerfile.
 FROM golang:1.26.6-alpine3.23 AS build
 
-ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"
+# Must match the module path in go.mod exactly, including case: Go import
+# paths are case-sensitive, and the linker silently discards an -X whose
+# symbol does not resolve. A wrong case here does not fail the build -- it
+# produces an image reporting "version not set" (MAPCO-11500).
+# internal/build.TestStampPathMatchesModulePath pins this.
+ARG BUILDPKG="github.com/MapColonies/shigola/internal/build"
 ARG VER="Version Not Set"
 ARG BRANCH="not set"
 ARG REVISION="not set"
@@ -44,13 +49,13 @@ ENV BUILD_PKG="${BUILDPKG}"
 ENV CGO_ENABLED=0
 
 # Set up source for compilation
-RUN mkdir -p /go/src/github.com/mapcolonies/shigola
-COPY . /go/src/github.com/mapcolonies/shigola
+RUN mkdir -p /go/src/github.com/MapColonies/shigola
+COPY . /go/src/github.com/MapColonies/shigola
 
 RUN env
 
 # Build binary
-RUN cd /go/src/github.com/mapcolonies/shigola/cmd/shigola \
+RUN cd /go/src/github.com/MapColonies/shigola/cmd/shigola \
 	&& go build -v  \
 	-ldflags "-w -X '${BUILD_PKG}.Version=${VERSION}' -X '${BUILD_PKG}.GitRevision=${GIT_REVISION}' -X '${BUILD_PKG}.GitBranch=${GIT_BRANCH}'" \
 	-gcflags "-N -l" \
