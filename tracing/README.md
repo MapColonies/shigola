@@ -342,13 +342,12 @@ Two consequences worth knowing:
   touches — is respelled too.
 
 - **Pushed metrics are a different path, and an unverified one.** A `push_url`
-  deployment never reaches the exposition format above: `push.New` defaults to
-  protobuf (`expfmt.FmtProtoDelim`) and nothing here overrides it. Protobuf
-  does carry exemplars — `(*histogram).Write` fills in `dto.Bucket.Exemplar` —
-  so they go out on the wire, and whether the Pushgateway stores and re-exposes
-  them is its business, not this repo's. Nothing here tests it. `push_url` is
-  in any case documented for ephemeral jobs such as `shigola cache seed`,
-  rather than for the serving path this section is about.
+  deployment never reaches the exposition format above, and the exemplars are
+  neither lost nor confirmed on the way. The mechanism is set out once, in
+  `observability/prometheus/README.md` § "On pushed metrics" — deliberately not
+  restated here, because this is the paragraph whose earlier prose copy stated
+  the opposite of what the code does and had to be corrected in three places at
+  once.
 
 ## Costs when disabled
 

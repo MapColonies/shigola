@@ -74,11 +74,17 @@ business rather than anything this repo decides. Untested here either way. Note
 that `push_url` is documented above for ephemeral jobs such as `shigola cache
 seed`, which is not the latency-spike-to-trace workflow this section is about.
 
-**The `le` label spelling changed.** Negotiating OpenMetrics respells a
-boundary that renders as a whole number with a trailing `.0`, so `le="1"` is now `le="1.0"`,
-which is a different series. The format is negotiated per scrape rather than
-per family, so this reaches the size histograms too even though they carry no
-exemplars:
+**The `le` label spelling changed, whether or not you run tracing.** This
+section sits under trace exemplars because they are the reason the format was
+switched, but the switch itself is unconditional: `metricsHandler` sets
+`EnableOpenMetrics` on every metrics route it serves and never consults the
+tracing config. An operator running the observer with `[tracing]` off — the
+default — gets this break and no exemplars.
+
+Negotiating OpenMetrics respells a boundary that renders as a whole number with
+a trailing `.0`, so `le="1"` is now `le="1.0"`, which is a different series. The
+format is negotiated per scrape rather than per family, so this reaches the size
+histograms too even though they carry no exemplars:
 
 | Family | Respelled |
 |:---|:---|
