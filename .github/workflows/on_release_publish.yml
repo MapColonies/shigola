@@ -265,8 +265,10 @@ jobs:
     # without anything failing.
     - name: Assemble image reference and build args
       run: |
-        # Downcased the way the shared workflow downcases it: a registry host
-        # may be spelled with capitals, and Docker references may not be.
+        # Downcased for the same reason, and by the same means, that
+        # shared-workflows' build-and-push-docker.yaml@v4 downcases its own
+        # (`echo "DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME,,}"`): a registry host
+        # may be spelled with capitals, and a Docker reference may not be.
         image="${ACR_URL:-local}/${IMAGE_SCOPE}/${IMAGE_NAME}"
         echo "IMAGE=${image,,}" >> "$GITHUB_ENV"
 
@@ -338,8 +340,15 @@ jobs:
         platforms: linux/amd64,linux/arm64
         build-args: ${{ env.BUILD_ARGS }}
 
+    # Deliberately NOT gated on env.ACR_URL, unlike the edge push above. The
+    # asymmetry is the point: an edge push happens on every commit to the
+    # default branch, so a repo without credentials skipping it is reasonable,
+    # but a release is an explicit act and must not quietly publish nothing and
+    # report success. Without the secret the login step above is skipped and
+    # this push fails on an unauthenticated registry -- loudly, which is the
+    # behaviour this ticket is about.
     - name: Publish Docker container
-      if: github.event_name == 'release' && env.ACR_URL != ''
+      if: github.event_name == 'release'
       uses: docker/build-push-action@v5
       with:
         context: .
