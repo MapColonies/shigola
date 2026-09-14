@@ -86,11 +86,17 @@ exemplars:
 | `shigola_api_duration_seconds` | `1`, `5`, `10` |
 | `shigola_cache_response_size_bytes`, `shigola_cache_tier_response_size_bytes` | `1024`, `5120`, `25600`, `102400`, `256000`, `512000` |
 | `shigola_api_response_size_bytes` | `512000` |
+| `shigola_mvt_provider_sql_query_seconds`, `shigola_provider_sql_query_seconds` | `1`, `5`, `20` |
 
 `2.5` is untouched, because it already contains a `.`, and so are the megabyte
-boundaries, which render as `1.048576e+06` and `5.24288e+06`.
-`TestRespelledBucketBoundaries` derives this list from the bucket sets, so it
-cannot drift from them.
+boundaries, which render as `1.048576e+06` and `5.24288e+06`; so is the provider
+families' `.1`, which renders as `0.1`.
+
+`TestRespelledBucketBoundaries` derives the first four rows from the bucket sets
+they name, and `postgis.TestRespelledQueryBuckets` derives the last, so none of
+them can drift from the code. It takes two tests because the provider declares
+its own boundaries: while the differ was private to this package it could not
+see them, and that row was missing from this table for exactly as long.
 
 **It is not only `le`, and not only Shigola's own metrics.** The respelling is a
 property of the encoder rather than of histograms: it writes summary `quantile`

@@ -263,9 +263,19 @@ pair of constants is what stops a rename from fixing one surface and breaking
 the other.
 
 Which observations carry one: `shigola_cache_duration_seconds`,
-`shigola_cache_tier_duration_seconds` and `shigola_api_duration_seconds`. The
-size histograms and the counters do not — the ticket asked for the duration
-families, and an exemplar is worth having where there is a spike to click.
+`shigola_cache_tier_duration_seconds` and `shigola_api_duration_seconds` — the
+three MAPCO-11496 named. The size histograms and the counters do not, and
+neither do `shigola_mvt_provider_sql_query_seconds` and
+`shigola_provider_sql_query_seconds`, which *are* duration histograms and are
+observed inside their own query span, so the trace is in hand at the point of
+observation.
+
+The reason is a dependency rather than a judgement. `exemplarFrom` lives in
+`observability/prometheus`, and a provider that imported it would defeat the
+`noPrometheusObserver` build tag, which exists so the observer can be compiled
+out entirely; nothing in `provider/` imports that package today. Attaching one
+there means first giving `exemplarFrom` a neutral home, which is a larger change
+than this ticket asked for and is worth its own.
 
 **The exposition format is not optional.** OpenMetrics is the only format that
 encodes exemplars; the classic Prometheus text format has no syntax for them and

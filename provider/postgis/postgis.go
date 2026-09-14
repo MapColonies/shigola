@@ -182,6 +182,17 @@ func (p Provider) startQuerySpan(ctx context.Context, sql string) (context.Conte
 	return ctx, span
 }
 
+// queryDurationBuckets are the boundaries of the two provider query-duration
+// histograms.
+//
+// Package-level rather than a local, so that a test can reach them: serving
+// OpenMetrics respells any boundary whose shortest rendering contains neither
+// "." nor "e", which changes the identity of the le series an operator's
+// dashboards pin. 1, 5 and 20 are all in that set, and the documented list of
+// what moved missed this whole family while it was a local in the function
+// below. See internal/ttools.RespelledBuckets and TestRespelledQueryBuckets.
+var queryDurationBuckets = []float64{.1, 1, 5, 20}
+
 func (p *Provider) Collectors(
 	prefix string,
 	cfgFn func(configKey string) map[string]any,
@@ -190,7 +201,6 @@ func (p *Provider) Collectors(
 		return nil, nil
 	}
 
-	buckets := []float64{.1, 1, 5, 20}
 	c, err := p.pool.Collectors(prefix, cfgFn)
 	if err != nil {
 		return nil, err
@@ -204,7 +214,7 @@ func (p *Provider) Collectors(
 		prometheus.HistogramOpts{
 			Name:        prefix + "_mvt_provider_sql_query_seconds",
 			Help:        "A histogram of query time for sql for mvt providers",
-			Buckets:     buckets,
+			Buckets:     queryDurationBuckets,
 			ConstLabels: prometheus.Labels{"provider_name": p.name},
 		},
 		[]string{"map_name", "z"},
@@ -214,7 +224,7 @@ func (p *Provider) Collectors(
 		prometheus.HistogramOpts{
 			Name:        prefix + "_provider_sql_query_seconds",
 			Help:        "A histogram of query time for sql for providers",
-			Buckets:     buckets,
+			Buckets:     queryDurationBuckets,
 			ConstLabels: prometheus.Labels{"provider_name": p.name},
 		},
 		[]string{"map_name", "layer_name", "z"},
