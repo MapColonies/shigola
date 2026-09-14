@@ -265,10 +265,11 @@ the other.
 Which observations carry one: `shigola_cache_duration_seconds`,
 `shigola_cache_tier_duration_seconds` and `shigola_api_duration_seconds` — the
 three MAPCO-11496 named. The size histograms and the counters do not, and
-neither do `shigola_mvt_provider_sql_query_seconds` and
-`shigola_provider_sql_query_seconds`, which *are* duration histograms and are
-observed inside their own query span, so the trace is in hand at the point of
-observation.
+neither does `shigola_mvt_provider_sql_query_seconds`, which *is* a duration
+histogram and *is* observed inside its own query span, so the trace is in hand
+at the point of observation. (Its sibling
+`shigola_provider_sql_query_seconds` is registered but never observed, so it
+publishes no series at all — see `observability/prometheus/README.md`.)
 
 The reason is a dependency rather than a judgement. `exemplarFrom` lives in
 `observability/prometheus`, and a provider that imported it would defeat the

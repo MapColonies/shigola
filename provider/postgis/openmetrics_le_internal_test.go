@@ -25,10 +25,10 @@ import (
 // That matters because every other test in this package is gated behind
 // RUN_POSTGIS_TESTS and would not run in a normal `go test ./...`.
 func TestRespelledQueryBuckets(t *testing.T) {
-	// shigola_mvt_provider_sql_query_seconds and
-	// shigola_provider_sql_query_seconds share these boundaries, so one row
-	// covers both. .1 is untouched: it renders as "0.1", which already has
-	// the "." the rule looks for.
+	// These are the boundaries of shigola_mvt_provider_sql_query_seconds, the
+	// one family here that is actually observed — see queryDurationBuckets for
+	// why its sibling is not. .1 is untouched: it renders as "0.1", which
+	// already has the "." the rule looks for.
 	ttools.AssertRespelled(t, ttools.RespelledBuckets(t, queryDurationBuckets),
 		[]string{"1 -> 1.0", "5 -> 5.0", "20 -> 20.0"})
 }

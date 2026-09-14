@@ -182,8 +182,16 @@ func (p Provider) startQuerySpan(ctx context.Context, sql string) (context.Conte
 	return ctx, span
 }
 
-// queryDurationBuckets are the boundaries of the two provider query-duration
+// queryDurationBuckets are the boundaries of the provider query-duration
 // histograms.
+//
+// Two families are built from them, but only shigola_mvt_provider_sql_query_seconds
+// is ever observed. shigola_provider_sql_query_seconds is constructed and
+// returned as a collector and nothing calls Observe on it anywhere in the tree
+// — its layer_name label is a feature-returning-provider concept, left behind
+// when that provider was removed in MAPCO-11487. A HistogramVec with no
+// observed child publishes no family, so that one reaches no exposition and
+// has no le series to change.
 //
 // Package-level rather than a local, so that a test can reach them: serving
 // OpenMetrics respells any boundary whose shortest rendering contains neither

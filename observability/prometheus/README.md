@@ -92,7 +92,7 @@ histograms too even though they carry no exemplars:
 | `shigola_api_duration_seconds` | `1`, `5`, `10` |
 | `shigola_cache_response_size_bytes`, `shigola_cache_tier_response_size_bytes` | `1024`, `5120`, `25600`, `102400`, `256000`, `512000` |
 | `shigola_api_response_size_bytes` | `512000` |
-| `shigola_mvt_provider_sql_query_seconds`, `shigola_provider_sql_query_seconds` | `1`, `5`, `20` |
+| `shigola_mvt_provider_sql_query_seconds` | `1`, `5`, `20` |
 
 `2.5` is untouched, because it already contains a `.`, and so are the megabyte
 boundaries, which render as `1.048576e+06` and `5.24288e+06`; so is the provider
@@ -286,6 +286,13 @@ Buckets: .1 second, 1 second, 5 seconds, and 20+ seconds
 A histogram of the query time for the SQLs for the mvt provider
 
 ##### shigola_provider_sql_query_seconds
+
+**Publishes nothing today.** The histogram is constructed and registered, but
+nothing observes it: its `layer_name` label belongs to the feature-returning
+`postgis` provider removed in MAPCO-11487, and `mvt_postgis` records against
+`shigola_mvt_provider_sql_query_seconds` instead. A `HistogramVec` with no
+observed child emits no family, so this one never reaches a scrape — which is
+also why it is absent from the respelled-`le` table above.
 
 Labels: "map_name", "layer_name", and "z"
 Buckets: .1 second, 1 second, 5 seconds, and 20+ seconds
