@@ -87,7 +87,8 @@ is no release-candidate branch.
   | `docs/layered-cache.md` | `README.md` § "Layered cache", `observability/prometheus/README.md` |
   | `docs/configuration.md` § Redis | `cache/redis/README.md` |
   | `docs/tracing.md`, `docs/configuration.md` § Tracing | `tracing/README.md` |
-  | `docs/logging.md` | `internal/log/log.go`, `tracing/README.md` § "Correlating logs with traces" |
+  | `docs/logging.md` | `internal/log/log.go`, `tracing/README.md` §§ "Correlating logs with traces", "Correlating metrics with traces" |
+  | `docs/http-endpoints.md` § `/metrics` | `observability/prometheus/README.md`, `observability/prometheus.metricsHandler` |
   | `docs/tracing.md` § "Relationship to metrics" | `observability/prometheus/README.md` § "Trace exemplars", `tracing/README.md` § "Correlating metrics with traces" |
 
 Once the pull request is open a maintainer reviews it and may ask for changes. Keep it up to date as
