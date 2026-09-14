@@ -27,7 +27,10 @@
 # rather than downloading one. Also pinned in .devcontainer/Dockerfile.
 FROM golang:1.26.6-alpine3.23 AS build
 
-ARG BUILDPKG="github.com/mapcolonies/shigola/internal/build"
+# Must match go.mod's module path exactly, case included: the linker silently
+# ignores an -X it cannot resolve, so a wrong case builds fine and reports
+# "version not set" (MAPCO-11500). Pinned by TestStampPathMatchesModulePath.
+ARG BUILDPKG="github.com/MapColonies/shigola/internal/build"
 ARG VER="Version Not Set"
 ARG BRANCH="not set"
 ARG REVISION="not set"
@@ -44,13 +47,13 @@ ENV BUILD_PKG="${BUILDPKG}"
 ENV CGO_ENABLED=0
 
 # Set up source for compilation
-RUN mkdir -p /go/src/github.com/mapcolonies/shigola
-COPY . /go/src/github.com/mapcolonies/shigola
+RUN mkdir -p /go/src/github.com/MapColonies/shigola
+COPY . /go/src/github.com/MapColonies/shigola
 
 RUN env
 
 # Build binary
-RUN cd /go/src/github.com/mapcolonies/shigola/cmd/shigola \
+RUN cd /go/src/github.com/MapColonies/shigola/cmd/shigola \
 	&& go build -v  \
 	-ldflags "-w -X '${BUILD_PKG}.Version=${VERSION}' -X '${BUILD_PKG}.GitRevision=${GIT_REVISION}' -X '${BUILD_PKG}.GitBranch=${GIT_BRANCH}'" \
 	-gcflags "-N -l" \
