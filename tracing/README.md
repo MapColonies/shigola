@@ -315,13 +315,18 @@ Two consequences worth knowing:
   Anything pinning an exact `le`, such as a recording rule or a panel showing
   one bucket, has to be checked.
 
-  **Which boundaries, exactly, is deliberately not repeated here.**
-  `TestRespelledBucketBoundaries` derives the list by scraping both encoders,
-  and `observability/prometheus/README.md` § "Trace exemplars" states it for
-  operators. Two things about it are counterintuitive — `2.5` is untouched, and
-  the response-size families are affected despite carrying no exemplars — and a
-  third prose copy is how the previous version of this section came to name a
-  boundary that never changes at all.
+  **Which labels, exactly, is deliberately not repeated here.**
+  `TestRespelledBucketBoundaries` and `TestRespelledQuantileBoundaries` derive
+  the lists by scraping both encoders, and
+  `observability/prometheus/README.md` § "Trace exemplars" states them for
+  operators. A prose copy in a third place is how the previous version of this
+  section came to name a boundary that never changes at all.
+
+  Two things about the scope surprise people. `2.5` is untouched, because it
+  already contains a `.`. And it reaches beyond `le` and beyond this project:
+  the encoder writes summary `quantile` labels through the same formatter, so
+  `go_gc_duration_seconds{quantile="0"}` — a Go runtime metric nothing here
+  touches — is respelled too.
 
 - **Pushed metrics are a different path, and an unverified one.** A `push_url`
   deployment never reaches the exposition format above: `push.New` defaults to

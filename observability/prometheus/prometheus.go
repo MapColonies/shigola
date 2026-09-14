@@ -151,7 +151,10 @@ func (obs *observer) Handler(string) http.Handler {
 	//
 	// nil-guarded like every sibling here — the pointer receiver this took to
 	// clear a vet copylocks finding is also a receiver that can now be nil.
-	if obs == nil {
+	// obs.registry as well as obs: New always sets it, but the value receiver
+	// this replaced could not have been nil at all, so the guard covers both
+	// ways the zero value can now arrive.
+	if obs == nil || obs.registry == nil {
 		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 	}
 

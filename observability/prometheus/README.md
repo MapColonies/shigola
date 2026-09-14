@@ -90,7 +90,17 @@ exemplars:
 `2.5` is untouched, because it already contains a `.`, and so are the megabyte
 boundaries, which render as `1.048576e+06` and `5.24288e+06`.
 `TestRespelledBucketBoundaries` derives this list from the bucket sets, so it
-cannot drift from them. Anything matching an exact `le` needs checking.
+cannot drift from them.
+
+**It is not only `le`, and not only Shigola's own metrics.** The respelling is a
+property of the encoder rather than of histograms: it writes summary `quantile`
+labels through the same float formatter. The Go runtime collector's
+`go_gc_duration_seconds` is a summary, so `quantile="0"` becomes `quantile="0.0"`
+and `quantile="1"` becomes `quantile="1.0"` — on a metric this package never
+touches and that every Go process publishes. `TestRespelledQuantileBoundaries`
+scrapes a real Go collector to keep that claim honest.
+
+Anything matching an exact `le` or `quantile` needs checking.
 
 ### Metrics exposed
 
