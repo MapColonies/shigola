@@ -3,10 +3,12 @@ package atlas
 import (
 	"context"
 	"testing"
+	"time"
 
 	promclient "github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/internal/faketracer"
 	"github.com/MapColonies/shigola/internal/log"
@@ -85,7 +87,7 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 			family: "shigola_cache_tier_duration_seconds",
 			labels: map[string]string{"tier": "exhot1", "sub_command": "get"},
 			wantSpan: func(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
-				return faketracer.TierSpan(t, exporter, "exhot1")
+				return faketracer.TierSpan(t, exporter, tracing.SpanTierGet, "exhot1")
 			},
 			rejectCacheSpan: true,
 		},
@@ -102,4 +104,68 @@ func TestExemplarNamesTheSpanThatMeasuredIt(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
 	}
+}
+
+// TestDetachedWriteExemplarNamesItsRequest is the property the docs claim for
+// writes and nothing asserted: a cache write runs on the pool goroutine, after
+// the response it belongs to has gone, and its exemplar still names the trace
+// that caused it.
+//
+// It holds only because WritePool derives the write's context with
+// context.WithoutCancel, which drops cancellation and keeps values — so the
+// span context survives into a goroutine whose parent request is over. Swap
+// that for context.Background() and the write still happens, the metric is
+// still observed, and the exemplar silently becomes nothing: a latency spike on
+// cache.Set would stop being clickable with no test failing.
+func TestDetachedWriteExemplarNamesItsRequest(t *testing.T) {
+	hot := faketier.New("hot")
+	durable := faketier.New("durable")
+
+	tracer, exporter := faketracer.New(t)
+
+	a := &Atlas{}
+	a.SetCache(tieredCache(t, "exwhot", "exwdurable", "exwhot", "exwdurable", hot, durable, 0))
+	a.SetObservability(newObserver(t))
+	a.SetTracing(tracer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := a.GetCache().Set(ctx, obsKey, []byte("tile")); err != nil {
+		t.Fatalf("Set() = %v", err)
+	}
+
+	// The request ends here, which is the whole point: everything the write
+	// still needs has to have been carried by value rather than borrowed.
+	cancel()
+
+	pool := cache.WritePoolOf(a.GetCache())
+	if pool == nil {
+		t.Fatal("no write pool behind the chain; this test would prove nothing about detached writes")
+	}
+	pool.Drain(5 * time.Second)
+
+	// The *per-tier* family, not the whole-cache one. The detachment decorator
+	// sits inside the observability wrapper, so the whole-cache Set is observed
+	// synchronously on the response path, where the live request context is
+	// still in hand and WithoutCancel has nothing to do. Only the tier write
+	// runs on the pool goroutine, which is the observation this property is
+	// about — asserting the whole-cache family instead passes with the
+	// derivation replaced by context.Background(), and so proves nothing.
+	tier := faketracer.TierSpan(t, exporter, tracing.SpanTierSet, "exwdurable")
+
+	// The trace compared against is the *request's*, taken from the whole-cache
+	// span, which is created on the response path while the original context is
+	// still live. Comparing the tier exemplar against the tier span's own trace
+	// would prove nothing: with the derivation replaced by context.Background()
+	// the tier write still gets a span, it is simply the root of a new and
+	// orphaned trace — and an exemplar naming that span would still match it.
+	whole := faketracer.SpanNamed(t, exporter, tracing.SpanCacheSet)
+
+	if tier.SpanContext.TraceID() != whole.SpanContext.TraceID() {
+		t.Fatalf("the detached write ran in trace %v, not the request's %v; it lost the span context on the way to the pool",
+			tier.SpanContext.TraceID(), whole.SpanContext.TraceID())
+	}
+
+	ttools.AssertExemplar(t, promclient.DefaultGatherer, "shigola_cache_tier_duration_seconds",
+		map[string]string{"tier": "exwdurable", "sub_command": "set"},
+		whole.SpanContext.TraceID().String(), tier.SpanContext.SpanID().String())
 }

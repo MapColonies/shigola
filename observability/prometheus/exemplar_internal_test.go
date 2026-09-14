@@ -25,9 +25,6 @@ import (
 
 var exemplarKey = &tegolaCache.Key{MapName: "osm", Z: 6, X: 5, Y: 4}
 
-// The label set a cache built with no observe-vars records a read under.
-var readOpLabels = map[string]string{"sub_command": "get"}
-
 // TestExemplarFromContext covers the three ways there is nothing to point at
 // and the one way there is.
 func TestExemplarFromContext(t *testing.T) {
@@ -151,15 +148,32 @@ func TestDurationExemplars(t *testing.T) {
 		}
 	}
 
-	// cacheRead observes one tier read through the metric wrapper.
-	cacheRead := func(prefix string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
+	// cacheOp observes one cache operation through the metric wrapper. op names
+	// the sub_command the observation lands under, which is how the three are
+	// told apart in the exposition.
+	//
+	// The errors are ignored in all three: a miss, and two writes to a fake
+	// that cannot fail. The exemplar on the duration observation is the
+	// subject, and that is recorded either way.
+	cacheOp := func(prefix, op string, ctx context.Context) func(*testing.T, *prometheus.Registry) (string, map[string]string) {
 		return func(t *testing.T, registry *prometheus.Registry) (string, map[string]string) {
 			c := newCache(registry, prefix, nil, faketier.New("hot"))
 
-			//nolint:errcheck // a miss; the exemplar on the duration observation is the subject
-			c.Get(ctx, exemplarKey)
+			switch op {
+			case "get":
+				//nolint:errcheck
+				c.Get(ctx, exemplarKey)
+			case "set":
+				//nolint:errcheck
+				c.Set(ctx, exemplarKey, []byte("tile"))
+			case "purge":
+				//nolint:errcheck
+				c.Purge(ctx, exemplarKey)
+			default:
+				t.Fatalf("unknown cache op %q", op)
+			}
 
-			return prefix + "_duration_seconds", readOpLabels
+			return prefix + "_duration_seconds", map[string]string{"sub_command": op}
 		}
 	}
 
@@ -187,11 +201,23 @@ func TestDurationExemplars(t *testing.T) {
 
 	tests := map[string]tcase{
 		"a cache read in a sampled trace": {
-			observe: cacheRead("test_exemplar_cache", fakelog.TracedContext(true)),
+			observe: cacheOp("test_exemplar_cache", "get", fakelog.TracedContext(true)),
 			traced:  true,
 		},
 		"a cache read outside any trace": {
-			observe: cacheRead("test_plain_cache", context.Background()),
+			observe: cacheOp("test_plain_cache", "get", context.Background()),
+		},
+		// Set and Purge run through the same observeDuration, and the docs name
+		// all three spans — but every test here observed a read until these two
+		// rows existed. The write is the one that matters most: on the detached
+		// pool its observation outlives the response it belongs to.
+		"a cache write in a sampled trace": {
+			observe: cacheOp("test_exemplar_write", "set", fakelog.TracedContext(true)),
+			traced:  true,
+		},
+		"a cache purge in a sampled trace": {
+			observe: cacheOp("test_exemplar_purge", "purge", fakelog.TracedContext(true)),
+			traced:  true,
 		},
 		"a request in a sampled trace": {
 			observe: request("test_exemplar_api", fakelog.TracedContext(true)),

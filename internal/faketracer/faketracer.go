@@ -126,7 +126,8 @@ func Int64Attr(span tracetest.SpanStub, key attribute.Key) int64 {
 	return -1
 }
 
-// TierSpan returns the cache-tier span carrying the given tier name.
+// TierSpan returns the span named name that carries the given tier — a read,
+// a write or a purge on one tier of a chain.
 //
 // One caller today, and here anyway because the lookup is two facts about the
 // tracing package's own data rather than about any test: the span name a tier
@@ -135,16 +136,16 @@ func Int64Attr(span tracetest.SpanStub, key attribute.Key) int64 {
 //
 // Not used by atlas/tracing_test.go, which wants every tier name at once for a
 // set comparison rather than one span by name.
-func TierSpan(t *testing.T, exporter *tracetest.InMemoryExporter, tier string) tracetest.SpanStub {
+func TierSpan(t *testing.T, exporter *tracetest.InMemoryExporter, name, tier string) tracetest.SpanStub {
 	t.Helper()
 
-	for _, span := range SpansNamed(exporter, tracing.SpanTierGet) {
+	for _, span := range SpansNamed(exporter, name) {
 		if StringAttr(span, tracing.AttrCacheTier) == tier {
 			return span
 		}
 	}
 
-	t.Fatalf("no %v span carries tier %v", tracing.SpanTierGet, tier)
+	t.Fatalf("no %v span carries tier %v", name, tier)
 
 	return tracetest.SpanStub{}
 }

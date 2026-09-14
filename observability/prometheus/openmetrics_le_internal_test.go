@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,9 +31,15 @@ var (
 	quantilePattern = regexp.MustCompile(`quantile="([^"]+)"`)
 )
 
+// The two exposition formats, named so a call site says which it means rather
+// than passing a bare true or false.
+const (
+	openMetricsText = true
+	classicText     = false
+)
+
 // scrapeLabel serves a registry in one exposition format and returns the values
-// pattern captures, in the order they were written. openMetrics picks the
-// encoder; false is the classic text format this route served before exemplars.
+// pattern captures, in the order they were written.
 func scrapeLabel(t *testing.T, registry *prometheus.Registry, pattern *regexp.Regexp, openMetrics bool) []string {
 	t.Helper()
 
@@ -60,6 +67,52 @@ func matches(pattern *regexp.Regexp, body string) []string {
 	return found
 }
 
+// respelled serves registry under both exposition formats, pairs the label
+// values written by each, and returns the ones the two spell differently as
+// "before -> after".
+//
+// The pairing is positional, which is why the lengths are checked first: the
+// two encoders write the same samples in the same order, and a length mismatch
+// means they no longer do, which would make every comparison below meaningless
+// rather than merely wrong.
+func respelled(t *testing.T, registry *prometheus.Registry, pattern *regexp.Regexp) []string {
+	t.Helper()
+
+	classic := scrapeLabel(t, registry, pattern, classicText)
+	openMetrics := scrapeLabel(t, registry, pattern, openMetricsText)
+
+	if len(classic) == 0 {
+		t.Fatal("no matching labels in the exposition; this test would prove nothing")
+	}
+	if len(classic) != len(openMetrics) {
+		t.Fatalf("%d labels classic, %d under OpenMetrics; the two are not comparable",
+			len(classic), len(openMetrics))
+	}
+
+	var changed []string
+	for i := range classic {
+		if classic[i] != openMetrics[i] {
+			changed = append(changed, classic[i]+" -> "+openMetrics[i])
+		}
+	}
+
+	return changed
+}
+
+// assertRespelled compares what actually moved against what the docs say did.
+func assertRespelled(t *testing.T, got, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("respelled = %v, documented %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("respelled %d = %q, documented %q", i, got[i], want[i])
+		}
+	}
+}
+
 // TestRespelledBucketBoundaries scrapes each bucket set under both exposition
 // formats and reports every boundary the two spell differently.
 func TestRespelledBucketBoundaries(t *testing.T) {
@@ -84,36 +137,14 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 			// One observation, so every bucket is written out.
 			histogram.Observe(0)
 
-			classic := scrapeLabel(t, registry, lePattern, false)
-			openMetrics := scrapeLabel(t, registry, lePattern, true)
-
-			if len(classic) != len(openMetrics) {
-				t.Fatalf("%d le labels classic, %d under OpenMetrics; the two are not comparable",
-					len(classic), len(openMetrics))
-			}
-
-			var changed []string
-			unchanged := map[string]bool{}
-			for i := range classic {
-				if classic[i] != openMetrics[i] {
-					changed = append(changed, classic[i]+" -> "+openMetrics[i])
-					continue
-				}
-				unchanged[classic[i]] = true
-			}
-
-			if len(changed) != len(tc.respelled) {
-				t.Fatalf("respelled boundaries = %v, documented %v", changed, tc.respelled)
-			}
-			for i := range changed {
-				if changed[i] != tc.respelled[i] {
-					t.Errorf("respelled boundary %d = %q, documented %q", i, changed[i], tc.respelled[i])
-				}
-			}
+			changed := respelled(t, registry, lePattern)
+			assertRespelled(t, changed, tc.respelled)
 
 			for _, le := range tc.unchanged {
-				if !unchanged[le] {
-					t.Errorf("%v was documented as unchanged but the two formats spell it differently", le)
+				for _, entry := range changed {
+					if strings.HasPrefix(entry, le+" -> ") {
+						t.Errorf("%v was documented as unchanged but moved: %v", le, entry)
+					}
 				}
 			}
 		}
@@ -157,38 +188,26 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 //
 // The respelling is a property of the OpenMetrics *encoder*, not of histograms:
 // it writes summary quantile labels through the same float writer. So turning
-// the format on also respells series this package never touches — including
+// the format on also respells series this package never touches — most visibly
 // go_gc_duration_seconds, which every Go process publishes and which plenty of
 // dashboards pin a quantile on. The docs said "le" and named only shigola's
 // families until this test was written.
+//
+// The summary here carries the Go collector's own objectives rather than
+// registering the collector itself, whose constructor is deprecated in the
+// vendored client and whose replacement lives in a package this tree does not
+// vendor. Registering one to prove a fact about the encoder would have meant
+// vendor churn on a ticket whose acceptance criteria turn on vendor/ being
+// untouched.
 func TestRespelledQuantileBoundaries(t *testing.T) {
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(prometheus.NewGoCollector())
+	summary := prometheus.NewSummary(prometheus.SummaryOpts{
+		Name:       "test_quantile_seconds",
+		Objectives: map[float64]float64{0: 0, 0.25: 0.25, 0.5: 0.05, 0.75: 0.02, 1: 0},
+	})
+	registry.MustRegister(summary)
+	summary.Observe(0)
 
-	classic := scrapeLabel(t, registry, quantilePattern, false)
-	openMetrics := scrapeLabel(t, registry, quantilePattern, true)
-
-	if len(classic) == 0 {
-		t.Fatal("the Go collector published no quantile labels; this test proved nothing")
-	}
-	if len(classic) != len(openMetrics) {
-		t.Fatalf("%d quantile labels classic, %d under OpenMetrics", len(classic), len(openMetrics))
-	}
-
-	var changed []string
-	for i := range classic {
-		if classic[i] != openMetrics[i] {
-			changed = append(changed, classic[i]+" -> "+openMetrics[i])
-		}
-	}
-
-	want := []string{"0 -> 0.0", "1 -> 1.0"}
-	if len(changed) != len(want) {
-		t.Fatalf("respelled quantiles = %v, documented %v", changed, want)
-	}
-	for i := range changed {
-		if changed[i] != want[i] {
-			t.Errorf("respelled quantile %d = %q, documented %q", i, changed[i], want[i])
-		}
-	}
+	assertRespelled(t, respelled(t, registry, quantilePattern),
+		[]string{"0 -> 0.0", "1 -> 1.0"})
 }
