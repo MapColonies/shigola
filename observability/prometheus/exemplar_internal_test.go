@@ -241,6 +241,16 @@ func TestDurationExemplars(t *testing.T) {
 // drops them silently. So this scrapes the handler the metrics route actually
 // serves, with the Accept header Prometheus sends, and looks for the exemplar
 // in the bytes.
+//
+// Through Handler, not through metricsHandler, which is the whole point of the
+// distinction. Handler is what server.go mounts on the metrics route, and it is
+// where EnableOpenMetrics is chosen; calling the unexported helper directly
+// would assert the encoding of a handler nothing serves, and replacing
+// Handler's body with a plain promhttp.Handler() — the default, which leaves
+// OpenMetrics off — would drop every exemplar on the wire with this test still
+// green. That is also what the observer's registry field is doing here: it is
+// what lets the production entry point be exercised against a registry of this
+// test's own rather than the process-wide default.
 func TestExemplarReachesTheExposition(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	tier := faketier.New("hot")
@@ -258,7 +268,10 @@ func TestExemplarReachesTheExposition(t *testing.T) {
 		"application/openmetrics-text;version=0.0.1;q=0.75,"+
 		"text/plain;version=0.0.4;q=0.5,*/*;q=0.1")
 	recorder := httptest.NewRecorder()
-	metricsHandler(registry, registry).ServeHTTP(recorder, request)
+	obs := &observer{registry: registry}
+	// The route name Handler is given is the one server.go passes it, and is
+	// ignored by every implementation; it is the mounting path, not a selector.
+	obs.Handler("/metrics").ServeHTTP(recorder, request)
 
 	if contentType := recorder.Header().Get("Content-Type"); !strings.Contains(contentType, "openmetrics-text") {
 		t.Fatalf("Content-Type = %q, want the OpenMetrics encoding that carries exemplars", contentType)
