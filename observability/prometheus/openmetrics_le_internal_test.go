@@ -30,8 +30,12 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
 			changed := ttools.RespelledBuckets(t, tc.buckets)
-			ttools.AssertRespelled(t, changed, tc.respelled)
 
+			// Before AssertRespelled, which fails fatally on a length
+			// mismatch. A documented-unchanged boundary that starts moving
+			// *is* a length mismatch, so checking afterwards would report the
+			// generic list difference and never the specific boundary — the
+			// one thing this loop exists to name.
 			for _, le := range tc.unchanged {
 				for _, entry := range changed {
 					if strings.HasPrefix(entry, le+" -> ") {
@@ -39,6 +43,8 @@ func TestRespelledBucketBoundaries(t *testing.T) {
 					}
 				}
 			}
+
+			ttools.AssertRespelled(t, changed, tc.respelled)
 		}
 	}
 
