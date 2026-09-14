@@ -158,12 +158,17 @@ func (obs *observer) Handler(string) http.Handler {
 		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 	}
 
-	gatherer := prometheus.DefaultGatherer
-	if own, ok := obs.registry.(prometheus.Gatherer); ok {
-		gatherer = own
+	// Both halves or neither, which is what the paragraph above rules out any
+	// middle ground for. A Registerer that cannot also gather leaves nothing to
+	// serve its own metrics from, and pairing it with the default gatherer
+	// would be exactly the mismatch described: the scrape counter landing in
+	// one registry while another's metrics go out on the wire.
+	own, ok := obs.registry.(prometheus.Gatherer)
+	if !ok {
+		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
 	}
 
-	return metricsHandler(obs.registry, gatherer)
+	return metricsHandler(obs.registry, own)
 }
 
 // metricsHandler serves the metrics route, negotiating OpenMetrics.
