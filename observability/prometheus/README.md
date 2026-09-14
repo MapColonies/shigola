@@ -98,7 +98,12 @@ labels through the same float formatter. The Go runtime collector's
 `go_gc_duration_seconds` is a summary, so `quantile="0"` becomes `quantile="0.0"`
 and `quantile="1"` becomes `quantile="1.0"` — on a metric this package never
 touches and that every Go process publishes. `TestRespelledQuantileBoundaries`
-scrapes a real Go collector to keep that claim honest.
+keeps that claim honest by scraping a summary carrying the Go collector's own
+objectives, rather than the collector itself: its constructor is deprecated in
+the vendored client, and the replacement lives in a package this tree does not
+vendor, so registering one to prove a fact about the encoder would have meant
+vendor churn on a ticket whose acceptance criteria turn on `vendor/` being
+untouched.
 
 Anything matching an exact `le` or `quantile` needs checking.
 

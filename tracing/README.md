@@ -297,8 +297,11 @@ comment saying so. A slow bucket on the per-tier histogram therefore names the
 tier read that was slow, not the request as a whole. Inverting either order
 leaves the span tree unchanged, so it is pinned by the exemplar instead:
 `atlas.TestExemplarNamesTheSpanThatMeasuredIt` and
-`server.TestRequestExemplarNamesTheRequestSpan` both fail on it, and say which
-way round it went wrong.
+`server.TestRequestExemplarNamesTheRequestSpan` both fail on it, though they
+fail differently: the atlas one names the inversion, because a tier exemplar
+can only go wrong by naming the cache-wide span, and the server one reports
+that no bucket carries an exemplar at all, because a request observed outside
+its own span has no trace to point at.
 
 **Nothing is attached outside a trace.** `exemplarFrom` returns nil, which is
 the client's own "no exemplar" signal, so an untraced observation is recorded
