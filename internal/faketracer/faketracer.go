@@ -129,9 +129,9 @@ func Int64Attr(span tracetest.SpanStub, key attribute.Key) int64 {
 // TierSpan returns the span named name that carries the given tier — a read,
 // a write or a purge on one tier of a chain.
 //
-// One caller today, and here anyway because the lookup is two facts about the
-// tracing package's own data rather than about any test: the span name a tier
-// read takes, and the attribute the tier name lands in. A test that hard-codes
+// Here rather than in a test because the lookup is two facts about the tracing
+// package's own data rather than about any test: the span name a tier read
+// takes, and the attribute the tier name lands in. A test that hard-codes
 // either is a test that breaks when tracing renames them.
 //
 // Not used by atlas/tracing_test.go, which wants every tier name at once for a

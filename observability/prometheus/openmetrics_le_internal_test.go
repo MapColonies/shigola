@@ -113,6 +113,6 @@ func TestRespelledQuantileBoundaries(t *testing.T) {
 	registry.MustRegister(summary)
 	summary.Observe(0)
 
-	ttools.AssertRespelled(t, ttools.Respelled(t, registry, ttools.QuantilePattern),
+	ttools.AssertRespelled(t, ttools.Respelled(t, registry, "quantile"),
 		[]string{"0 -> 0.0", "1 -> 1.0"})
 }

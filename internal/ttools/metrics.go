@@ -150,9 +150,10 @@ func HasLabels(pairs []*dto.LabelPair, want map[string]string) bool {
 // AssertExemplar checks that the named histogram's most recent exemplar points
 // at the given trace and span.
 //
-// Shared because three tests in three packages make exactly this pair of
-// comparisons — the prometheus observer's own against a fixed fixture, atlas's
-// against the tier span the read produced, server's against the request span —
+// Shared because tests in three packages make exactly this pair of comparisons
+// — the prometheus observer's own against a fixed fixture, atlas's against the
+// tier span the read produced and the span a detached write ran in, server's
+// against the request span —
 // and the label names are the load-bearing part: log.TraceIDKey and
 // log.SpanIDKey are what Grafana is configured with, so a test spelling them
 // itself is a test that keeps passing after a rename that broke correlation.

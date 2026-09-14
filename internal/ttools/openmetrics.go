@@ -31,12 +31,14 @@ import (
 // documented list while a test named "derives this from the bucket sets" stayed
 // green.
 
-// LePattern and QuantilePattern pull a bucket or quantile label out of an
-// exposition line.
-var (
-	LePattern       = regexp.MustCompile(`le="([^"]+)"`)
-	QuantilePattern = regexp.MustCompile(`quantile="([^"]+)"`)
-)
+// labelPattern pulls the values of one label out of an exposition line.
+//
+// Built here rather than taken as a *regexp.Regexp parameter: the two callers
+// want a bucket boundary or a summary quantile, and a function promising to
+// differ on any regexp at all would be promising more than it is asked for.
+func labelPattern(label string) *regexp.Regexp {
+	return regexp.MustCompile(label + `="([^"]+)"`)
+}
 
 // The two exposition formats, named so a call site says which it means rather
 // than passing a bare true or false.
@@ -47,7 +49,7 @@ const (
 
 // scrapeLabel serves a gatherer in one exposition format and returns the values
 // pattern captures, in the order they were written.
-func scrapeLabel(t *testing.T, gatherer prometheus.Gatherer, pattern *regexp.Regexp, openMetrics bool) []string {
+func scrapeLabel(t *testing.T, gatherer prometheus.Gatherer, label string, openMetrics bool) []string {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -62,7 +64,7 @@ func scrapeLabel(t *testing.T, gatherer prometheus.Gatherer, pattern *regexp.Reg
 		ServeHTTP(recorder, request)
 
 	var found []string
-	for _, match := range pattern.FindAllStringSubmatch(recorder.Body.String(), -1) {
+	for _, match := range labelPattern(label).FindAllStringSubmatch(recorder.Body.String(), -1) {
 		found = append(found, match[1])
 	}
 
@@ -77,11 +79,11 @@ func scrapeLabel(t *testing.T, gatherer prometheus.Gatherer, pattern *regexp.Reg
 // two encoders write the same samples in the same order, and a length mismatch
 // means they no longer do, which would make every comparison below meaningless
 // rather than merely wrong.
-func Respelled(t *testing.T, gatherer prometheus.Gatherer, pattern *regexp.Regexp) []string {
+func Respelled(t *testing.T, gatherer prometheus.Gatherer, label string) []string {
 	t.Helper()
 
-	classic := scrapeLabel(t, gatherer, pattern, classicText)
-	openMetrics := scrapeLabel(t, gatherer, pattern, openMetricsText)
+	classic := scrapeLabel(t, gatherer, label, classicText)
+	openMetrics := scrapeLabel(t, gatherer, label, openMetricsText)
 
 	if len(classic) == 0 {
 		t.Fatal("no matching labels in the exposition; this test would prove nothing")
@@ -117,7 +119,7 @@ func RespelledBuckets(t *testing.T, buckets []float64) []string {
 	registry.MustRegister(histogram)
 	histogram.Observe(0)
 
-	return Respelled(t, registry, LePattern)
+	return Respelled(t, registry, "le")
 }
 
 // AssertRespelled compares what actually moved against what the docs say did.
