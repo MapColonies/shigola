@@ -36,8 +36,6 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapp
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0/go.mod h1:cSgYe11MCNYunTnRXrKiR/tHc0eoKjICUuWpNZoVCOo=
 github.com/akrylysov/algnhsa v1.0.0 h1:qlogYL9n7MfU/TJJJCKqpg6gLgCuR/IkdFGwIJClBnE=
 github.com/akrylysov/algnhsa v1.0.0/go.mod h1:ConzNpk7uLAl7Hi5LqcImgl3Oq2flRe6W7zum5A1p/8=
-github.com/arolek/p v0.0.0-20191103215535-df3c295ed582 h1:DugKk4B3PpqfZ1QunDSPqNZDAErQmdCgwurloi1Axaw=
-github.com/arolek/p v0.0.0-20191103215535-df3c295ed582/go.mod h1:JPNItmi3yb44Q5QWM+Kh5n9oeRhfcJzPNS90mbLo25U=
 github.com/aws/aws-lambda-go v1.41.0 h1:l/5fyVb6Ud9uYd411xdHZzSf2n86TakxzpvIoz7l+3Y=
 github.com/aws/aws-lambda-go v1.41.0/go.mod h1:jwFe2KmMsHmffA1X2R09hH6lFzJQxzI8qK17ewzbQMM=
 github.com/aws/aws-sdk-go v1.34.0 h1:brux2dRrlwCF5JhTL7MUT3WUwo9zfDHZZp3+g3Mvlmo=

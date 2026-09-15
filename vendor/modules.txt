@@ -73,9 +73,6 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapp
 # github.com/akrylysov/algnhsa v1.0.0
 ## explicit; go 1.18
 github.com/akrylysov/algnhsa
-# github.com/arolek/p v0.0.0-20191103215535-df3c295ed582
-## explicit; go 1.13
-github.com/arolek/p
 # github.com/aws/aws-lambda-go v1.41.0
 ## explicit; go 1.18
 github.com/aws/aws-lambda-go/events
@@ -220,12 +217,7 @@ github.com/go-spatial/cobra
 # github.com/go-spatial/geom v0.1.0
 ## explicit; go 1.22
 github.com/go-spatial/geom
-github.com/go-spatial/geom/cmp
-github.com/go-spatial/geom/encoding/mvt
-github.com/go-spatial/geom/encoding/mvt/vector_tile
-github.com/go-spatial/geom/encoding/wkt
 github.com/go-spatial/geom/slippy
-github.com/go-spatial/geom/winding
 # github.com/go-spatial/proj v0.3.0
 ## explicit; go 1.23.4
 github.com/go-spatial/proj

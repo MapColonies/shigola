@@ -19,7 +19,6 @@ import (
 	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/dict"
-	"github.com/go-spatial/geom/encoding/mvt"
 )
 
 var (
@@ -50,7 +49,7 @@ const (
 	DefaultRegion         = "us-east-1"
 	DefaultAccessKey      = ""
 	DefaultSecretKey      = ""
-	DefaultContentType    = mvt.MimeType
+	DefaultContentType    = shigola.MediaTypeMVT
 	DefaultEndpoint       = ""
 	DefaultS3ForcePath    = false
 	DefaultReqSigningHost = ""
