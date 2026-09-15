@@ -172,6 +172,50 @@ the config are worth knowing about rather than discovering:
   default. In this tree a refactor is routinely a removal, and notes showing only `feat` and `fix`
   would leave out most of what someone upgrading has to act on.
 
+### What a release publishes
+
+Two kinds of artifact, both from `on_release_publish.yml`, both stamped with the tag being
+released:
+
+* **Binaries**, attached to the GitHub release as zips — Linux, macOS and Windows on amd64, Linux
+  on arm64, and the two `shigola_lambda` bootstraps.
+* **A container image**, pushed to MapColonies' Azure Container Registry as
+  `<ACR_URL>/vector/shigola`. One manifest covering `linux/amd64` and `linux/arm64`, carrying two
+  tags: `X.Y.Z`, which never moves, and `latest`, which does.
+
+A merge to the default branch pushes the same image as `edge`. That is not a release: it carries no
+version tag and nothing about it is announced — and, for the same reason no release pull request
+opens today, it does not currently happen at all, because the work has been landing on
+`development` rather than on the default branch.
+
+The stamp is what makes an artifact identifiable — `shigola version` reports the release it came
+from — and it is silent when it goes wrong, because the linker discards an `-X` naming a symbol it
+cannot resolve. So the workflow asserts it rather than trusting it, twice, because the two
+assertions say different things:
+
+1. **Before the push**, against the image the runner just built. This says the build args were
+   right. It runs on every event, including pull requests, so a broken stamp fails long before a
+   release. buildx can only load one platform into docker, so it only ever sees amd64.
+2. **After the push**, against each architecture of each tag pulled back out of the registry. This
+   says the registry now serves what the build produced — the only claim a release actually needs
+   to make. Holding `latest` to the released version is the half that catches a `latest` still
+   pointing at the previous release.
+
+#### Credentials
+
+The push reads `ACR_URL`, `ACR_PUSH_USER` and `ACR_PUSH_TOKEN` from repository secrets. What
+happens when they are absent depends on what is being built, deliberately:
+
+| Event | Without credentials |
+|:---|:---|
+| a pull request, or a merge to the default branch | builds the image and asserts its version, pushes nothing |
+| a published release | fails before building, naming each missing secret |
+
+Skipping an `edge` push costs nothing. A release is the one case that refuses to skip: a release
+that quietly published nothing and reported success is the failure this repository has already had
+twice (MAPCO-11500, MAPCO-11501), and it is worse than a red build because it reads as a release
+that happened.
+
 ### `CHANGELOG.md`
 
 Generated, and only above the line. New entries are inserted directly beneath the file's preamble
