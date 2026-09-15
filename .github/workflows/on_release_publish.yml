@@ -268,6 +268,35 @@ jobs:
           echo 'BUILD_ARGS_EOF'
         } >> "$GITHUB_ENV"
 
+    # A release must publish or fail, so this is the one place credentials are
+    # checked up front rather than skipped around. Without ACR_URL the image
+    # reference assembled above falls back to `local/vector/shigola`, whose
+    # first component carries no dot or colon -- so docker reads it as a path
+    # on Docker Hub rather than as a registry host, and a release with no
+    # credentials spends several minutes building and then tries to push to a
+    # registry we do not own, failing there on authorization with an error
+    # naming no secret. Fail here instead, saying what is missing
+    # (MAPCO-11503).
+    #
+    # Every other event skips cleanly past this: nothing above needs
+    # credentials, and the edge push below gates itself on ACR_URL.
+    - name: Require registry credentials for a release
+      if: github.event_name == 'release'
+      env:
+        ACR_PUSH_USER: ${{ secrets.ACR_PUSH_USER }}
+        ACR_PUSH_TOKEN: ${{ secrets.ACR_PUSH_TOKEN }}
+      run: |
+        status=0
+
+        for secret in ACR_URL ACR_PUSH_USER ACR_PUSH_TOKEN; do
+          if [[ -z "${!secret}" ]]; then
+            echo "::error::secret ${secret} is not set; a release cannot publish without it"
+            status=1
+          fi
+        done
+
+        exit $status
+
     # amd64 only: buildx can only load one platform into docker. Cached, so the
     # publish steps below do not rebuild it.
     #
@@ -284,7 +313,11 @@ jobs:
 
     # `shigola version` exits 0 even when unstamped, so the old step that merely
     # ran it passed against images reporting "version not set". Assert instead.
-    - name: Assert the image reports its version, branch and revision
+    #
+    # This is the pre-push half of the pair: it checks that the build args
+    # produced a stamped binary, on every event, before anything is published.
+    # What the registry ends up serving is asserted after the push below.
+    - name: Assert the built image reports its version, branch and revision
       run: |
         reported=$(docker run --rm "${IMAGE}:${VERSION}" version)
         echo "$reported"
@@ -334,6 +367,45 @@ jobs:
         tags: ${{ env.IMAGE }}:${{ env.VERSION }},${{ env.IMAGE }}:latest
         platforms: linux/amd64,linux/arm64
         build-args: ${{ env.BUILD_ARGS }}
+
+    # The pre-push assertion ran the image this runner built, and buildx can
+    # only load one platform into docker, so it saw amd64 and nothing else.
+    # This reads both architectures of both tags back out of the registry,
+    # which is the claim a release actually has to make: that what was
+    # published reports the version it was published as. QEMU, set up at the
+    # top of this job, is what lets the arm64 image run here (MAPCO-11503).
+    - name: Assert the published images report the release version
+      if: github.event_name == 'release'
+      run: |
+        status=0
+
+        for tag in "${VERSION}" latest; do
+          for platform in linux/amd64 linux/arm64; do
+            ref="${IMAGE}:${tag}"
+            echo "--- ${ref} (${platform})"
+
+            # --pull always: this runner is holding the layers it just built
+            # and a tag pointing at them, so without this docker answers from
+            # that cache and the registry is never consulted.
+            if ! reported=$(docker run --rm --pull always --platform "${platform}" "${ref}" version); then
+              echo "::error::${ref} does not run on ${platform}"
+              status=1
+
+              continue
+            fi
+
+            echo "$reported"
+
+            # latest is held to the same version on purpose: a latest still
+            # pointing at the previous release is what this catches.
+            if ! grep -qxF "   version: ${VERSION}" <<< "$reported"; then
+              echo "::error::${ref} on ${platform} reports something other than ${VERSION}"
+              status=1
+            fi
+          done
+        done
+
+        exit $status
 
   build_windows:
     name: Build for Windows
