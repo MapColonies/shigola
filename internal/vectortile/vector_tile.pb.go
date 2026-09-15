@@ -1,11 +1,15 @@
 // The Mapbox Vector Tile specification's schema (vector-tile-spec 2.1). The
-// schema itself is verbatim: this copy adds these comments, the syntax
-// declaration below, and exactly one option, go_package. Nothing is removed
-// and no field, type or number is changed.
+// schema itself is verbatim: vector_tile.proto adds these comments, a
+// `syntax = "proto2"` declaration and exactly one option, go_package. Nothing
+// is removed, and no field, type or number is changed.
 //
 // Said precisely rather than as "verbatim", because CC BY 3.0 asks that a
-// modification be indicated and one was made. optimize_for below is the
+// modification be indicated and one was made. The optimize_for option is the
 // specification's own and is not one of ours.
+//
+// Written without pointing anywhere: protoc copies this header into
+// vector_tile.pb.go as a detached comment, and a "below" would there refer to
+// lines the generated file does not have.
 //
 // Source:  https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
 // License: Creative Commons Attribution 3.0 Unported. See NOTICE.md.
