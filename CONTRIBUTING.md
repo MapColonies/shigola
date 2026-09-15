@@ -269,12 +269,24 @@ go build -mod vendor ./cmd/shigola
 ./shigola serve --config=path/to/config.toml
 ```
 
-`internal/build/*.generated.go` records which build tags a binary was built with. It is generated,
-never hand-edited:
+Two things in the tree are generated, never hand-edited.
+
+`internal/build/*.generated.go` records which build tags a binary was built with:
 
 ```bash
 cd internal/build && go generate
 ```
+
+`internal/vectortile/vector_tile.pb.go` is the Mapbox Vector Tile schema, from the specification's
+own `vector_tile.proto` beside it. Regenerating needs `protoc` and a `protoc-gen-go` matching the
+`google.golang.org/protobuf` version in `go.mod`; the devcontainer image carries both:
+
+```bash
+cd internal/vectortile && go generate
+```
+
+The schema is frozen — vector-tile-spec 2.1, unchanged since 2016 — so in practice this does not
+need running. Change `vector_tile.proto` rather than its output.
 
 Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache`, `noGCSCache`,
 `noPostgisProvider` and `noPrometheusObserver`; `pprof` opts in.
