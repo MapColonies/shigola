@@ -314,9 +314,12 @@ go test -mod vendor -race ./...
 docker compose down
 ```
 
-**One test mode, not two.** Nothing in this tree is compiled conditionally on cgo, so `CGO_ENABLED`
-no longer changes what is built or what is tested, and `internal/build` fails if that stops being
-true. Leave it unset: `go test -race` links a C runtime for its detector and needs cgo available.
+**One test mode, not two.** No file shigola owns is compiled conditionally on cgo, so `CGO_ENABLED`
+does not change what is built or what is tested, and `internal/build` fails if that stops being
+true. That test skips `vendor/` on purpose, and one dependency uses the room it leaves:
+prometheus/client_golang reads process memory through a C call on macOS, which a linux build — CI's
+and the release images' — never selects. Leave `CGO_ENABLED` unset: `go test -race` links a C
+runtime for its detector and needs cgo available.
 That the tree still *builds* without a C toolchain is checked separately, and CI checks it:
 
 ```bash

@@ -467,8 +467,11 @@ surface that had to be kept working, documented and tested for no user of it her
 | The `postgis` provider type | [`mvt_postgis`](provider/postgis), which encodes the tile in the database with `ST_AsMVT`. A config naming `postgis` is rejected at startup with a message naming its replacement. |
 | Go-side geometry processing — clipping, make-valid, simplification, hit-mapping | PostGIS. `ST_AsMVT` and the layer SQL produce the tile, so no geometry reaches this process to be processed. |
 
-Removing the GeoPackage provider also took the last cgo out of the tree, so `CGO_ENABLED` no longer
-decides what a shigola binary can do.
+Removing the GeoPackage provider also took shigola's own last use of cgo out of the tree, so
+`CGO_ENABLED` does not decide what a binary can serve. One effect of it survives, on macOS only:
+prometheus/client_golang reads process memory there through a C call, so a cgo-less darwin build
+omits `process_resident_memory_bytes` and `process_virtual_memory_bytes`. The release images are
+linux, which reads both from procfs either way.
 
 ### Breaking changes vs Tegola
 
