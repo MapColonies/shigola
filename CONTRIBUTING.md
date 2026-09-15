@@ -99,6 +99,102 @@ people do not write the same patch. An issue labelled `good first issue` is one 
 is a reasonable place to start, but it is not the only place. If you are unsure how to approach one,
 ask on the issue.
 
+## Versioning and releases
+
+Shigola follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`, where major means
+something that worked before does not any more. Nobody picks the number by hand — it is derived from
+the Conventional Commits merged to `master`, which is the other reason the commit grammar above is
+enforced rather than encouraged.
+
+| A commit of this shape | moves |
+|:---|:---|
+| `fix: …` | the patch |
+| `feat: …` | the minor |
+| any type with `!` after the scope, or a `BREAKING CHANGE:` footer in the body | the major |
+| `docs:`, `refactor:`, `perf:`, `build:`, `revert:` | nothing, but appears in the release notes |
+| `chore:`, `style:`, `test:`, `ci:` | nothing, and stays out of the release notes |
+
+### Writing a `BREAKING CHANGE:` footer
+
+Whatever the footer says is what the release notes say about the break, so it is worth getting the
+shape right — and the shape has three rules that are not obvious, because breaking them loses text
+silently rather than failing:
+
+* **No blank lines inside it.** release-please's parser ends the footer at the first blank line and
+  keeps only what came before. A footer written as several paragraphs reaches the release notes as
+  its first paragraph, and the rest is dropped with no warning. Write it as one hard-wrapped block
+  and lead each part with a bold phrase; the newlines collapse to spaces and inline Markdown —
+  `**bold**`, backticks, links — renders, so one block still reads as sections.
+* **One footer per commit.** Two `BREAKING CHANGE:` footers in the same message do not append; the
+  last one wins and the earlier ones vanish. Separate breaks belong on separate commits, which also
+  gives each its own bullet under **⚠ BREAKING CHANGES**.
+* **Nothing after it.** The footer must be the last thing in the message. A trailer below it —
+  `Co-Authored-By:`, `Signed-off-by:`, a bare issue key — does not merely end the footer early: the
+  parser stops recognising the breaking change at all, so the release notes lose both the bullet and
+  the **⚠ BREAKING CHANGES** heading. Put issue keys and trailers above it.
+
+All three were established by running the parser release-please 17 ships over this repository's own
+commits, not inferred from the Conventional Commits specification, which permits multi-paragraph
+footers that this parser does not keep.
+
+### How a release is cut
+
+Nothing is released by running a command locally. The sequence is:
+
+1. A pull request merges to `master`.
+2. [`release_please.yml`](.github/workflows/release_please.yml) runs
+   [release-please](https://github.com/googleapis/release-please), which opens — or updates — a
+   **release pull request** holding the next version number and the `CHANGELOG.md` entry for it.
+   That pull request is the proposal: read the notes, and fix a misleading one by amending it there.
+3. Merging the release pull request tags `vX.Y.Z` and publishes a GitHub release.
+4. [`on_release_publish.yml`](.github/workflows/on_release_publish.yml) fires on that publish and
+   builds the binaries and the container image, stamping both with the tag.
+
+So a release is merged, not run, and the only way to change what is in one is to change what merged
+into `master`.
+
+Its configuration is [`release-please-config.json`](release-please-config.json) and
+[`.release-please-manifest.json`](.release-please-manifest.json). The manifest is written by the
+release pull request and records the last released version; do not edit it by hand. Two things in
+the config are worth knowing about rather than discovering:
+
+* **`bootstrap-sha`** stops the first release's changelog at `cd2f2488`, this fork's initial commit,
+  so it does not read a decade of inherited upstream history as unreleased work. release-please
+  ignores the key once a release pull request has merged, and it can be deleted then.
+* **`changelog-sections`** surfaces `refactor`, `build` and `docs`, which release-please hides by
+  default. In this tree a refactor is routinely a removal, and notes showing only `feat` and `fix`
+  would leave out most of what someone upgrading has to act on.
+
+### `CHANGELOG.md`
+
+Generated, and only above the line. New entries are inserted directly beneath the file's preamble
+and above `## 0.17.0`; everything from `0.17.0` down is Tegola's release history, kept verbatim as
+provenance and never regenerated. Do not hand-write an entry for an unreleased change — write the
+commit message properly instead, and the entry follows from it.
+
+### The first release is 1.0.0
+
+Configured, not inferred, with `initial-version`. Shigola has never released under its own name, so
+release-please has no previous version to bump and would otherwise have to guess.
+
+A major is the honest number. Shigola is not a superset of Tegola: it removed the viewer, the native
+`/maps/...` tile routes and `/capabilities`, the GeoPackage, SAP HANA and standard `postgis`
+providers, and all Go-side geometry processing, and it renamed the binary, the metrics and the
+environment variables. The full list, with what to do about each, is in
+[README.md](README.md#relationship-to-tegola), and the 1.0.0 release notes carry it too.
+
+The one worth repeating here, because it is the only one that does not announce itself: **tile paths
+are `{tileMatrix}/{tileRow}/{tileCol}` — zoom, row, then column.** A client written for Tegola's
+`z/x/y` asks for the transposed tile, and in `WebMercatorQuad`, whose matrices are square, that
+request is in range and returns a real tile. The failure mode is wrong imagery, not an error.
+
+> **`master` currently trails `development`.** This section describes the documented model, in which
+> `master` is the trunk and the branch release-please releases from. In practice the work has been
+> landing on `development` and has not been promoted, so no release pull request opens until it is.
+> That divergence predates release-please and is not its to resolve; it is recorded here and in a
+> comment on the workflow so that "nothing happened" reads as a known state rather than a broken
+> workflow.
+
 ## Building from source
 
 `vendor/` is committed, so **always build and test with `-mod vendor`** — every command in this

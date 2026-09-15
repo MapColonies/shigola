@@ -472,6 +472,7 @@ decides what a shigola binary can do.
 
 | Change | Consequence |
 |:---|:---|
+| Tile paths are `{tileMatrix}/{tileRow}/{tileCol}` — zoom, **row**, then column | A client written for Tegola's `z/x/y` asks for the transposed tile. Every `WebMercatorQuad` matrix is square, so that request is in range and **succeeds, returning the wrong tile** — no error, no 404. Only a scheme with more columns than rows, such as `WorldCRS84Quad`, rejects some of them. **Check every hard-coded tile URL and template.** |
 | The service root is the OGC API - Tiles landing page | `/` returns JSON. An unknown path returns 404. |
 | Cache keys gained a leading `{tileMatrixSetId}` | Existing cache entries are unreachable. **Purge and re-seed.** |
 | The binary is `shigola`, not `tegola` | Update deploy scripts, Dockerfiles and unit files. |
