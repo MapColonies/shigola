@@ -429,6 +429,9 @@ func TestAssertGolden(t *testing.T) {
 		t.Errorf("wrote something other than what it was given.\n--- wrote ---\n%s\n--- given ---\n%s", written, rendered)
 	}
 
+	// Called a second time rather than assigned, so the flag is still restored
+	// if this half fails. The two cleanups unwind last-registered-first, which
+	// lands back on the value the first call captured.
 	setUpdateGolden(t, false)
 	AssertGolden(t, path, rendered)
 }
