@@ -7,9 +7,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -356,6 +359,54 @@ func setUpdateGolden(t *testing.T, v bool) {
 	*updateGolden = v
 }
 
+// tSpy stands in for *testing.T where failing is the expected outcome, so that
+// reporting it on the real T would fail the test doing the asserting.
+//
+// A zero testing.T does not serve. Its Errorf happens to work, but Fatalf calls
+// runtime.Goexit on the calling goroutine -- and on a T the framework never
+// started that ends the enclosing test, reported as a pass. So the read path's
+// missing-golden branch could not be asserted at all, and the mismatch branch
+// worked only for as long as it stayed an Errorf.
+//
+// This records instead, and run below reproduces the one behaviour that matters:
+// Fatalf does not return.
+type tSpy struct {
+	failed bool
+	fatal  bool
+	msgs   []string
+}
+
+func (s *tSpy) Helper() {}
+
+func (s *tSpy) Logf(format string, args ...any) {
+	s.msgs = append(s.msgs, fmt.Sprintf(format, args...))
+}
+
+func (s *tSpy) Errorf(format string, args ...any) {
+	s.failed = true
+	s.Logf(format, args...)
+}
+
+func (s *tSpy) Fatalf(format string, args ...any) {
+	s.failed, s.fatal = true, true
+	s.Logf(format, args...)
+	runtime.Goexit()
+}
+
+// run calls fn with the spy on its own goroutine, so that the spy's Fatalf can
+// end it the way testing.T's does rather than falling through into code the
+// real framework would never have reached.
+func (s *tSpy) run(fn func(TestingT)) {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fn(s)
+	}()
+	wg.Wait()
+}
+
 // TestAssertGolden covers both halves of the flag. The writing half is the one
 // nothing else in the tree exercises -- every other caller reads -- and it is
 // the half that matters, because a -update-golden that wrote the wrong bytes
@@ -386,9 +437,8 @@ func TestAssertGolden(t *testing.T) {
 // golden which does not match fails. Without it the suite above would pass just
 // as happily against an AssertGolden that compared nothing.
 //
-// It runs AssertGolden against a throwaway *testing.T, because the failure is
-// the expected outcome and reporting it on this test's own T would fail this
-// test.
+// It runs AssertGolden against a spy, because the failure is the expected
+// outcome and reporting it on this test's own T would fail this test.
 func TestAssertGoldenReportsAMismatch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tile.txt")
 	if err := os.WriteFile(path, []byte("layer \"alpha\" extent=4096 keys=[]\n"), 0o644); err != nil {
@@ -396,11 +446,37 @@ func TestAssertGoldenReportsAMismatch(t *testing.T) {
 	}
 
 	setUpdateGolden(t, false)
+	rendered := decoded(t).Render()
 
-	var spy testing.T
-	AssertGolden(&spy, path, decoded(t).Render())
+	var spy tSpy
+	spy.run(func(t TestingT) { AssertGolden(t, path, rendered) })
 
-	if !spy.Failed() {
+	if !spy.failed {
 		t.Error("AssertGolden accepted a golden that does not match what was served")
+	}
+}
+
+// TestAssertGoldenReportsAMissingGolden is the branch that fails with Fatalf
+// rather than Errorf: a golden that is not there at all.
+//
+// It is the branch a new golden hits before anyone has run -update-golden, and
+// the one that has to keep failing -- an AssertGolden that treated a missing
+// file as nothing to compare would make every golden in the tree optional.
+func TestAssertGoldenReportsAMissingGolden(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "never-written.txt")
+	rendered := decoded(t).Render()
+
+	setUpdateGolden(t, false)
+
+	var spy tSpy
+	spy.run(func(t TestingT) { AssertGolden(t, path, rendered) })
+
+	if !spy.fatal {
+		t.Error("AssertGolden accepted a golden file that does not exist")
+	}
+	// Fatalf must have ended the call there. Reaching the comparison below it
+	// would mean comparing against the empty bytes of a file it failed to read.
+	if n := len(spy.msgs); n != 1 {
+		t.Errorf("AssertGolden carried on past Fatalf: %d messages, want 1: %q", n, spy.msgs)
 	}
 }
