@@ -108,11 +108,18 @@ enforced rather than encouraged.
 
 | A commit of this shape | moves |
 |:---|:---|
-| `fix: …` | the patch |
 | `feat: …` | the minor |
 | any type with `!` after the scope, or a `BREAKING CHANGE:` footer in the body | the major |
-| `docs:`, `refactor:`, `perf:`, `build:`, `revert:` | nothing, but appears in the release notes |
-| `chore:`, `style:`, `test:`, `ci:` | nothing, and stays out of the release notes |
+| every other type — `fix:`, `docs:`, `refactor:`, `perf:`, `build:`, `revert:`, `chore:`, `style:`, `test:`, `ci:` | the patch |
+
+Only `feat` and a breaking change move anything but the patch. release-please's default strategy
+bumps at least the patch for **any** commit in the range, `chore:` and `ci:` included, so a release
+containing nothing but housekeeping is still a release — the type does not decide whether the number
+moves.
+
+What it does decide is **visibility**, which `changelog-sections` controls separately: `feat`, `fix`,
+`perf`, `refactor`, `build`, `docs` and `revert` appear in the release notes, while `chore`, `style`,
+`test` and `ci` are hidden and move the number without saying anything about why.
 
 ### Writing a `BREAKING CHANGE:` footer
 

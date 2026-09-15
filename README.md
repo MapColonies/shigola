@@ -461,6 +461,8 @@ surface that had to be kept working, documented and tested for no user of it her
 |:---|:---|
 | The built-in map viewer | Nothing. Point your own client at the tile endpoints. |
 | The native `/maps/...` tile routes | OGC API - Tiles is the only tile surface, and `/` is its landing page. |
+| The `/capabilities` endpoints | The OGC landing page, `/conformance` and `/collections`, which cover the same ground in standard form. A map's TileJSON is `/collections/{collectionId}/tiles/{tileMatrixSetId}?f=tilejson`. |
+| The map style endpoint `/maps/{map}/style.json` | Nothing. Styling is a separate specification — [OGC API - Styles](https://ogcapi.ogc.org/styles/) — which this server does not implement. Bring your own style and point its vector source at a tileset's TileJSON. |
 | The [GeoPackage](https://www.geopackage.org/) and [SAP HANA](https://www.sap.com/products/technology-platform/hana/what-is-sap-hana.html) providers | PostGIS. A config naming `gpkg` or `hana` is rejected at startup. |
 | The `postgis` provider type | [`mvt_postgis`](provider/postgis), which encodes the tile in the database with `ST_AsMVT`. A config naming `postgis` is rejected at startup with a message naming its replacement. |
 | Go-side geometry processing — clipping, make-valid, simplification, hit-mapping | PostGIS. `ST_AsMVT` and the layer SQL produce the tile, so no geometry reaches this process to be processed. |
