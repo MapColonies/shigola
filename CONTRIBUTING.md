@@ -154,8 +154,11 @@ Nothing is released by running a command locally. The sequence is:
    **release pull request** holding the next version number and the `CHANGELOG.md` entry for it.
    That pull request is the proposal: read the notes, and fix a misleading one by amending it there.
 3. Merging the release pull request tags `vX.Y.Z` and publishes a GitHub release.
-4. [`on_release_publish.yml`](.github/workflows/on_release_publish.yml) fires on that publish and
-   builds the binaries and the container image, stamping both with the tag.
+4. Two workflows fire on that tag, both stamping what they build with it:
+   [`on_release_publish.yml`](.github/workflows/on_release_publish.yml) builds the binaries and
+   attaches them to the release, and
+   [`build_and_push.yml`](.github/workflows/build_and_push.yml) builds, publishes and registers the
+   container image.
 
 So a release is merged, not run, and the only way to change what is in one is to change what merged
 into `master`.
@@ -174,28 +177,38 @@ the config are worth knowing about rather than discovering:
 
 ### What a release publishes
 
-Two kinds of artifact, both from `on_release_publish.yml`, both stamped with the tag being
-released:
+Two kinds of artifact, from two workflows, both stamped with the tag being released:
 
-* **Binaries**, attached to the GitHub release as zips — Linux, macOS and Windows on amd64, Linux
-  on arm64, and the two `shigola_lambda` bootstraps.
-* **A container image**, pushed to MapColonies' Azure Container Registry as
-  `<ACR_URL>/vector/shigola`. One manifest covering `linux/amd64` and `linux/arm64`, carrying two
-  tags: `X.Y.Z`, which never moves, and `latest`, which does.
+* **Binaries**, attached to the GitHub release as zips by
+  [`on_release_publish.yml`](.github/workflows/on_release_publish.yml) — Linux, macOS and Windows on
+  amd64, Linux on arm64, and the two `shigola_lambda` bootstraps.
+* **A container image**, built and pushed by
+  [`build_and_push.yml`](.github/workflows/build_and_push.yml) to MapColonies' Azure Container
+  Registry as `<ACR_URL>/vector/shigola`. One manifest covering `linux/amd64` and `linux/arm64`,
+  carrying two tags: `vX.Y.Z`, which never moves, and `latest`, which does.
 
-A merge to the default branch pushes the same image as `edge`. That is not a release: it carries no
-version tag and nothing about it is announced — and, for the same reason no release pull request
-opens today, it does not currently happen at all, because the work has been landing on
-`development` rather than on the default branch.
+That second workflow is the org's standard publisher, extended rather than adopted as it arrived:
+the shape it ships in builds with no checkout, no `--build-arg`, one architecture and no assertion,
+which would republish both bugs this repository has already been bitten by.
+
+It triggers on the `vX.Y.Z` tag rather than on the release event, which is why nothing in it carries
+an `if:` — it is release-only by trigger. Image builds on the way in are
+[`on_pr_push.yml`](.github/workflows/on_pr_push.yml)'s job: it builds and asserts on every push and
+pull request without pushing anything.
+
+Its last step registers the image in `mapcolonies/helm-charts`' `artifacts.json`, which is what the
+deployment version-bump flow reads. An image that is published but not registered is invisible to
+everything downstream, so this runs last — after the image has been proven to be there and to
+report the right version.
 
 The stamp is what makes an artifact identifiable — `shigola version` reports the release it came
 from — and it is silent when it goes wrong, because the linker discards an `-X` naming a symbol it
-cannot resolve. So the workflow asserts it rather than trusting it, twice, because the two
+cannot resolve. So the publisher asserts it rather than trusting it, twice, because the two
 assertions say different things:
 
-1. **Before the push**, against the image the runner just built. This says the build args were
-   right. It runs on every event, including pull requests, so a broken stamp fails long before a
-   release. buildx can only load one platform into docker, so it only ever sees amd64.
+1. **Before the push**, against the image the runner just built. This says the build args reached
+   the compiler, and it fails before anything is published. buildx can only load one platform into
+   docker, so it only ever sees amd64.
 2. **After the push**, against each architecture of each tag pulled back out of the registry. This
    says the registry now serves what the build produced — the only claim a release actually needs
    to make. Holding `latest` to the released version is the half that catches a `latest` still
@@ -203,18 +216,15 @@ assertions say different things:
 
 #### Credentials
 
-The push reads `ACR_URL`, `ACR_PUSH_USER` and `ACR_PUSH_TOKEN` from repository secrets. What
-happens when they are absent depends on what is being built, deliberately:
+The publisher reads `ACR_URL`, `ACR_PUSH_USER`, `ACR_PUSH_TOKEN` and `GH_PAT` from repository
+secrets, and checks all four **before it builds anything**. Any that are missing are named in the
+error.
 
-| Event | Without credentials |
-|:---|:---|
-| a pull request, or a merge to the default branch | builds the image and asserts its version, pushes nothing |
-| a published release | fails before building, naming each missing secret |
-
-Skipping an `edge` push costs nothing. A release is the one case that refuses to skip: a release
-that quietly published nothing and reported success is the failure this repository has already had
-twice (MAPCO-11500, MAPCO-11501), and it is worse than a red build because it reads as a release
-that happened.
+Failing is the point. A publisher that skipped quietly would leave a tagged, announced release with
+no image behind it and a green tick saying otherwise — the failure this repository has already had
+twice (MAPCO-11500, MAPCO-11501), and worse than a red build because it reads as a release that
+happened. Nothing else is gated on these secrets, because nothing else needs them: the workflow does
+not run at all except on a release tag.
 
 ### `CHANGELOG.md`
 
