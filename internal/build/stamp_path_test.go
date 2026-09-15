@@ -38,9 +38,13 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-// modulePath reads the module path from go.mod, so there is no second copy of
-// it here to disagree with.
-func modulePath(t *testing.T) string {
+// goModLines returns go.mod's lines with the commented-out ones dropped.
+//
+// Shared with protoc_plugin_test.go, which reads a require version out of the
+// same file. Both want the same thing -- what go.mod actually declares, not what
+// a comment in it mentions -- and reading it twice invites the two readings to
+// disagree about that.
+func goModLines(t *testing.T) []string {
 	t.Helper()
 
 	body, err := os.ReadFile(filepath.Join(repoRoot(t), "go.mod"))
@@ -48,7 +52,23 @@ func modulePath(t *testing.T) string {
 		t.Fatalf("reading go.mod: %v", err)
 	}
 
+	var out []string
 	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		out = append(out, line)
+	}
+
+	return out
+}
+
+// modulePath reads the module path from go.mod, so there is no second copy of
+// it here to disagree with.
+func modulePath(t *testing.T) string {
+	t.Helper()
+
+	for _, line := range goModLines(t) {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
 			return strings.TrimSpace(rest)
 		}

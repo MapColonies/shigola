@@ -269,12 +269,33 @@ go build -mod vendor ./cmd/shigola
 ./shigola serve --config=path/to/config.toml
 ```
 
-`internal/build/*.generated.go` records which build tags a binary was built with. It is generated,
-never hand-edited:
+Two things in the tree are generated, never hand-edited.
+
+`internal/build/*.generated.go` records which build tags a binary was built with:
 
 ```bash
 cd internal/build && go generate
 ```
+
+`internal/vectortile/vector_tile.pb.go` is the Mapbox Vector Tile schema, from the specification's
+own `vector_tile.proto` beside it. Regenerating needs `protoc` and a `protoc-gen-go` matching the
+`google.golang.org/protobuf` version in `go.mod`; the devcontainer image carries both:
+
+```bash
+cd internal/vectortile && go generate
+```
+
+The schema is frozen — vector-tile-spec 2.1, unchanged since 2016 — so in practice this does not
+need running. Change `vector_tile.proto` rather than its output.
+
+Three places name that version — `go.mod`, the devcontainer's `protoc-gen-go@…` install, and the
+`protoc-gen-go v…` line the generated file stamps into itself — and `internal/build`'s
+`TestProtocGenGoPinMatchesProtobufRuntime` and `TestGeneratedProtobufCodeMatchesProtobufRuntime`
+require all three to agree. Bumping `google.golang.org/protobuf` therefore means bumping the
+Dockerfile pin and regenerating, in the same change.
+
+`protoc` itself is not pinned — it comes from the devcontainer's `protobuf-compiler` package — so
+the `protoc v…` line in the generated file follows the base image. Nothing checks that one.
 
 Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache`, `noGCSCache`,
 `noPostgisProvider` and `noPrometheusObserver`; `pprof` opts in.
@@ -314,9 +335,12 @@ go test -mod vendor -race ./...
 docker compose down
 ```
 
-**One test mode, not two.** Nothing in this tree is compiled conditionally on cgo, so `CGO_ENABLED`
-no longer changes what is built or what is tested, and `internal/build` fails if that stops being
-true. Leave it unset: `go test -race` links a C runtime for its detector and needs cgo available.
+**One test mode, not two.** No file shigola owns is compiled conditionally on cgo, so `CGO_ENABLED`
+does not change what is built or what is tested, and `internal/build` fails if that stops being
+true. That test skips `vendor/` on purpose, and one dependency uses the room it leaves:
+prometheus/client_golang reads process memory through a C call on macOS, which a linux build — CI's
+and the release images' — never selects. Leave `CGO_ENABLED` unset: `go test -race` links a C
+runtime for its detector and needs cgo available.
 That the tree still *builds* without a C toolchain is checked separately, and CI checks it:
 
 ```bash

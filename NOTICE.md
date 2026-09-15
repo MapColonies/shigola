@@ -46,6 +46,33 @@ as the port's correctness oracle.
 
 ---
 
+## Vector Tile Specification
+
+The [`internal/vectortile`](internal/vectortile/) package is generated from the
+specification's own protobuf schema, which this tree carries at
+[`internal/vectortile/vector_tile.proto`](internal/vectortile/vector_tile.proto).
+It is reproduced rather than paraphrased because the field numbers in it *are*
+the wire format that every Mapbox Vector Tile client reads.
+
+**Modifications.** The schema itself is verbatim — no field, type, number or
+option of the specification's is changed or removed. Shigola's copy adds
+explanatory comments, a `syntax = "proto2"` declaration the specification's file
+leaves implicit, and one option, `go_package`, naming the Go package
+`protoc-gen-go` generates into. (`option optimize_for = LITE_RUNTIME` is the
+specification's own, not an addition.) Listed here because CC BY 3.0 asks that a
+modification be indicated.
+
+- Project: <https://github.com/mapbox/vector-tile-spec>
+- Version: 2.1
+- Authors: Mapbox and the specification's contributors
+- License: Creative Commons Attribution 3.0 Unported —
+  <https://creativecommons.org/licenses/by/3.0/>
+
+Only the schema is carried here; `vector_tile.pb.go` beside it is
+`protoc-gen-go`'s output from it.
+
+---
+
 ## Vendored Go dependencies
 
 Third-party Go modules are vendored under [`vendor/`](vendor/). Each retains its

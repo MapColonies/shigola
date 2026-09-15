@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	vectorTile "github.com/go-spatial/geom/encoding/mvt/vector_tile"
-	"github.com/golang/protobuf/proto"
+	"github.com/MapColonies/shigola/internal/vectortile"
+	"google.golang.org/protobuf/proto"
 )
 
 // updateGolden rewrites golden files instead of comparing against them.
@@ -181,7 +181,7 @@ func Decode(t *testing.T, gzipped []byte) Tile {
 func DecodeRaw(t *testing.T, raw []byte) Tile {
 	t.Helper()
 
-	var pb vectorTile.Tile
+	var pb vectortile.Tile
 	if err := proto.Unmarshal(raw, &pb); err != nil {
 		t.Fatalf("mvttest: decoding the tile: %v", err)
 	}
@@ -220,7 +220,7 @@ func DecodeRaw(t *testing.T, raw []byte) Tile {
 	return out
 }
 
-func decodeTags(t *testing.T, l *vectorTile.Tile_Layer, f *vectorTile.Tile_Feature) map[string]Value {
+func decodeTags(t *testing.T, l *vectortile.Tile_Layer, f *vectortile.Tile_Feature) map[string]Value {
 	t.Helper()
 
 	tags := make(map[string]Value, len(f.Tags)/2)
@@ -241,7 +241,7 @@ func decodeTags(t *testing.T, l *vectorTile.Tile_Layer, f *vectorTile.Tile_Featu
 
 // decodeValue keeps the type the value arrived as. The specification gives a
 // value exactly one populated field; which one is the type.
-func decodeValue(v *vectorTile.Tile_Value) Value {
+func decodeValue(v *vectortile.Tile_Value) Value {
 	switch {
 	case v == nil:
 		return Value{Kind: KindEmpty}
@@ -470,6 +470,28 @@ func (t Tile) Summary() string {
 	return strings.Join(parts, " ")
 }
 
+// TestingT is the part of *testing.T that AssertGolden uses.
+//
+// Named as an interface rather than taking *testing.T so that a test can pass a
+// double. AssertGolden is the one function here whose failing is an expected
+// outcome something has to assert -- a golden that does not match, and a golden
+// that is not there, both have to be shown to fail -- and asserting that means
+// running it against something other than the T doing the asserting. The rest of
+// this package keeps *testing.T: nothing needs to watch them fail.
+//
+// testing.TB cannot serve. It carries an unexported method precisely to stop
+// anything outside package testing implementing it, which is the whole reason a
+// double has to be described this way. *testing.T satisfies this, so callers
+// pass their t unchanged.
+type TestingT interface {
+	Helper()
+	Logf(format string, args ...any)
+	Errorf(format string, args ...any)
+	// Fatalf must not return, as testing.T's does not: AssertGolden reads the
+	// golden file and carries on using what it read.
+	Fatalf(format string, args ...any)
+}
+
 // AssertGolden compares got against the file at path, or rewrites it under
 // -update-golden.
 //
@@ -480,7 +502,7 @@ func (t Tile) Summary() string {
 // readable, and the test asserts separately, in literal terms, the handful of
 // facts it would be unacceptable to lose. Those assertions do not move when
 // this file is rewritten.
-func AssertGolden(t *testing.T, path, got string) {
+func AssertGolden(t TestingT, path, got string) {
 	t.Helper()
 
 	if *updateGolden {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/akrylysov/algnhsa"
 	"github.com/dimfeld/httptreemux"
-	"github.com/go-spatial/geom/encoding/mvt"
 
+	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/cmd/internal/register"
@@ -144,7 +144,7 @@ func main() {
 	// to handle binary responses so it can convert the base64 encoded payload back into binary prior
 	// to sending to the client
 	algnhsa.ListenAndServe(synchronousCacheWrites(mux), &algnhsa.Options{
-		BinaryContentTypes: []string{mvt.MimeType},
+		BinaryContentTypes: []string{shigola.MediaTypeMVT},
 		UseProxyPath:       true,
 	})
 }

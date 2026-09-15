@@ -201,9 +201,24 @@ A histogram of the query time for the SQLs for the provider
 
 #### go runtime information
 
+These and the process metrics below are not Shigola's. They come from the Go runtime and process
+collectors that `prometheus/client_golang` registers by default, so the set changes when that
+dependency is upgraded and not otherwise. `TestREADMEDocumentsTheBuiltInMetrics` in this package
+asserts that what follows is exactly what a Linux build serves, so an upgrade that adds or drops a
+family fails until this list is brought with it.
+
 ##### go_gc_duration_seconds
 
 A summary of the pause duration of garbage collection cycles.
+
+##### go_gc_gogc_percent
+
+The heap size target percentage, as set by `GOGC` or `runtime/debug.SetGCPercent`. 100 if unset.
+
+##### go_gc_gomemlimit_bytes
+
+The soft memory limit, as set by `GOMEMLIMIT` or `runtime/debug.SetMemoryLimit`. `math.MaxInt64` if
+unset.
 
 ##### go_goroutines
 
@@ -228,10 +243,6 @@ Number of bytes used by the profiling bucket hash table.
 ##### go_memstats_frees_total
 
 Total number of frees.
-
-##### go_memstats_gc_cpu_fraction
-
-The fraction of this program's available CPU time used by the GC since the program started.
 
 ##### go_memstats_gc_sys_bytes
 
@@ -264,10 +275,6 @@ Number of heap bytes obtained from system.
 ##### go_memstats_last_gc_time_seconds
 
 Number of seconds since 1970 of last garbage collection.
-
-##### go_memstats_lookups_total
-
-Total number of pointer lookups.
 
 ##### go_memstats_mallocs_total
 
@@ -309,6 +316,52 @@ Number of bytes obtained from system for stack allocator.
 
 Number of bytes obtained from system.
 
+##### go_sched_gomaxprocs_threads
+
+The current `runtime.GOMAXPROCS` setting: how many OS threads can execute Go code at once.
+
 ##### go_threads
 
 Number of OS threads created.
+
+#### process information
+
+Read from the operating system rather than from the Go runtime, so this set is platform-dependent.
+What follows is what a Linux build serves, which is what Shigola is deployed as; a macOS or Windows
+build exposes fewer.
+
+##### process_cpu_seconds_total
+
+Total user and system CPU time spent, in seconds.
+
+##### process_max_fds
+
+Maximum number of open file descriptors.
+
+##### process_network_receive_bytes_total
+
+Number of bytes the process received over the network.
+
+##### process_network_transmit_bytes_total
+
+Number of bytes the process sent over the network.
+
+##### process_open_fds
+
+Number of open file descriptors.
+
+##### process_resident_memory_bytes
+
+Resident memory size in bytes.
+
+##### process_start_time_seconds
+
+Start time of the process since the unix epoch, in seconds.
+
+##### process_virtual_memory_bytes
+
+Virtual memory size in bytes.
+
+##### process_virtual_memory_max_bytes
+
+Maximum amount of virtual memory available, in bytes.
