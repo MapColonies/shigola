@@ -288,6 +288,15 @@ cd internal/vectortile && go generate
 The schema is frozen — vector-tile-spec 2.1, unchanged since 2016 — so in practice this does not
 need running. Change `vector_tile.proto` rather than its output.
 
+Three places name that version — `go.mod`, the devcontainer's `protoc-gen-go@…` install, and the
+`protoc-gen-go v…` line the generated file stamps into itself — and `internal/build`'s
+`TestProtocGenGoPinMatchesProtobufRuntime` and `TestGeneratedProtobufCodeMatchesProtobufRuntime`
+require all three to agree. Bumping `google.golang.org/protobuf` therefore means bumping the
+Dockerfile pin and regenerating, in the same change.
+
+`protoc` itself is not pinned — it comes from the devcontainer's `protobuf-compiler` package — so
+the `protoc v…` line in the generated file follows the base image. Nothing checks that one.
+
 Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache`, `noGCSCache`,
 `noPostgisProvider` and `noPrometheusObserver`; `pprof` opts in.
 
