@@ -1,0 +1,223 @@
+name: Push Artifacts to Azure Registry
+# The release publisher. Fires on the `vX.Y.Z` tags release-please pushes when a
+# release pull request merges, which is the same moment the GitHub release is
+# published -- so this and the release's binaries come from one commit.
+#
+# Release-only by trigger rather than by a condition on each step: there is no
+# `if:` anywhere below, because nothing here runs on any other event. Image
+# builds on pull requests live in on_pr_push.yml, which builds and asserts
+# without pushing (MAPCO-11501).
+#
+# This is the org's standard publishing workflow, extended rather than adopted
+# as-is (MAPCO-11503). The shape it arrived in built with no checkout, no
+# --build-arg, one architecture and no assertion, which would have republished
+# both bugs this repository has already been bitten by: images reporting
+# "Version Not Set" (MAPCO-11500) and a docker job that cannot fail
+# (MAPCO-11501).
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only what this needs. The template asked for `contents: write` and
+# `packages: write`; nothing here creates a release or touches GitHub Packages,
+# and artifacts.json is written to another repository with GH_PAT, not with the
+# job's own token.
+permissions:
+  contents: read
+
+env:
+  DOMAIN: vector
+
+jobs:
+  push-docker-image:
+    name: Build, publish and register the release image
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The helper every other build job reaches through shigola-setup-env,
+      # called directly here because that action takes the version from an
+      # artifact uploaded by a job this workflow does not have. Going through it
+      # anyway keeps one definition of the stamp package path -- a second copy
+      # of it, in the wrong case, is exactly what MAPCO-11500 was.
+      #
+      # The tag is the version: release-please pushed `vX.Y.Z` and that is what
+      # the image is tagged and stamped with.
+      - name: Set the version this tag publishes
+        run: |
+          echo "${GITHUB_REF_NAME}" > version.txt
+          go run ci/cat_version_envs.go -version_file version.txt | tee -a "$GITHUB_ENV"
+
+      # Assembled once so the image asserted on and the image pushed cannot be
+      # built from different arguments.
+      - name: Assemble image reference and build args
+        env:
+          ACR_URL: ${{ secrets.ACR_URL }}
+        run: |
+          # Downcased: a registry host may carry capitals, a docker reference
+          # may not.
+          image="${ACR_URL:-local}/${DOMAIN}/${GITHUB_REPOSITORY##*/}"
+          echo "IMAGE=${image,,}" >> "$GITHUB_ENV"
+
+          {
+            echo 'BUILD_ARGS<<BUILD_ARGS_EOF'
+            echo "BUILDPKG=${BUILD_PKG}"
+            echo "VER=${VERSION}"
+            echo "BRANCH=${GIT_BRANCH}"
+            echo "REVISION=${GIT_REVISION}"
+            echo 'BUILD_ARGS_EOF'
+          } >> "$GITHUB_ENV"
+
+      # A release must publish or fail, so credentials are checked up front
+      # rather than skipped around. Without ACR_URL the reference above falls
+      # back to `local/vector/shigola`, whose first component carries no dot or
+      # colon -- so docker reads it as a path on Docker Hub rather than a
+      # registry host, and this would build for minutes and then try to publish
+      # to a registry we do not own, failing on authorization with an error
+      # naming no secret (MAPCO-11503).
+      #
+      # GH_PAT is checked here too: it is not needed until the last step, and
+      # discovering it is missing after the image is public is discovering it
+      # too late to do anything but re-run.
+      - name: Require registry credentials
+        env:
+          ACR_URL: ${{ secrets.ACR_URL }}
+          ACR_PUSH_USER: ${{ secrets.ACR_PUSH_USER }}
+          ACR_PUSH_TOKEN: ${{ secrets.ACR_PUSH_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          status=0
+
+          for secret in ACR_URL ACR_PUSH_USER ACR_PUSH_TOKEN GH_PAT; do
+            if [[ -z "${!secret}" ]]; then
+              echo "::error::secret ${secret} is not set; a release cannot publish without it"
+              status=1
+            fi
+          done
+
+          exit $status
+
+      # amd64 only: buildx can load one platform into docker. Cached, so the
+      # publish below reuses these layers rather than rebuilding them.
+      - name: Build docker image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          build-args: ${{ env.BUILD_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
+
+      # `shigola version` exits 0 even when unstamped, so a step that merely ran
+      # it passed against images reporting "Version Not Set" (MAPCO-11500).
+      # Assert instead.
+      #
+      # The pre-push half of the pair: it says the build args reached the
+      # compiler, and it fails before anything is published. What the registry
+      # ends up serving is asserted after the push.
+      - name: Assert the built image reports its version, branch and revision
+        run: |
+          reported=$(docker run --rm "${IMAGE}:${VERSION}" version)
+          echo "$reported"
+
+          # Exact lines cmd/shigola/cmd/version.go prints.
+          want_version="   version: ${VERSION}"
+          want_git="       git: ${GIT_BRANCH} @ ${GIT_REVISION}"
+
+          status=0
+          grep -qxF "$want_version" <<< "$reported" || {
+            echo "::error::image does not report its version; expected: ${want_version}"
+            status=1
+          }
+          grep -qxF "$want_git" <<< "$reported" || {
+            echo "::error::image does not report its branch and revision; expected: ${want_git}"
+            status=1
+          }
+          exit $status
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_URL }}
+          username: ${{ secrets.ACR_PUSH_USER }}
+          password: ${{ secrets.ACR_PUSH_TOKEN }}
+
+      - name: Build and Push Docker image
+        id: build_and_push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: ${{ env.BUILD_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }},${{ env.IMAGE }}:latest
+
+      # The assertion above ran the image this runner built, and buildx can load
+      # one platform, so it saw amd64 and nothing else. This reads both
+      # architectures of both tags back out of the registry, which is the claim
+      # a release actually has to make: that what was published reports the
+      # version it was published as. QEMU, set up above, is what lets the arm64
+      # image run here (MAPCO-11503).
+      - name: Assert the published images report the release version
+        run: |
+          status=0
+
+          for tag in "${VERSION}" latest; do
+            for platform in linux/amd64 linux/arm64; do
+              ref="${IMAGE}:${tag}"
+              echo "--- ${ref} (${platform})"
+
+              # --pull always: this runner is holding the layers it just built
+              # and a tag pointing at them, so without this docker answers from
+              # that cache and the registry is never consulted.
+              if ! reported=$(docker run --rm --pull always --platform "${platform}" "${ref}" version); then
+                echo "::error::${ref} does not run on ${platform}"
+                status=1
+
+                continue
+              fi
+
+              echo "$reported"
+
+              # latest is held to the same version on purpose: a latest still
+              # pointing at the previous release is what this catches.
+              if ! grep -qxF "   version: ${VERSION}" <<< "$reported"; then
+                echo "::error::${ref} on ${platform} reports something other than ${VERSION}"
+                status=1
+              fi
+            done
+          done
+
+          exit $status
+
+      # Registers the image in mapcolonies/helm-charts' artifacts.json, which is
+      # what the deployment version-bump flow reads. Last, so nothing is
+      # registered that was not first proven to be there and to report the right
+      # version.
+      - name: Update Docker Image in artifacts.json
+        uses: MapColonies/shared-workflows/actions/update-artifacts-file@update-artifacts-file-v1
+        with:
+          domain: ${{ env.DOMAIN }}
+          type: docker
+          artifact_name: ${{ github.event.repository.name }}
+          # env.VERSION, not github.ref_name: they hold the same string, but
+          # this is the one the image was tagged and stamped with, so the
+          # registered tag cannot drift from the published one.
+          artifact_tag: ${{ env.VERSION }}
+          registry: ${{ secrets.ACR_URL }}
+          github_token: ${{ secrets.GH_PAT }}
