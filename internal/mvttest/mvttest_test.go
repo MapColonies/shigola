@@ -339,6 +339,23 @@ func TestFeatureIDsAndPoints(t *testing.T) {
 	}
 }
 
+// setUpdateGolden sets the -update-golden flag for the duration of a test and
+// restores it afterwards.
+//
+// The flag is process-wide, so a test that left it set would silently turn every
+// later golden comparison into a rewrite -- the suite would pass, and it would
+// pass by asserting nothing. Shared rather than written out at each call site
+// because a save-and-restore pair is exactly the kind of thing that gets copied
+// with the restore left behind.
+func setUpdateGolden(t *testing.T, v bool) {
+	t.Helper()
+
+	was := *updateGolden
+	t.Cleanup(func() { *updateGolden = was })
+
+	*updateGolden = v
+}
+
 // TestAssertGolden covers both halves of the flag. The writing half is the one
 // nothing else in the tree exercises -- every other caller reads -- and it is
 // the half that matters, because a -update-golden that wrote the wrong bytes
@@ -348,10 +365,7 @@ func TestAssertGolden(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "tile.txt")
 	rendered := decoded(t).Render()
 
-	was := *updateGolden
-	t.Cleanup(func() { *updateGolden = was })
-
-	*updateGolden = true
+	setUpdateGolden(t, true)
 	AssertGolden(t, path, rendered)
 
 	// Read back off the filesystem rather than trusting the round trip: this is
@@ -364,7 +378,7 @@ func TestAssertGolden(t *testing.T) {
 		t.Errorf("wrote something other than what it was given.\n--- wrote ---\n%s\n--- given ---\n%s", written, rendered)
 	}
 
-	*updateGolden = false
+	setUpdateGolden(t, false)
 	AssertGolden(t, path, rendered)
 }
 
@@ -381,9 +395,7 @@ func TestAssertGoldenReportsAMismatch(t *testing.T) {
 		t.Fatalf("writing the golden: %v", err)
 	}
 
-	was := *updateGolden
-	t.Cleanup(func() { *updateGolden = was })
-	*updateGolden = false
+	setUpdateGolden(t, false)
 
 	var spy testing.T
 	AssertGolden(&spy, path, decoded(t).Render())
