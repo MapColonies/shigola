@@ -21,10 +21,7 @@ import (
 const (
 	buildPushAction = "docker/build-push-action"
 	loginAction     = "docker/login-action"
-
-	// The condition gating everything a release does. Matched as a substring:
-	// a step is free to `&&` further conditions onto it.
-	releaseOnly = "github.event_name == 'release'"
+	registerAction  = "MapColonies/shared-workflows/actions/update-artifacts-file"
 )
 
 // The architectures every published image carries. A release that publishes
@@ -43,6 +40,55 @@ type workflowStep struct {
 	ifCond string
 	run    string
 	with   map[string]string
+}
+
+// workflowPushTags returns the tag patterns a workflow's push trigger names.
+// The scan stops at `jobs:` deliberately: a `tags:` list inside a step's
+// `with:` is an image tag, not a trigger, and reading one as a trigger would
+// make every docker workflow look like the publisher.
+func workflowPushTags(body string) []string {
+	var (
+		tags   []string
+		listAt = -1
+	)
+
+	for _, line := range yamlLines(body) {
+		if line.indent == 0 && line.text == "jobs:" {
+			break
+		}
+
+		if listAt >= 0 {
+			if line.indent > listAt {
+				if item, ok := strings.CutPrefix(line.text, "- "); ok {
+					tags = append(tags, strings.Trim(strings.TrimSpace(item), `'"`))
+				}
+
+				continue
+			}
+
+			listAt = -1
+		}
+
+		if line.text == "tags:" {
+			listAt = line.indent
+		}
+	}
+
+	return tags
+}
+
+// publishesReleases reports whether a workflow fires on the version tags
+// release-please pushes. The publisher is release-only by trigger, so no step
+// in it carries an `if:` -- which is why the guards below ask the workflow
+// what it is, rather than asking each step what gates it.
+func publishesReleases(body string) bool {
+	for _, tag := range workflowPushTags(body) {
+		if strings.HasPrefix(tag, "v") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func yamlFile(name string) bool {
@@ -289,15 +335,15 @@ func stepUses(step workflowStep, action string) bool {
 	return usesAction([]string{step.uses}, action)
 }
 
-// releasePushAt returns the index of the step that publishes on a release, or
-// -1 where the workflow has none. The last one wins, so a workflow growing a
-// second publish step is read as publishing at the later one rather than
-// silently checking only the first.
+// releasePushAt returns the index of the step that publishes, or -1 where a
+// workflow has none. The last one wins, so a workflow growing a second publish
+// step is read as publishing at the later one rather than silently checking
+// only the first. Callers ask this only of a publishing workflow.
 func releasePushAt(steps []workflowStep) int {
 	at := -1
 
 	for i, step := range steps {
-		if pushesImage(step) && strings.Contains(step.ifCond, releaseOnly) {
+		if pushesImage(step) {
 			at = i
 		}
 	}
@@ -305,8 +351,22 @@ func releasePushAt(steps []workflowStep) int {
 	return at
 }
 
+// firstBuildAt returns the index of the first step that builds an image, or -1.
+// The credential check has to sit above this, not merely above the push: the
+// point of checking early is not to spend several minutes building something
+// that cannot be published.
+func firstBuildAt(steps []workflowStep) int {
+	for i, step := range steps {
+		if stepUses(step, buildPushAction) {
+			return i
+		}
+	}
+
+	return -1
+}
+
 // forEachWorkflow calls check with the steps of every workflow in the tree.
-func forEachWorkflow(t *testing.T, check func(rel string, steps []workflowStep)) {
+func forEachWorkflow(t *testing.T, check func(rel, body string, steps []workflowStep)) {
 	t.Helper()
 
 	walkTree(t, yamlFile, func(rel, body string) {
@@ -314,7 +374,7 @@ func forEachWorkflow(t *testing.T, check func(rel string, steps []workflowStep))
 			return
 		}
 
-		check(rel, workflowSteps(body))
+		check(rel, body, workflowSteps(body))
 	})
 }
 
@@ -325,7 +385,7 @@ func forEachWorkflow(t *testing.T, check func(rel string, steps []workflowStep))
 func TestEveryPushedImageIsMultiArch(t *testing.T) {
 	var pushes int
 
-	forEachWorkflow(t, func(rel string, steps []workflowStep) {
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
 		for _, step := range steps {
 			if !pushesImage(step) {
 				continue
@@ -353,9 +413,13 @@ func TestEveryPushedImageIsMultiArch(t *testing.T) {
 func TestReleaseTagsTheVersionAndMovesLatest(t *testing.T) {
 	var releasePushes int
 
-	forEachWorkflow(t, func(rel string, steps []workflowStep) {
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
+		if !publishesReleases(body) {
+			return
+		}
+
 		for _, step := range steps {
-			if !pushesImage(step) || !strings.Contains(step.ifCond, releaseOnly) {
+			if !pushesImage(step) {
 				continue
 			}
 
@@ -384,7 +448,7 @@ func TestReleaseTagsTheVersionAndMovesLatest(t *testing.T) {
 func TestRegistryCredentialsComeFromSecrets(t *testing.T) {
 	var logins int
 
-	forEachWorkflow(t, func(rel string, steps []workflowStep) {
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
 		for _, step := range steps {
 			if !stepUses(step, loginAction) {
 				continue
@@ -412,18 +476,24 @@ func TestRegistryCredentialsComeFromSecrets(t *testing.T) {
 	}
 }
 
-// TestReleaseAssertsTheImagesItPublished asserts a release reads its own images
-// back out of the registry. The step before the push asserts the image this
-// runner built from the same build args, which is worth having and is a
+// TestReleaseAssertsTheImagesItPublished asserts the publisher reads its own
+// images back out of the registry. The step before the push asserts the image
+// this runner built from the same build args, which is worth having and is a
 // different claim: it says the args were right, not that the registry serves
 // what they produced -- and it can only ever see the one architecture buildx
 // will load.
 func TestReleaseAssertsTheImagesItPublished(t *testing.T) {
 	var asserted int
 
-	forEachWorkflow(t, func(rel string, steps []workflowStep) {
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
+		if !publishesReleases(body) {
+			return
+		}
+
 		pushAt := releasePushAt(steps)
 		if pushAt < 0 {
+			t.Errorf("%v triggers on a version tag but pushes no image", rel)
+
 			return
 		}
 
@@ -431,9 +501,7 @@ func TestReleaseAssertsTheImagesItPublished(t *testing.T) {
 		for _, step := range steps[pushAt+1:] {
 			code := shellCode(step.run)
 
-			if !strings.Contains(step.ifCond, releaseOnly) ||
-				!strings.Contains(code, "docker run") ||
-				!strings.Contains(code, "VERSION") {
+			if !strings.Contains(code, "docker run") || !strings.Contains(code, "VERSION") {
 				continue
 			}
 
@@ -459,8 +527,8 @@ func TestReleaseAssertsTheImagesItPublished(t *testing.T) {
 	}
 }
 
-// TestReleaseRefusesToPublishWithoutCredentials asserts a release checks its
-// credentials before it needs them. Without this the push still fails, but
+// TestReleaseRefusesToPublishWithoutCredentials asserts the publisher checks
+// its credentials before it builds anything. Without this the push still fails, but
 // late and in the wrong place: the image reference falls back to a first
 // component docker reads as a Docker Hub path rather than a registry host, so
 // the release builds for several minutes and then tries to publish to a
@@ -468,9 +536,15 @@ func TestReleaseAssertsTheImagesItPublished(t *testing.T) {
 func TestReleaseRefusesToPublishWithoutCredentials(t *testing.T) {
 	var preflights int
 
-	forEachWorkflow(t, func(rel string, steps []workflowStep) {
-		pushAt := releasePushAt(steps)
-		if pushAt < 0 {
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
+		if !publishesReleases(body) {
+			return
+		}
+
+		buildAt := firstBuildAt(steps)
+		if buildAt < 0 {
+			t.Errorf("%v triggers on a version tag but builds no image", rel)
+
 			return
 		}
 
@@ -497,12 +571,14 @@ func TestReleaseRefusesToPublishWithoutCredentials(t *testing.T) {
 			}
 		}
 
-		// Before the push, and before the login that would otherwise be the
-		// first thing to notice.
-		for _, step := range steps[:pushAt] {
+		// Above the first build, so a release missing a secret costs nothing
+		// to find out. Everything that reports an error below this point --
+		// the assertion on the built image, for one -- reports it only after
+		// the build it was meant to save.
+		for _, step := range steps[:buildAt] {
 			code := shellCode(step.run)
 
-			if !strings.Contains(step.ifCond, releaseOnly) || !strings.Contains(code, "::error::") {
+			if !strings.Contains(code, "::error::") {
 				continue
 			}
 
@@ -732,5 +808,164 @@ func TestShellCode(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, fn(tc))
+	}
+}
+
+// TestWorkflowPushTags pins the trigger scan. Every release guard above asks
+// publishesReleases which workflow to look at, so a scan that stopped finding
+// the tag trigger would skip the publisher and leave all of them checking
+// nothing -- the failure this package exists to catch.
+func TestWorkflowPushTags(t *testing.T) {
+	type tcase struct {
+		body string
+		want []string
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			got := workflowPushTags(tc.body)
+
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("workflowPushTags = %v, want %v", got, tc.want)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"a version tag trigger": {
+			body: "on:\n  push:\n    tags:\n      - 'v*'\njobs:\n  a:\n    steps:\n    - run: echo\n",
+			want: []string{"v*"},
+		},
+		"unquoted": {
+			body: "on:\n  push:\n    tags:\n      - v*\n",
+			want: []string{"v*"},
+		},
+		"several patterns": {
+			body: "on:\n  push:\n    tags:\n      - 'v*'\n      - 'release-*'\n",
+			want: []string{"v*", "release-*"},
+		},
+		"branches are not tags": {
+			body: "on:\n  push:\n    branches:\n      - master\n",
+			want: nil,
+		},
+		// The reason the scan stops at `jobs:`: this is an image tag.
+		"a tags list under with: is not a trigger": {
+			body: "on:\n  push:\n    branches:\n      - master\njobs:\n  a:\n    steps:\n    - uses: docker/build-push-action@v6\n      with:\n        tags:\n          - img:1.0\n",
+			want: nil,
+		},
+		"an inline tags input is not a trigger": {
+			body: "jobs:\n  a:\n    steps:\n    - with:\n        tags: img:1.0,img:latest\n",
+			want: nil,
+		},
+		"no trigger at all": {
+			body: "on: [push]\njobs:\n  a:\n    steps:\n    - run: echo\n",
+			want: nil,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// TestPublishesReleases pins which workflow the guards above single out.
+func TestPublishesReleases(t *testing.T) {
+	type tcase struct {
+		body string
+		want bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			if got := publishesReleases(tc.body); got != tc.want {
+				t.Errorf("publishesReleases = %v, want %v", got, tc.want)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"the version tags release-please pushes": {body: "on:\n  push:\n    tags:\n      - 'v*'\n", want: true},
+		"an exact version tag":                   {body: "on:\n  push:\n    tags:\n      - v1.0.0\n", want: true},
+		"some other tag namespace":               {body: "on:\n  push:\n    tags:\n      - 'nightly-*'\n"},
+		"a branch workflow":                      {body: "on:\n  push:\n    branches:\n      - master\n"},
+		"a pull request workflow":                {body: "on: [push, pull_request]\n"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// TestReleaseAssertsBeforeItPublishes asserts the publisher runs the image it
+// built before it pushes it. Losing this does not go unnoticed -- the assertion
+// after the push would still fail -- but it fails having already published the
+// broken image under a tag people pull, and a tag is not retractable in the way
+// a red build is.
+func TestReleaseAssertsBeforeItPublishes(t *testing.T) {
+	var asserted int
+
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
+		if !publishesReleases(body) {
+			return
+		}
+
+		buildAt, pushAt := firstBuildAt(steps), releasePushAt(steps)
+		if buildAt < 0 || pushAt <= buildAt {
+			return
+		}
+
+		for _, step := range steps[buildAt:pushAt] {
+			code := shellCode(step.run)
+
+			if strings.Contains(code, "docker run") && strings.Contains(code, "VERSION") {
+				asserted++
+			}
+		}
+	})
+
+	if asserted != 1 {
+		t.Errorf("found %d steps asserting a built image before it is published, want exactly 1", asserted)
+	}
+}
+
+// TestReleaseRegistersWhatItPublished asserts the published image is recorded in
+// helm-charts' artifacts.json. This is the one step here whose loss says
+// nothing at all: the image publishes, the workflow goes green, and the release
+// is simply never seen by anything downstream that deploys it.
+func TestReleaseRegistersWhatItPublished(t *testing.T) {
+	var registered int
+
+	forEachWorkflow(t, func(rel, body string, steps []workflowStep) {
+		if !publishesReleases(body) {
+			return
+		}
+
+		pushAt := releasePushAt(steps)
+		if pushAt < 0 {
+			return
+		}
+
+		for i, step := range steps {
+			if !stepUses(step, registerAction) {
+				continue
+			}
+
+			registered++
+
+			// After the push, or it records an image that may never arrive.
+			if i < pushAt {
+				t.Errorf("%v step %q registers the image before pushing it", rel, step.name)
+			}
+
+			// The same expression the image was tagged with, so the registered
+			// tag cannot drift from the published one.
+			if tag := step.with["artifact_tag"]; !strings.Contains(tag, "VERSION") {
+				t.Errorf("%v step %q registers tag %q, which is not the version the image was tagged with", rel, step.name, tag)
+			}
+		}
+	})
+
+	if registered != 1 {
+		t.Errorf("found %d steps registering the published image, want exactly 1", registered)
 	}
 }
