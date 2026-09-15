@@ -184,7 +184,7 @@ func TestSummary(t *testing.T) {
 		want string
 	}
 
-	fn := func(tc tcase) func(t *testing.T) {
+	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
 			if got := tc.tile.Summary(); got != tc.want {
 				t.Errorf("Summary: got %q, want %q", got, tc.want)
@@ -234,7 +234,7 @@ func TestLayerLookup(t *testing.T) {
 
 	tile := decoded(t)
 
-	fn := func(tc tcase) func(t *testing.T) {
+	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
 			got, ok := tile.Layer(tc.name)
 			if ok != tc.wantOK {
@@ -269,7 +269,7 @@ func TestFeatureByTag(t *testing.T) {
 
 	tile := decoded(t)
 
-	fn := func(tc tcase) func(t *testing.T) {
+	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
 			layer, ok := tile.Layer(tc.layer)
 			if !ok {
