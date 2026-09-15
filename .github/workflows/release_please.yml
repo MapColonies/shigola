@@ -1,0 +1,67 @@
+name: Release please
+# Merging to the default branch opens -- or updates -- a release pull request
+# holding the next version and the changelog entry for it. Merging that pull
+# request tags the release and publishes it, which is the `release: published`
+# event on_release_publish.yml already builds and pushes from. Nothing here
+# builds or publishes anything itself.
+#
+# Worth knowing before this is expected to fire: `master` is the repository's
+# default branch and the branch CONTRIBUTING.md says pull requests target, but
+# every pull request so far has landed on `development`, which is well ahead of
+# `master` -- the same divergence MAPCO-11501 recorded about `edge`. Until that
+# work reaches `master` this opens nothing, and that is the honest behaviour:
+# releasing from a branch the repository does not call its default would make
+# the released tag point somewhere the releases page does not.
+on:
+  push:
+    branches:
+      - master
+  # So a release pull request can be re-opened by hand after one is closed
+  # without merging, rather than waiting for the next qualifying merge.
+  workflow_dispatch:
+
+# The action pushes a release branch, opens the pull request, and creates the
+# GitHub release when that pull request merges.
+permissions:
+  contents: write
+  pull-requests: write
+
+# One release pull request at a time. Two runs racing would both force-push the
+# same release branch.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release_please:
+    name: Open the release pull request
+    runs-on: ubuntu-22.04
+
+    steps:
+      # No checkout step: the action reads and writes the tree through the
+      # GitHub API, not from the runner's working directory.
+      #
+      # GITHUB_TOKEN rather than a personal access token, so this works without
+      # a secret having to exist. The cost is that the release pull request is
+      # authored by github-actions[bot], and pull requests opened with that
+      # token do not trigger other workflows -- on_pr_push.yml will not run on
+      # it. Acceptable here and nowhere else: a release pull request changes
+      # only CHANGELOG.md and the manifest, and every commit it releases was
+      # tested by on_pr_push.yml when it landed.
+      #
+      # Needs "Allow GitHub Actions to create and approve pull requests" enabled
+      # for the repository or the organisation. Without it the action fails at
+      # pull request creation, which is the failure mode to want -- the release
+      # process this repository has twice been bitten by (MAPCO-11500,
+      # MAPCO-11501) failed by going green while doing nothing.
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Stated rather than inherited from the repository's default-branch
+          # setting, so which branch this releases from is readable here and
+          # cannot change under the workflow. Must stay in step with the push
+          # trigger above; internal/build asserts that it does.
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
