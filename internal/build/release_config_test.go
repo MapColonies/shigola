@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,10 +20,16 @@ import (
 // and doing nothing. None of it is checkable by building or running the tree,
 // so it is read here, the way stamp_path_test.go reads stamp paths.
 
-var semver = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`)
+// A plain X.Y.Z, which is what these files carry. Deliberately not semver: a
+// `v` prefix and a prerelease suffix are both rejected, because a manifest or
+// an initial-version carrying either is a misconfiguration rather than a
+// version this tree should read past.
+var plainVersion = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`)
 
-// A `key: value` line. Restricted to lowercase-and-dash keys so a step's
-// `- name:` list item and a `run:` block's shell do not read as one.
+// A `key: value` line. The anchor is what does the work: a step's `- name:`
+// list item starts with `-` and so never matches, and shell inside a `run:`
+// block never reaches here because yamlLines drops block scalars. The charset
+// only keeps the match to the key shape these workflows actually use.
 var workflowInputLine = regexp.MustCompile(`^([a-z][a-z-]*):\s*(\S+)`)
 
 const (
@@ -45,7 +52,7 @@ type releasePleaseConfig struct {
 
 // parseVersion returns a version's major, minor and patch.
 func parseVersion(v string) (major, minor, patch int, ok bool) {
-	m := semver.FindStringSubmatch(v)
+	m := plainVersion.FindStringSubmatch(v)
 	if m == nil {
 		return 0, 0, 0, false
 	}
@@ -255,16 +262,7 @@ func TestReleaseWorkflowAgreesWithItsConfig(t *testing.T) {
 				return
 			}
 
-			found := false
-			for _, branch := range branches {
-				if branch == target {
-					found = true
-
-					break
-				}
-			}
-
-			if !found {
+			if !slices.Contains(branches, target) {
 				t.Errorf("%v releases %q but triggers on %v; a merge to the branch it releases would open nothing", rel, target, branches)
 			}
 		})
