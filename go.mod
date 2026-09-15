@@ -19,6 +19,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/mattn/goveralls v0.0.5
 	github.com/prometheus/client_golang v1.14.0
+	github.com/prometheus/client_model v0.6.2
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/theckman/goconstraint v1.10.1-0.20180216224824-e867bde6e4e1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
@@ -67,7 +68,6 @@ require (
 	github.com/jmespath/go-jmespath v0.3.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/spf13/pflag v1.0.1 // indirect

@@ -27,15 +27,30 @@ import (
 // like tracing being unwired.
 const tracedTileURI = "/collections/test-map/tiles/WebMercatorQuad/10/3/2"
 
+// tracedTileKey is tracedTileURI as the cache addresses it — the whole map, so
+// no layer name, and tileRow/tileCol the other way round from X/Y.
+//
+// assertSeededKeyWasRead checks it against the key a tier is actually asked for
+// rather than trusting it: seeding the wrong key would leave the tile
+// unreadable and silently reintroduce the race it exists to remove.
+var tracedTileKey = &cache.Key{
+	TileMatrixSetID: "WebMercatorQuad",
+	MapName:         "test-map",
+	Z:               10,
+	X:               2,
+	Y:               3,
+}
+
 // twoTierCache builds hot → durable through cache.For, so the request walks the
-// same decorator stack it would in production.
-func twoTierCache(t *testing.T, hotType, durableType string) cache.Interface {
+// same decorator stack it would in production. The tiers come back so a caller
+// can seed one directly, which is how TestTracedRequestPublishesNoNewMetrics
+// gets a warm cache without waiting on a detached write.
+func twoTierCache(t *testing.T, hotType, durableType string) (cache.Interface, *faketier.Tier, *faketier.Tier) {
 	t.Helper()
 
-	for cacheType, tier := range map[string]*faketier.Tier{
-		hotType:     faketier.New(hotType),
-		durableType: faketier.New(durableType),
-	} {
+	hot, durable := faketier.New(hotType), faketier.New(durableType)
+
+	for cacheType, tier := range map[string]*faketier.Tier{hotType: hot, durableType: durable} {
 		c := tier
 		if err := cache.Register(cacheType, func(dict.Dicter) (cache.Interface, error) { return c, nil }); err != nil {
 			t.Fatalf("register %v: %v", cacheType, err)
@@ -52,7 +67,24 @@ func twoTierCache(t *testing.T, hotType, durableType string) cache.Interface {
 		t.Fatalf("building the chain: %v", err)
 	}
 
-	return c
+	return c, hot, durable
+}
+
+// assertSeededKeyWasRead fails if the tile a request looked for is not the one
+// the caller seeded, which is the only way seeding could quietly stop working.
+//
+// tier names the tier whose calls these are, so a failure says where to look.
+func assertSeededKeyWasRead(t *testing.T, tier string, calls []faketier.Call) {
+	t.Helper()
+
+	for _, call := range calls {
+		if call.Op == faketier.OpGet && call.Key == tracedTileKey.String() {
+			return
+		}
+	}
+
+	t.Fatalf("the %v tier was never asked for %v; the seeded key is wrong and this test is racing a detached write again",
+		tier, tracedTileKey.String())
 }
 
 // TestTileRequestProducesOneSpanTree is the acceptance criterion end to end: a
@@ -72,7 +104,8 @@ func TestTileRequestProducesOneSpanTree(t *testing.T) {
 	tracer, exporter := faketracer.New(t)
 
 	a := newTestMapWithLayers(testLayer2)
-	a.SetCache(twoTierCache(t, "tracedhot", "traceddurable"))
+	c, _, _ := twoTierCache(t, "tracedhot", "traceddurable")
+	a.SetCache(c)
 	a.SetTracing(tracer)
 
 	w, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil)
@@ -150,7 +183,8 @@ func TestTileRequestWithoutTracingRecordsNothing(t *testing.T) {
 	_, exporter := faketracer.New(t)
 
 	a := newTestMapWithLayers(testLayer2)
-	a.SetCache(twoTierCache(t, "untracedhot", "untraceddurable"))
+	c, _, _ := twoTierCache(t, "untracedhot", "untraceddurable")
+	a.SetCache(c)
 
 	w, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil)
 	if err != nil {
@@ -182,7 +216,9 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 	server.URIPrefix = "/"
 
 	a := newTestMapWithLayers(testLayer2)
-	a.SetCache(twoTierCache(t, "metrichot", "metricdurable"))
+	c, hot, durable := twoTierCache(t, "metrichot", "metricdurable")
+	durable.Seed(tracedTileKey, []byte("tile"))
+	a.SetCache(c)
 
 	observer, err := prometheus.New(dict.Dict{})
 	if err != nil {
@@ -190,21 +226,26 @@ func TestTracedRequestPublishesNoNewMetrics(t *testing.T) {
 	}
 	a.SetObservability(observer)
 
-	// Two untraced requests before the snapshot, not one.
+	// One untraced request before the snapshot, against a cache that is
+	// already warm.
 	//
 	// A prometheus *Vec publishes a family only once a label set on it has
 	// been observed, so the snapshot has to be taken in a state where every
-	// family the traced request will touch already exists. One request is not
-	// enough: the first is a miss on an empty cache and populates only the
-	// misses families, and it then writes the tile — so the second is a hit
-	// and publishes shigola_cache_hits_total and its per-tier sibling for the
-	// first time. Snapshotting after one request blames tracing for the cache
-	// warming up.
-	for range 2 {
-		if _, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil); err != nil {
-			t.Fatalf("untraced request: %v", err)
-		}
+	// family the traced request will touch already exists — otherwise the
+	// cache warming up is blamed on tracing. Against a seeded durable tier one
+	// request does it: the hot tier misses and the durable one hits, so the
+	// hit and miss families are both published, and the traced request has the
+	// same shape.
+	//
+	// This used to be two requests against an empty cache, relying on the
+	// first request's write making the second a hit. Writes are detached
+	// through the bounded pool, so that was a race, and it lost often enough
+	// to fail this test roughly half the time on the trunk.
+	if _, _, err := doRequest(t, a, http.MethodGet, tracedTileURI, nil); err != nil {
+		t.Fatalf("untraced request: %v", err)
 	}
+
+	assertSeededKeyWasRead(t, "metrichot", hot.Calls())
 
 	before := ttools.MetricFamilyNames(t)
 	httpBefore := map[string]float64{}

@@ -192,6 +192,17 @@ func (co *cache) labels(cmd string, key *tegolaCache.Key) (lbs prometheus.Labels
 	return lbs
 }
 
+// observeDuration records one operation's latency, pointing at the trace it
+// was part of.
+//
+// ctx is the operation's own context, so the exemplar names the span that
+// measured this read rather than the request as a whole: the tracing wrapper is
+// installed *outside* this one (atlas.instrumentCache), which is what makes the
+// tier's span the active one by the time this runs.
+func (co *cache) observeDuration(ctx context.Context, lbs prometheus.Labels, seconds float64) {
+	observeWithExemplar(co.durationSeconds.With(lbs), seconds, exemplarFrom(ctx))
+}
+
 // Get will record metrics around the getting the tile from the sub cache
 func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, error) {
 	co.inFlightGauge.Inc()
@@ -201,7 +212,7 @@ func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, e
 	// Observed outside the deadline, deliberately: instrumenting inside it
 	// would drop timed-out reads from the histogram — the very events that
 	// make a too-tight timeout_ms diagnosable.
-	co.durationSeconds.With(lbs).Observe(time.Since(now).Seconds())
+	co.observeDuration(ctx, lbs, time.Since(now).Seconds())
 	if err != nil {
 		co.countReadError(ctx, lbs, err)
 		co.inFlightGauge.Dec()
@@ -250,7 +261,7 @@ func (co *cache) Set(ctx context.Context, key *tegolaCache.Key, body []byte) err
 	lbs := co.labels("set", key)
 	now := time.Now()
 	err := co.cache.Set(ctx, key, body)
-	co.durationSeconds.With(lbs).Observe(time.Since(now).Seconds())
+	co.observeDuration(ctx, lbs, time.Since(now).Seconds())
 	if err != nil {
 		co.errors.With(lbs).Add(1)
 		co.inFlightGauge.Dec()
@@ -267,7 +278,7 @@ func (co *cache) Purge(ctx context.Context, key *tegolaCache.Key) error {
 	lbs := co.labels("purge", key)
 	now := time.Now()
 	err := co.cache.Purge(ctx, key)
-	co.durationSeconds.With(lbs).Observe(time.Since(now).Seconds())
+	co.observeDuration(ctx, lbs, time.Since(now).Seconds())
 	if err != nil {
 		co.errors.With(lbs).Add(1)
 	}

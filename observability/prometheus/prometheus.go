@@ -133,8 +133,85 @@ func New(config dict.Dicter) (observability.Interface, error) {
 
 func (*observer) Name() string { return Name }
 
-func (observer) Handler(string) http.Handler { return promhttp.Handler() }
-func (obs *observer) Init()                  { obs.initCall.Do(obs.init) }
+// Handler serves the metrics route.
+//
+// A pointer receiver like every sibling. It was a value receiver, which copied
+// the observer's sync.Once fields on every call — a vet copylocks finding, and
+// harmless only because the copy was discarded unread.
+func (obs *observer) Handler(string) http.Handler {
+	// The observer's own registry, not the package default, even though New
+	// only ever sets it to that: an observer built against some other registry
+	// should serve that registry rather than quietly serving the global one.
+	//
+	// Both halves have to follow it or it serves the wrong thing either way —
+	// registering its scrape counter into one registry while gathering
+	// another's metrics would be worse than not following it at all. There is
+	// no gatherer field to read, so it comes off the registerer, which is a
+	// *prometheus.Registry in every case this has: that type is both.
+	//
+	// nil-guarded like every sibling here — the pointer receiver this took to
+	// clear a vet copylocks finding is also a receiver that can now be nil.
+	// obs.registry as well as obs: New always sets it, but the value receiver
+	// this replaced could not have been nil at all, so the guard covers both
+	// ways the zero value can now arrive.
+	if obs == nil || obs.registry == nil {
+		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+	}
+
+	// Both halves or neither, which is what the paragraph above rules out any
+	// middle ground for. A Registerer that cannot also gather leaves nothing to
+	// serve its own metrics from, and pairing it with the default gatherer
+	// would be exactly the mismatch described: the scrape counter landing in
+	// one registry while another's metrics go out on the wire.
+	own, ok := obs.registry.(prometheus.Gatherer)
+	if !ok {
+		// Said out loud rather than swallowed. This is unreachable for every
+		// registry New can produce, so it exists to avoid a panic rather than
+		// to handle a real case — but serving a different registry's metrics
+		// than the one the caller configured is precisely the kind of silent
+		// substitution the exemplar label names are commented against, and an
+		// operator staring at an empty /metrics deserves the reason.
+		log.Warnf("prometheus: registry %T cannot gather; serving the default registry on the metrics route instead", obs.registry)
+
+		return metricsHandler(prometheus.DefaultRegisterer, prometheus.DefaultGatherer)
+	}
+
+	return metricsHandler(obs.registry, own)
+}
+
+// metricsHandler serves the metrics route, negotiating OpenMetrics.
+//
+// EnableOpenMetrics is what makes the exemplars this package records reach
+// Prometheus at all: OpenMetrics is the only exposition format that encodes
+// them, and the classic text format drops them without a word. Recording
+// exemplars while serving the default handler would have been a change with no
+// observable effect whatsoever.
+//
+// It changes one other thing, which is the cost of the feature. Under
+// OpenMetrics a boundary that renders as a whole number is written with a
+// trailing ".0", so a histogram exposes le="1.0" where it used to expose
+// le="1" — and a label value is part of a series' identity, so those are
+// different series. Anything matching an exact le, such as a recording rule or
+// a panel pinned to one bucket, has to be checked.
+//
+// Which boundaries those are is deliberately not written out here.
+// TestRespelledBucketBoundaries derives the list from the bucket sets, and
+// README.md § "Trace exemplars" states it for operators — a prose copy in a
+// third place is how the previous version of this comment came to name a
+// boundary that is not affected at all.
+//
+// Split out from Handler so a test can scrape a registry of its own: the
+// exposition is the half of exemplar support that fails silently, and asserting
+// on it against the process-wide default registry would depend on whatever else
+// the test binary had registered.
+func metricsHandler(registerer prometheus.Registerer, gatherer prometheus.Gatherer) http.Handler {
+	return promhttp.InstrumentMetricHandler(
+		registerer,
+		promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{EnableOpenMetrics: true}),
+	)
+}
+
+func (obs *observer) Init() { obs.initCall.Do(obs.init) }
 func (obs *observer) init() {
 	obs.PublishBuildInfo()
 	if obs == nil || obs.pushURL == "" {
