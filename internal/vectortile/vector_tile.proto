@@ -1,5 +1,11 @@
-// The Mapbox Vector Tile specification's schema (vector-tile-spec 2.1),
-// verbatim except for the syntax declaration and the two options below.
+// The Mapbox Vector Tile specification's schema (vector-tile-spec 2.1). The
+// schema itself is verbatim: this copy adds these comments, the syntax
+// declaration below, and exactly one option, go_package. Nothing is removed
+// and no field, type or number is changed.
+//
+// Said precisely rather than as "verbatim", because CC BY 3.0 asks that a
+// modification be indicated and one was made. optimize_for below is the
+// specification's own and is not one of ours.
 //
 // Source:  https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
 // License: Creative Commons Attribution 3.0 Unported. See NOTICE.md.
@@ -23,6 +29,8 @@ package vector_tile;
 // an edit to the normative schema that buys nothing.
 option optimize_for = LITE_RUNTIME;
 
+// Ours, and the one thing this file adds to the schema: it names the Go package
+// protoc-gen-go generates into, which the specification has no reason to carry.
 option go_package = "github.com/MapColonies/shigola/internal/vectortile";
 
 message Tile {
