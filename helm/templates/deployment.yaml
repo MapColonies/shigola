@@ -1,0 +1,111 @@
+{{- if .Values.enabled -}}
+{{- $registry := include "shigola.cloudProviderDockerRegistryUrl" . -}}
+{{- $pullSecret := include "shigola.cloudProviderImagePullSecretName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shigola.fullname" . }}
+  labels:
+    {{- include "shigola.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "shigola.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shigola.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if $pullSecret }}
+      imagePullSecrets:
+        - name: {{ $pullSecret | quote }}
+      {{- end }}
+      containers:
+        - name: shigola
+          image: {{ $registry }}{{ .Values.image.repository }}:{{ include "shigola.tag" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "shigola.fullname" . }}
+            {{- $generatedSecret := printf "%s-generated" (include "shigola.fullname" .) }}
+            {{- $databaseAuto := and .Values.database.enabled .Values.database.postgres.password (not .Values.database.postgres.passwordSecret.name) }}
+            {{- $osmAuto := and .Values.osm.enabled .Values.osm.postgres.password (not .Values.osm.postgres.passwordSecret.name) }}
+            {{- $redisAuto := and .Values.cache.redis.enabled .Values.cache.redis.password (not .Values.cache.redis.passwordSecret.name) }}
+            {{- $s3Auto := and .Values.cache.s3.enabled (or .Values.cache.s3.accessKeyId .Values.cache.s3.secretAccessKey) (not .Values.cache.s3.credentialsSecret.name) }}
+            {{- if or $databaseAuto $osmAuto $redisAuto $s3Auto }}
+            - secretRef:
+                name: {{ $generatedSecret | quote }}
+            {{- end }}
+            {{- if and .Values.database.enabled .Values.database.postgres.passwordSecret.name }}
+            - secretRef:
+                name: {{ .Values.database.postgres.passwordSecret.name | quote }}
+            {{- end }}
+            {{- if and .Values.osm.enabled .Values.osm.postgres.passwordSecret.name }}
+            - secretRef:
+                name: {{ .Values.osm.postgres.passwordSecret.name | quote }}
+            {{- end }}
+            {{- if and .Values.cache.redis.enabled .Values.cache.redis.passwordSecret.name }}
+            - secretRef:
+                name: {{ .Values.cache.redis.passwordSecret.name | quote }}
+            {{- end }}
+            {{- if and .Values.cache.s3.enabled .Values.cache.s3.credentialsSecret.name }}
+            - secretRef:
+                name: {{ .Values.cache.s3.credentialsSecret.name | quote }}
+            {{- end }}
+          {{- if or .Values.caSecretName .Values.extraEnvVars }}
+          env:
+            {{- if .Values.caSecretName }}
+            - name: REQUESTS_CA_BUNDLE
+              value: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: {{ .Values.service.protocol }}
+          volumeMounts:
+            - name: shigola-config
+              mountPath: {{ .Values.config.mountPath | quote }}
+              subPath: {{ .Values.config.key | quote }}
+            {{- if .Values.caSecretName }}
+            - name: root-ca
+              mountPath: {{ printf "%s/%s" .Values.caPath .Values.caKey | quote }}
+              subPath: {{ .Values.caKey | quote }}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: shigola-config
+          configMap:
+            name: {{ include "shigola.fullname" . }}
+        {{- if .Values.caSecretName }}
+        - name: root-ca
+          secret:
+            secretName: {{ .Values.caSecretName | quote }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

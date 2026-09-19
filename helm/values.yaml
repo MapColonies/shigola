@@ -1,0 +1,154 @@
+global:
+  cloudProvider:
+    dockerRegistryUrl: ''
+    imagePullSecretName: ''
+    flavor: kubernetes
+  mclabels:
+    environment: development
+
+mclabels: &mclabels
+  owner: vector
+  partOf: vector-tiles
+  component: backend
+  
+
+enabled: true
+replicaCount: 1
+revisionHistoryLimit: 5
+nameOverride: ''
+fullnameOverride: ''
+podAnnotations: {}
+extraEnvVars: []
+extraVolumes: []
+extraVolumeMounts: []
+caSecretName: ''
+caPath: /usr/local/share/ca-certificates
+caKey: ca.crt
+
+cloudProvider:
+  dockerRegistryUrl: ''
+  imagePullSecretName: ''
+  flavor: kubernetes
+
+image:
+  repository: shigola
+  tag: latest
+  pullPolicy: IfNotPresent
+
+command: []
+args:
+- serve
+- --config
+- /opt/config.toml
+
+service:
+  port: 8080
+  targetPort: 8080
+  protocol: TCP
+
+config:
+  mountPath: /opt/config.toml
+  key: config.toml
+
+cors:
+  enabled: true
+  allowedOrigin: '*'
+  allowedMethods: 'GET, OPTIONS'
+  allowedHeaders: '*'
+
+cacheControl:
+  enabled: true
+  value: 'public, max-age=3600'
+
+database:
+  enabled: true
+  postgres:
+    host: ''
+    port: '5432'
+    database: ''
+    user: ''
+    password: ''
+    passwordSecret:
+      name: ''
+  ssl:
+    enabled: true
+    mode: 'prefer'
+    cert: ''
+    key: ''
+  srid: 3857
+  schema: public
+  table:
+  geometryColumn: geomColumn
+  idColumn: idColumn
+  geometryType: polygon
+  extraColumns: []
+  attribution: 'Database'
+  minZoom: 14
+  maxZoom: 20
+
+osm:
+  enabled: true
+  postgres:
+    host: postgresHost
+    port: '5432'
+    database: DatabaseName
+    user: username
+    password: password
+    passwordSecret:
+      name: ''
+  ssl:
+    enabled: true
+    mode: 'prefer'
+    cert: ''
+    key: ''
+
+cache:
+  redis:
+    enabled: false
+    uri: ''
+    password: ''
+    passwordSecret:
+      name: ''
+    ttl: 3600
+  s3:
+    enabled: false
+    bucket: ''
+    endpoint: ''
+    region: region
+    forcePathStyle: true
+    accessKeyId: ''
+    secretAccessKey: ''
+    credentialsSecret:
+      name: ''
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 125m
+    memory: 512Mi
+
+route:
+  enabled: false
+  path: /
+  host: ''
+  disableCookies: true
+  timeout:
+    enabled: false
+    duration: 60s
+  tls:
+    enabled: true
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  labels: {}
+  path: /
+  pathType: Prefix
+  hosts: []
+  host: localhost
+  tls: []
