@@ -6,7 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	tegolaCache "github.com/MapColonies/shigola/cache"
+	shigolaCache "github.com/MapColonies/shigola/cache"
 
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/log"
@@ -73,7 +73,7 @@ type APIObserver interface {
 }
 
 type CacheObserver interface {
-	InstrumentedCache(cacheObject tegolaCache.Interface) tegolaCache.Interface
+	InstrumentedCache(cacheObject shigolaCache.Interface) shigolaCache.Interface
 }
 
 // TieredCacheObserver instruments one tier of a composite cache, labelled by
@@ -90,12 +90,12 @@ type CacheObserver interface {
 // and registering the same metric name once with a tier label and once without
 // is a label-dimension mismatch, which prometheus turns into a startup panic.
 type TieredCacheObserver interface {
-	InstrumentedTierCache(tier string, cacheObject tegolaCache.Interface) tegolaCache.Interface
+	InstrumentedTierCache(tier string, cacheObject shigolaCache.Interface) shigolaCache.Interface
 }
 
 type Cache interface {
-	tegolaCache.Interface
-	tegolaCache.Wrapped
+	shigolaCache.Interface
+	shigolaCache.Wrapped
 	IsObserver() bool
 }
 

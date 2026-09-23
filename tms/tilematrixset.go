@@ -161,7 +161,7 @@ func (t *TileMatrixSet) OrderedAxes() []string {
 	return append([]string(nil), t.def.OrderedAxes...)
 }
 
-// NativeSRID returns the SRID tegola's pipeline works in when producing tiles
+// NativeSRID returns the SRID shigola's pipeline works in when producing tiles
 // for this grid.
 //
 // This is the grid CRS's EPSG code where it has one, and 4326 for a CRS84 grid
@@ -346,7 +346,7 @@ func (t *TileMatrixSet) matrixOrigin(m TileMatrix) Coords {
 //
 // For a square grid such as WebMercatorQuad this is (2^z, 2^z); for the 2:1
 // WorldCRS84Quad it is (2*2^z, 2^z). Per-axis validation of a requested tile
-// must use both values — assuming a square pyramid is what ties tegola's
+// must use both values — assuming a square pyramid is what ties shigola's
 // current handlers to WebMercator.
 func (t *TileMatrixSet) MatrixSize(zoom int) (cols, rows int64, err error) {
 	m, err := t.Matrix(zoom)
@@ -580,7 +580,7 @@ func (t *TileMatrixSet) tileFrame(tile Tile) (TileMatrix, int64, Coords, error) 
 
 // XYBounds returns a tile's bounding box in the grid's CRS.
 //
-// This is the extent tegola queries, clips and encodes against, and it needs no
+// This is the extent shigola queries, clips and encodes against, and it needs no
 // coordinate transform for any grid.
 //
 // Ported from morecantile.models.TileMatrixSet.xy_bounds.
@@ -757,10 +757,10 @@ func (t *TileMatrixSet) IntersectsXY(bbox BoundingBox) (bool, error) {
 		bbox.Bottom < tmsBounds.Top, nil
 }
 
-/* ------------------------------------------------------- tegola-facing view */
+/* ------------------------------------------------------- shigola-facing view */
 
 // TileExtent returns a tile's extent in the grid's CRS as a geom.Extent, the
-// form tegola's provider and encode paths work with.
+// form shigola's provider and encode paths work with.
 func (t *TileMatrixSet) TileExtent(tile Tile) (geom.Extent, error) {
 	b, err := t.XYBounds(tile)
 	if err != nil {

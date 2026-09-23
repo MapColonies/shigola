@@ -32,7 +32,7 @@ func (s *Service) Routes() []Route {
 		{Method: http.MethodGet, Path: "/collections/:collection_id", Handler: s.HandleCollection},
 		{Method: http.MethodGet, Path: "/collections/:collection_id/tiles", Handler: s.HandleTileSets},
 		{Method: http.MethodGet, Path: "/collections/:collection_id/tiles/:tile_matrix_set_id", Handler: s.HandleTileSet},
-		// z/y/x, not tegola's native z/x/y
+		// z/y/x, not the XYZ convention's z/x/y
 		{
 			Method:  http.MethodGet,
 			Path:    "/collections/:collection_id/tiles/:tile_matrix_set_id/:tile_matrix/:tile_row/:tile_col",

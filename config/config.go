@@ -1,4 +1,4 @@
-// Package config loads and understands the tegola config format.
+// Package config loads and understands the shigola config format.
 package config
 
 import (
@@ -83,7 +83,7 @@ var ReservedTokens = map[string]struct{}{
 
 var blacklistHeaders = []string{"content-encoding", "content-length", "content-type"}
 
-// Config represents a tegola config file.
+// Config represents a shigola config file.
 type Config struct {
 	// the tile buffer to use
 	TileBuffer *env.Int `toml:"tile_buffer"`
@@ -108,7 +108,7 @@ type Config struct {
 	Maps      []provider.Map `toml:"maps"`
 }
 
-// Webserver represents the config options for the webserver part of Tegola
+// Webserver represents the config options for the webserver part of Shigola
 type Webserver struct {
 	HostName      env.URL    `toml:"hostname"`
 	Port          env.String `toml:"port"`
@@ -412,7 +412,7 @@ func (c *Config) ConfigureTileBuffers() {
 	}
 }
 
-// Parse will parse the Tegola config file provided by the io.Reader.
+// Parse will parse the Shigola config file provided by the io.Reader.
 func Parse(reader io.Reader, location string) (conf Config, err error) {
 	// Read whole, so a failed decode can be told apart from a syntax error.
 	data, err := io.ReadAll(reader)

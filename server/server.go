@@ -24,11 +24,11 @@ const (
 
 var (
 	// HostName is the name of the host to use for construction of URLS.
-	// configurable via the tegola config.toml file (set in main.go)
+	// configurable via the shigola config.toml file (set in main.go)
 	HostName *url.URL
 
 	// Port is the port the server is listening on, used for construction of URLS.
-	// configurable via the tegola config.toml file (set in main.go)
+	// configurable via the shigola config.toml file (set in main.go)
 	Port string
 
 	// SSLCert is a filepath to an SSL cert, this will be used to enable https
@@ -38,11 +38,11 @@ var (
 	SSLKey string
 
 	// Headers is the map of user defined response headers.
-	// configurable via the tegola config.toml file (set in main.go)
+	// configurable via the shigola config.toml file (set in main.go)
 	Headers = map[string]string{}
 
 	// URIPrefix sets a prefix on all server endpoints. This is often used
-	// when the server sits behind a reverse proxy with a prefix (i.e. /tegola)
+	// when the server sits behind a reverse proxy with a prefix (i.e. /shigola)
 	URIPrefix = "/"
 
 	// ProxyProtocol is a custom protocol that will be used to generate the URLs
@@ -166,7 +166,7 @@ func hostName(r *http.Request) *url.URL {
 		return HostName
 	}
 
-	// favor the r.URL.Host attribute in case tegola is behind a proxy
+	// favor the r.URL.Host attribute in case shigola is behind a proxy
 	// https://stackoverflow.com/questions/42921567/what-is-the-difference-between-host-and-url-host-for-golang-http-request
 	if r.URL != nil && r.URL.Host != "" {
 		return r.URL

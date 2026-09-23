@@ -31,7 +31,7 @@ type Wrapped interface {
 // NamedTier pairs one tier of a composite cache with its name.
 //
 // Names are public API. They appear in the tier metric label and in
-// `tegola cache seed --cache-tiers`, which means they end up in dashboards,
+// `shigola cache seed --cache-tiers`, which means they end up in dashboards,
 // alerts and cron jobs — renaming a tier, or reordering layers such that a
 // derived collision suffix shifts, silently breaks both.
 type NamedTier struct {
@@ -156,7 +156,7 @@ func WritePoolOf(c Interface) *WritePool {
 //
 // The decorators forward Tiered, but the observability wrapper does not — so a
 // caller that wants the tier list has to reach through it. Which callers do:
-// `tegola cache seed` resolves --cache-tiers against the tree, and by then the
+// `shigola cache seed` resolves --cache-tiers against the tree, and by then the
 // configured cache has already been instrumented.
 func TieredOf(c Interface) (Tiered, bool) {
 	for c != nil {
@@ -216,7 +216,7 @@ func InjectWritePool(c Interface, pool *WritePool) {
 // ParseKey will parse a string in the format /:map/:layer/:z/:x/:y into a Key struct. The :layer value is optional
 // ParseKey also supports other OS delimiters (i.e. Windows - "\")
 //
-// The path carries no tileMatrixSetID — tegola's native routes do not name a
+// The path carries no tileMatrixSetID — the z/x/y path form does not name a
 // grid — so the tile is read as a WebMercatorQuad one. Use ParseKeyForGrid when
 // the grid is known.
 func ParseKey(str string) (*Key, error) {
@@ -232,7 +232,7 @@ func ParseKey(str string) (*Key, error) {
 // zoom, and record the grid on the returned Key.
 //
 // What it parses is a *request path* — ":map/:layer/:z/:x/:y", the map and layer
-// optional — which names no grid, because tegola's native routes do not. The
+// optional — which names no grid, because the z/x/y path form does not. The
 // grid comes from the caller, which knows it from the map being served.
 //
 // It deliberately does not parse what Key.String writes. That form leads with
@@ -357,7 +357,7 @@ type Key struct {
 	// path or redis key from String() — partitions by grid, and so that a purge
 	// can address one grid's tiles as a subtree.
 	//
-	// An unset value means WebMercatorQuad, the grid tegola served before this
+	// An unset value means WebMercatorQuad, the grid shigola served before this
 	// field existed.
 	TileMatrixSetID string
 	MapName         string

@@ -2,13 +2,13 @@
 // conformance declaration, collections, tilesets, tiles, and the tiling schemes
 // they are cut in.
 //
-// It began as an addition to tegola's native routes and is now the whole tile
+// It began as an addition to the native routes and is now the whole tile
 // surface: the /maps/... routes it served alongside have been removed, so a
 // tile has exactly one URL. "/" is the landing page's required location;
 // ADR-0003 recorded taking it as a trade, because it displaced the embedded
 // viewer to /viewer, and neither the viewer nor that trade remains.
 //
-// The package deliberately does not import tegola/server: the server mounts this
+// The package deliberately does not import server: the server mounts this
 // surface, so the dependency runs one way. Everything this package needs from
 // its host — where the service is reachable, what it is mounted under, which
 // atlas to read — arrives in Config.
@@ -32,7 +32,7 @@ type Config struct {
 	// configured hostname — and because deployments such as lambda override it.
 	// Required.
 	URLRoot func(*http.Request) *url.URL
-	// URIPrefix is the path the service is mounted under, e.g. "/tegola" behind
+	// URIPrefix is the path the service is mounted under, e.g. "/shigola" behind
 	// a reverse proxy. Empty means "/".
 	URIPrefix string
 	// Version is the build this service is running, reported on the landing page
@@ -77,7 +77,7 @@ func (s *Service) href(r *http.Request, elem ...string) string {
 // group's own root. Without the slash a client following the landing page's self
 // link is answered with a redirect to the same page — harmless for a client that
 // follows redirects, and a failure for one that does not. At the default mount
-// this is already "/"; behind a prefix it would otherwise be "/tegola".
+// this is already "/"; behind a prefix it would otherwise be "/shigola".
 func (s *Service) hrefRoot(r *http.Request) string {
 	root := s.href(r)
 	if strings.HasSuffix(root, "/") {

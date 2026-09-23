@@ -35,7 +35,7 @@ func (s seedPurgeWorkerTileError) Error() string {
 // path a cache write is handed to a detached pool and the handler returns; here
 // there is no response to protect, and the process exits as soon as the last
 // tile is generated — so a detached write would be dropped or abandoned at exit
-// and `tegola cache seed` would exit 0 having populated an unknown fraction of
+// and `shigola cache seed` would exit 0 having populated an unknown fraction of
 // what it reported. It also restores the error path strict Set exists for:
 // written inline, a joined tier error reaches the worker, which marks the tile
 // failed.

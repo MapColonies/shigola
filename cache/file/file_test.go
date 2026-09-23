@@ -46,33 +46,33 @@ func TestNew(t *testing.T) {
 	tests := map[string]tcase{
 		"valid basepath": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 			},
 			expected: &file.Cache{
-				Basepath: "testfiles/tegola-cache",
+				Basepath: "testfiles/shigola-cache",
 				MaxZoom:  shigola.MaxZ,
 			},
 			err: nil,
 		},
 		"valid basepath and max zoom": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": uint(9),
 			},
 			expected: &file.Cache{
-				Basepath: "testfiles/tegola-cache",
+				Basepath: "testfiles/shigola-cache",
 				MaxZoom:  9,
 			},
 			err: nil,
 		},
 		"valid basepath, max zoom and ttl": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": uint(9),
 				"ttl":      9,
 			},
 			expected: &file.Cache{
-				Basepath:   "testfiles/tegola-cache",
+				Basepath:   "testfiles/shigola-cache",
 				MaxZoom:    9,
 				Expiration: time.Duration(9) * time.Second,
 			},
@@ -85,7 +85,7 @@ func TestNew(t *testing.T) {
 		},
 		"invalid zoom": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": "foo",
 			},
 			expected: nil,
@@ -148,7 +148,7 @@ func TestSetGetPurge(t *testing.T) {
 	tests := map[string]tcase{
 		"get set purge": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 			},
 			key: cache.Key{
 				Z: 0,
@@ -223,7 +223,7 @@ func TestSetOverwrite(t *testing.T) {
 	tests := map[string]tcase{
 		"set overwrite": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 			},
 			key: cache.Key{
 				Z: 0,
@@ -290,7 +290,7 @@ func TestMaxZoom(t *testing.T) {
 	tests := map[string]tcase{
 		"over max zoom": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": uint(10),
 			},
 			key: cache.Key{
@@ -303,7 +303,7 @@ func TestMaxZoom(t *testing.T) {
 		},
 		"under max zoom": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": uint(10),
 			},
 			key: cache.Key{
@@ -316,7 +316,7 @@ func TestMaxZoom(t *testing.T) {
 		},
 		"equals max zoom": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"max_zoom": uint(10),
 			},
 			key: cache.Key{
@@ -398,7 +398,7 @@ func TestExpiration(t *testing.T) {
 	tests := map[string]tcase{
 		"get set purge": {
 			config: map[string]any{
-				"basepath": "testfiles/tegola-cache",
+				"basepath": "testfiles/shigola-cache",
 				"ttl":      1,
 			},
 			key: cache.Key{

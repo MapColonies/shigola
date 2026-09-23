@@ -73,12 +73,12 @@ func TestOGCMount(t *testing.T) {
 // TestOGCMountURIPrefix covers the surface behind a reverse proxy prefix.
 func TestOGCMountURIPrefix(t *testing.T) {
 	server.HostName = &url.URL{Host: serverHostName}
-	server.URIPrefix = "/tegola"
+	server.URIPrefix = "/shigola"
 	defer func() { server.URIPrefix = "/" }()
 
 	a := newTestMapWithLayers(testLayer1)
 
-	req := httptest.NewRequest(http.MethodGet, "/tegola/conformance", nil)
+	req := httptest.NewRequest(http.MethodGet, "/shigola/conformance", nil)
 	w := httptest.NewRecorder()
 	server.NewRouter(a).ServeHTTP(w, req)
 

@@ -21,8 +21,8 @@ import (
 
 // HandleTile serves one vector tile of one collection in one tiling scheme.
 //
-// The path is {tileMatrix}/{tileRow}/{tileCol} — z/y/x, transposed from tegola's
-// native z/x/y. Reading the segments in the wrong order silently serves the
+// The path is {tileMatrix}/{tileRow}/{tileCol} — z/y/x, transposed from the
+// XYZ convention's z/x/y. Reading the segments in the wrong order silently serves the
 // wrong tile, so they are named for what they are throughout.
 func (s *Service) HandleTile(w http.ResponseWriter, r *http.Request) {
 	if _, err := negotiate(r, FormatMVT); err != nil {

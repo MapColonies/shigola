@@ -71,7 +71,7 @@ func TestTMSProperties(t *testing.T) {
 	}
 }
 
-// TestNativeSRID covers the SRID every active grid reports to tegola's tile
+// TestNativeSRID covers the SRID every active grid reports to shigola's tile
 // pipeline. WorldCRS84Quad is the case worth pinning: its CRS is OGC:CRS84,
 // whose EPSG code is genuinely 0, but tiles in it must reproject as EPSG:4326 —
 // a 0 here silently produces tiles with no coordinate system.
@@ -306,7 +306,7 @@ func TestLngLatXYRoundtrip(t *testing.T) {
 }
 
 // TestWebMercatorBBox pins the grid's full extent. The latitude limit is where
-// clamping bugs surface: tegola's maths/webmercator.LatToY clamps at +/-89.5, so
+// clamping bugs surface: shigola's maths/webmercator.LatToY clamps at +/-89.5, so
 // a transform routed through it would not produce this value.
 func TestWebMercatorBBox(t *testing.T) {
 	grid := mustGrid(t, "WebMercatorQuad")
@@ -982,7 +982,7 @@ func TestMatrixSynthesisRejectsShallowZoom(t *testing.T) {
 	}
 }
 
-// TestTileExtentGeomForm checks the tegola-facing accessors line up with the
+// TestTileExtentGeomForm checks the shigola-facing accessors line up with the
 // ported bounds, in geom.Extent's (minx, miny, maxx, maxy) order.
 func TestTileExtentGeomForm(t *testing.T) {
 	grid := mustGrid(t, "WebMercatorQuad")

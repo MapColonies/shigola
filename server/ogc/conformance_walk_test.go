@@ -29,7 +29,7 @@ func TestAPIIsWalkable(t *testing.T) {
 	a := newAtlas(t, tms.WebMercatorQuad, tms.WorldCRS84Quad)
 	r := newRouterFor(t, a)
 
-	const root = "http://tegola.io"
+	const root = "http://example.com"
 
 	// Visited URLs, so a self link or a cycle does not walk forever.
 	seen := map[string]bool{}
@@ -129,7 +129,7 @@ func TestTileTemplateResolves(t *testing.T) {
 		"{tileCol}", "3",
 	).Replace(template)
 
-	path, ok := strings.CutPrefix(filled, "http://tegola.io")
+	path, ok := strings.CutPrefix(filled, "http://example.com")
 	if !ok {
 		t.Fatalf("template %q does not point at this service", template)
 	}
@@ -154,7 +154,7 @@ func TestTileTemplateResolves(t *testing.T) {
 		"{tileCol}", "0",
 	).Replace(template)
 
-	path, _ = strings.CutPrefix(transposed, "http://tegola.io")
+	path, _ = strings.CutPrefix(transposed, "http://example.com")
 	req = httptest.NewRequest(http.MethodGet, path, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -211,7 +211,7 @@ func newRouterAt(t *testing.T, prefix string) *httptreemux.TreeMux {
 
 	svc := ogc.New(ogc.Config{
 		Atlas:     newAtlas(t, tms.WebMercatorQuad),
-		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "tegola.io"} },
+		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "example.com"} },
 		URIPrefix: prefix,
 	})
 
@@ -228,9 +228,9 @@ func newRouterAt(t *testing.T, prefix string) *httptreemux.TreeMux {
 // reverse-proxy prefix, where a link that forgot the prefix resolves off the
 // service entirely.
 func TestAPIIsWalkableBehindPrefix(t *testing.T) {
-	r := newRouterAt(t, "/tegola")
+	r := newRouterAt(t, "/shigola")
 
-	const root = "http://tegola.io/tegola"
+	const root = "http://example.com/shigola"
 
 	seen := map[string]bool{}
 
@@ -241,13 +241,13 @@ func TestAPIIsWalkableBehindPrefix(t *testing.T) {
 		}
 		seen[href] = true
 
-		path, ok := strings.CutPrefix(href, "http://tegola.io")
+		path, ok := strings.CutPrefix(href, "http://example.com")
 		if !ok {
 			t.Errorf("link %q does not point at this service", href)
 			return
 		}
 
-		if !strings.HasPrefix(path, "/tegola") {
+		if !strings.HasPrefix(path, "/shigola") {
 			t.Errorf("link %q drops the mount prefix", href)
 			return
 		}

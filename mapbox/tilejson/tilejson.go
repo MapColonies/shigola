@@ -141,6 +141,6 @@ type VectorLayer struct {
 	// OPTIONAL. Default: 22. >= 0, <= 22.
 	// A positive integer specifying the maximum zoom level. MUST be >= minzoom.
 	MaxZoom uint `json:"maxzoom"`
-	// Tegola supports individual layer tiles.
+	// Shigola supports individual layer tiles.
 	Tiles []string `json:"tiles"`
 }

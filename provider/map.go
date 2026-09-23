@@ -2,7 +2,7 @@ package provider
 
 import "github.com/MapColonies/shigola/internal/env"
 
-// A Map represents a map in the Tegola Config file.
+// A Map represents a map in the Shigola Config file.
 type Map struct {
 	Name        env.String       `toml:"name"`
 	Attribution env.String       `toml:"attribution"`

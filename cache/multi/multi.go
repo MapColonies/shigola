@@ -507,7 +507,7 @@ func TierNames(c cache.Interface) []string {
 
 // LastTierName returns the name of the last tier in read order — the durable
 // one by construction — recursing into a nested chain so the rule is "the last
-// tier of the last tier". It is what `tegola cache seed` targets by default.
+// tier of the last tier". It is what `shigola cache seed` targets by default.
 func LastTierName(c cache.Interface) (string, bool) {
 	tiered, ok := cache.TieredOf(c)
 	if !ok {

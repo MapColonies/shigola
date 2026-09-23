@@ -9,21 +9,21 @@ import (
 	"github.com/MapColonies/shigola/internal/log"
 )
 
-// The write path's three switches live in TEGOLA_OPTIONS rather than in the
+// The write path's three switches live in SHIGOLA_OPTIONS rather than in the
 // [cache] table, because they are process resourcing and lifecycle rather than
 // cache configuration — and because each must be changeable during the incident
 // that reveals the need for it, without a config deploy.
 //
-//	TEGOLA_OPTIONS=DetachedWriteSlots=1024        # pool capacity;     default 256
-//	TEGOLA_OPTIONS=DetachedWriteTimeoutMs=10000   # bound on writes;   default 10000, 0 disables
-//	TEGOLA_OPTIONS=DetachedWriteDrainMs=5000      # shutdown drain;    default 5000,  0 disables
+//	SHIGOLA_OPTIONS=DetachedWriteSlots=1024        # pool capacity;     default 256
+//	SHIGOLA_OPTIONS=DetachedWriteTimeoutMs=10000   # bound on writes;   default 10000, 0 disables
+//	SHIGOLA_OPTIONS=DetachedWriteDrainMs=5000      # shutdown drain;    default 5000,  0 disables
 //
 // Integers throughout, and the milliseconds carry their unit in the key name
 // for a second reason beyond clarity: this parser's delimiter set is ",.\t \n",
 // so it splits on "." and a duration string like "1.5s" would silently truncate
 // to 1.
 //
-// This is the only place TEGOLA_OPTIONS is read. It was not always: atlas
+// This is the only place SHIGOLA_OPTIONS is read. It was not always: atlas
 // parsed its own switches out of the same variable until MAPCO-11491 retired
 // them with the Go-side encode path. Parsing lives here because this is the
 // package that owns the pool, and that reason outlives the other reader —
@@ -99,7 +99,7 @@ func parseOptions(raw string) {
 	}
 }
 
-// optionDelimiters separates TEGOLA_OPTIONS entries.
+// optionDelimiters separates SHIGOLA_OPTIONS entries.
 //
 // Deliberately *not* the set atlas uses for SimplifyMaxZoom, which also splits
 // on ".". Splitting on "." makes `DetachedWriteTimeoutMs=1.5s` read as the
@@ -108,7 +108,7 @@ func parseOptions(raw string) {
 // makes Atoi fail, and a failed parse falls back to the safe default.
 const optionDelimiters = ",\t \n"
 
-// optionInt reads `key=<int>` out of a lowercased TEGOLA_OPTIONS string.
+// optionInt reads `key=<int>` out of a lowercased SHIGOLA_OPTIONS string.
 func optionInt(options, key string) (int, bool) {
 	idx := strings.Index(options, key+"=")
 	if idx == -1 {

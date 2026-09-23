@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	tegolaCache "github.com/MapColonies/shigola/cache"
+	shigolaCache "github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/faketier"
@@ -14,7 +14,7 @@ import (
 	_ "github.com/MapColonies/shigola/atlas"
 )
 
-var tiersKey = &tegolaCache.Key{MapName: "osm", Z: 7, X: 6, Y: 5}
+var tiersKey = &shigolaCache.Key{MapName: "osm", Z: 7, X: 6, Y: 5}
 
 func init() {
 	for cacheType, name := range map[string]string{
@@ -23,7 +23,7 @@ func init() {
 		"clisolo": "solo",
 	} {
 		tier := faketier.New(name)
-		if err := tegolaCache.Register(cacheType, func(dict.Dicter) (tegolaCache.Interface, error) {
+		if err := shigolaCache.Register(cacheType, func(dict.Dicter) (shigolaCache.Interface, error) {
 			return tier, nil
 		}); err != nil {
 			panic(err)
@@ -31,10 +31,10 @@ func init() {
 	}
 }
 
-func twoTierCache(t *testing.T) tegolaCache.Interface {
+func twoTierCache(t *testing.T) shigolaCache.Interface {
 	t.Helper()
 
-	c, err := tegolaCache.For("multi", dict.Dict{
+	c, err := shigolaCache.For("multi", dict.Dict{
 		"layers": []map[string]interface{}{
 			{"type": "clihot", "name": "hot"},
 			{"type": "clidurable", "name": "durable"},
@@ -49,7 +49,7 @@ func twoTierCache(t *testing.T) tegolaCache.Interface {
 
 // TestResolveCacheTiers covers what a seed run is allowed to write, which is
 // the behaviour most likely to surprise: adding a tier to an existing chain
-// config changes what `tegola cache seed` writes.
+// config changes what `shigola cache seed` writes.
 func TestResolveCacheTiers(t *testing.T) {
 	type tcase struct {
 		flag        string
@@ -105,7 +105,7 @@ func TestResolveCacheTiers(t *testing.T) {
 // there is nothing to restrict and the seed default is unchanged for every
 // deployment that is not using a chain.
 func TestResolveCacheTiersSingleBackend(t *testing.T) {
-	c, err := tegolaCache.For("clisolo", dict.Dict{})
+	c, err := shigolaCache.For("clisolo", dict.Dict{})
 	if err != nil {
 		t.Fatalf("building the cache: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestResolveCacheTiersSingleBackend(t *testing.T) {
 // TestResolveCacheTiersNested — resolution runs against the whole tree, and the
 // default recurses: the last tier of the last tier.
 func TestResolveCacheTiersNested(t *testing.T) {
-	c, err := tegolaCache.For("multi", dict.Dict{
+	c, err := shigolaCache.For("multi", dict.Dict{
 		"layers": []map[string]interface{}{
 			{"type": "clihot", "name": "hot"},
 			{"type": "multi", "name": "nested", "layers": []map[string]interface{}{
@@ -191,14 +191,14 @@ func TestWorkerContextCarriesEveryIntent(t *testing.T) {
 			// These two are unconditional. Without synchronous writes the seed
 			// loses writes at process exit; without promotion suppression its
 			// own reads flood the hot tier.
-			if !tegolaCache.SynchronousWrites(got) {
+			if !shigolaCache.SynchronousWrites(got) {
 				t.Error("the seed context does not carry WithSynchronousWrites")
 			}
-			if !tegolaCache.PromotionDisabled(got) {
+			if !shigolaCache.PromotionDisabled(got) {
 				t.Error("the seed context does not carry WithoutPromotion")
 			}
 
-			names, restricted := tegolaCache.WriteTiers(got)
+			names, restricted := shigolaCache.WriteTiers(got)
 			if restricted != tc.expectedRestricted {
 				t.Errorf("write tiers restricted: got %v, expected %v", restricted, tc.expectedRestricted)
 			}
@@ -206,9 +206,9 @@ func TestWorkerContextCarriesEveryIntent(t *testing.T) {
 				t.Errorf("write tiers: got %v, expected %v", names, tc.expectedTiers)
 			}
 
-			if tegolaCache.InvalidateUnwritten(got) != tc.expectedInvalidate {
+			if shigolaCache.InvalidateUnwritten(got) != tc.expectedInvalidate {
 				t.Errorf("invalidate unwritten: got %v, expected %v",
-					tegolaCache.InvalidateUnwritten(got), tc.expectedInvalidate)
+					shigolaCache.InvalidateUnwritten(got), tc.expectedInvalidate)
 			}
 		}
 	}
@@ -243,7 +243,7 @@ func TestSeedSemanticsEndToEnd(t *testing.T) {
 	hot := faketier.NewWithRecorder("hot", rec)
 	durable := faketier.NewWithRecorder("durable", rec)
 
-	chain, err := multi.NewChain([]tegolaCache.NamedTier{
+	chain, err := multi.NewChain([]shigolaCache.NamedTier{
 		{Name: "hot", Cache: hot},
 		{Name: "durable", Cache: durable},
 	}, true, nil)

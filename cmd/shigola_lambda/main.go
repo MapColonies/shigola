@@ -48,7 +48,7 @@ func init() {
 
 	confLocation := DefaultConfLocation
 
-	// check if the env TEGOLA_CONFIG is set
+	// check if the env SHIGOLA_CONFIG is set
 	if env.Getenv("CONFIG") != "" {
 		confLocation = env.Getenv("CONFIG")
 	}

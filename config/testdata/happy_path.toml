@@ -1,9 +1,9 @@
 tile_buffer = 12
 
 [webserver]
-hostname = "https://cdn.tegola.io"
+hostname = "https://cdn.example.com"
 port = ":8080"
-cors_allowed_origin = "tegola.io"
+cors_allowed_origin = "example.com"
 proxy_protocol = "https"
 
     [webserver.headers]
@@ -12,7 +12,7 @@ proxy_protocol = "https"
 
 [cache]
 type = "file"
-basepath = "/tmp/tegola-cache"
+basepath = "/tmp/shigola-cache"
 
 [[providers]]
 name = "provider1"

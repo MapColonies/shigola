@@ -58,7 +58,7 @@ slog.SetDefault(log.New(os.Stderr, lvl, build.Version, build.GitRevision))
 ## Logging
 
 Anything that can use slog directly should. The package-level helpers exist for
-the call sites inherited from tegola, and log through `slog.Default()`:
+the call sites inherited from Tegola, and log through `slog.Default()`:
 
 | Helpers | Message |
 |:---|:---|

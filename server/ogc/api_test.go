@@ -81,8 +81,8 @@ func TestAPIServerURL(t *testing.T) {
 
 	// No trailing slash: OpenAPI appends each path, and every path in the
 	// document begins with one, so a trailing slash here yields "//conformance".
-	if doc.Servers[0].URL != "http://tegola.io" {
-		t.Errorf("servers[0].url = %q, want %q", doc.Servers[0].URL, "http://tegola.io")
+	if doc.Servers[0].URL != "http://example.com" {
+		t.Errorf("servers[0].url = %q, want %q", doc.Servers[0].URL, "http://example.com")
 	}
 }
 

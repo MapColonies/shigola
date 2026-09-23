@@ -18,7 +18,7 @@ var (
 	ParseOptions     = parseOptions
 )
 
-// WriteOptions returns the parsed TEGOLA_OPTIONS write-path switches.
+// WriteOptions returns the parsed SHIGOLA_OPTIONS write-path switches.
 func WriteOptions() (slots int, timeout, drain time.Duration) {
 	return detachedWriteSlots, detachedWriteTimeout, detachedWriteDrain
 }

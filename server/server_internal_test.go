@@ -55,29 +55,29 @@ func TestHostName(t *testing.T) {
 			expected: "localhost:8080",
 		},
 		"hostname set": {
-			// With hostname set and port set to "none" in config, expect "cdn.tegola.io"
+			// With hostname set and port set to "none" in config, expect "cdn.example.com"
 			url:      "http://localhost:8080/collections",
-			hostName: "cdn.tegola.io",
+			hostName: "cdn.example.com",
 			port:     "none",
-			expected: "cdn.tegola.io",
+			expected: "cdn.example.com",
 		},
 		"hostname set port set": {
-			// With hostname set and port set to "none" in config, expect "cdn.tegola.io"
+			// With hostname set and port set to "none" in config, expect "cdn.example.com"
 			url:      "http://localhost:8080/collections",
-			hostName: "cdn.tegola.io",
+			hostName: "cdn.example.com",
 			port:     ":9090",
-			expected: "cdn.tegola.io",
+			expected: "cdn.example.com",
 		},
 		"hostname set port in request": {
 			// Hostname set, no port in config, but port in url.  Expect <config_host>
 			url:      "http://localhost:8080/collections",
-			hostName: "cdn.tegola.io",
-			expected: "cdn.tegola.io",
+			hostName: "cdn.example.com",
+			expected: "cdn.example.com",
 		},
 		"hostname set no port in config or url": {
 			url:      "http://localhost/collections",
-			hostName: "cdn.tegola.io",
-			expected: "cdn.tegola.io",
+			hostName: "cdn.example.com",
+			expected: "cdn.example.com",
 		},
 		"hostname unset no port in config or url": {
 			url:      "http://localhost/collections",

@@ -2,7 +2,7 @@ package tms
 
 // Ported from morecantile/tests/test_mercantile_conform.py (MIT, Development
 // Seed), which pins WebMercatorQuad against mapbox/mercantile — the de facto
-// reference for the XYZ scheme every existing tegola client uses.
+// reference for the XYZ scheme every existing slippy-map client uses.
 //
 // mercantile is a Python library, so instead of calling it, the formulas below
 // reimplement it directly from its source. That keeps the check independent: the

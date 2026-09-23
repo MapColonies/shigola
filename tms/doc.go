@@ -1,5 +1,5 @@
 // Package tms implements OGC Two Dimensional Tile Matrix Set (OGC 17-083r4)
-// tiling schemes, and is the single source of truth for which grids tegola can
+// tiling schemes, and is the single source of truth for which grids shigola can
 // produce and describe.
 //
 // The package is a faithful Go port of developmentseed/morecantile 7.0.3

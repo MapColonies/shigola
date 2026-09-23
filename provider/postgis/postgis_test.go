@@ -40,10 +40,10 @@ func TestDBConfig(t *testing.T) {
 		"1": {
 			opts: &postgis.DBConfigOptions{
 				Uri:                        uri,
-				ApplicationName:            "tegola",
+				ApplicationName:            "shigola",
 				DefaultTransactionReadOnly: "TRUE",
 			},
-			expApplicationName:            "tegola",
+			expApplicationName:            "shigola",
 			expDefaultTransactionReadOnly: "TRUE",
 		},
 		"2": {
@@ -58,10 +58,10 @@ func TestDBConfig(t *testing.T) {
 		"3": {
 			opts: &postgis.DBConfigOptions{
 				Uri:                        uri,
-				ApplicationName:            "tegola",
+				ApplicationName:            "shigola",
 				DefaultTransactionReadOnly: "FALSE",
 			},
-			expApplicationName:            "tegola",
+			expApplicationName:            "shigola",
 			expDefaultTransactionReadOnly: "FALSE",
 		},
 	}
@@ -78,7 +78,7 @@ func TestTLSConfig(t *testing.T) {
 		&postgis.DBConfigOptions{
 			Uri:                        uri,
 			DefaultTransactionReadOnly: "TRUE",
-			ApplicationName:            "tegola",
+			ApplicationName:            "shigola",
 		})
 	if err != nil {
 		t.Fatalf("unable to build db config: %v", err)
