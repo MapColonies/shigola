@@ -47,7 +47,7 @@ func TestParseTypeErrorMessages(t *testing.T) {
 		"unquoted garbage for a boolean": {
 			config: "[[maps]]\nname = \"osm\"\nserve_layer_collections = xx\n",
 			want: []string{
-				`last key parsed 'maps.serve_layer_collections'`,
+				`line 3 (last key "maps.serve_layer_collections")`,
 				`expected value but found "xx" instead`,
 				"(maps.serve_layer_collections takes a boolean, true or false)",
 			},
