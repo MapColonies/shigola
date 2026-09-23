@@ -133,8 +133,8 @@ func New(config dict.Dicter) (observability.Interface, error) {
 
 func (*observer) Name() string { return Name }
 
-func (observer) Handler(string) http.Handler { return promhttp.Handler() }
-func (obs *observer) Init()                  { obs.initCall.Do(obs.init) }
+func (*observer) Handler(string) http.Handler { return promhttp.Handler() }
+func (obs *observer) Init()                   { obs.initCall.Do(obs.init) }
 func (obs *observer) init() {
 	obs.PublishBuildInfo()
 	if obs == nil || obs.pushURL == "" {
