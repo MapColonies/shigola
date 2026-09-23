@@ -5,8 +5,8 @@
 # and nothing else -- no tests, no generators -- so anything `go build` ignores
 # is freight.
 #
-# vendor/ is deliberately absent from this list. The build is `-mod vendor` and
-# fails without it.
+# Dependencies are not in the context at all: the build stage downloads them
+# against go.sum (MAPCO-11521).
 
 # By far the largest single thing in the context, and of no use to a build that
 # takes its version, branch and revision as build arguments.

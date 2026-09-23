@@ -16,7 +16,8 @@ import (
 // Shared by the two tests below because both are properties of the whole
 // repository rather than of any one package, and both therefore have to read
 // the tree rather than build it. The skips are the same for both: vendor/ is
-// other people's code and neither test says anything about it.
+// never committed (MAPCO-11521), but a local `go mod vendor` would still put
+// other people's code on disk, and neither test says anything about it.
 func walkTree(t *testing.T, keep func(name string) bool, check func(rel, body string)) {
 	t.Helper()
 

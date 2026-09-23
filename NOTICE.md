@@ -46,10 +46,10 @@ as the port's correctness oracle.
 
 ---
 
-## Vendored Go dependencies
+## Go module dependencies
 
-Third-party Go modules are vendored under [`vendor/`](vendor/). Each retains its
-own license file within its module directory; see [`go.mod`](go.mod) for the
+Third-party Go modules are compiled into Shigola's binaries. Each retains its
+own license file within its module source; see [`go.mod`](go.mod) for the
 full list and versions. These include, among others:
 
 - `github.com/go-spatial/geom`, `github.com/go-spatial/proj`,

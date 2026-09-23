@@ -66,6 +66,6 @@ full, unmodified, at tms/LICENSE-morecantile.
 
 --------------------------------------------------------------------------------
 
-Vendored Go dependencies under vendor/ retain their own licence files within
-their module directories. See NOTICE.md for the complete list of third-party
+Third-party Go modules compiled into this software retain their own licence
+files within their module sources, as listed in go.mod. See NOTICE.md for the complete list of third-party
 works redistributed with this software.

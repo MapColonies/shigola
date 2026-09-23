@@ -258,9 +258,6 @@ request is in range and returns a real tile. The failure mode is wrong imagery, 
 
 ## Building from source
 
-`vendor/` is committed, so **always build and test with `-mod vendor`** — every command in this
-repository does.
-
 ```bash
 git clone https://github.com/MapColonies/shigola
 cd shigola
@@ -279,12 +276,37 @@ cd internal/build && go generate
 Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache`, `noGCSCache`,
 `noPostgisProvider` and `noPrometheusObserver`; `pprof` opts in.
 
+### Dependencies
+
+**Nothing is vendored.** Dependencies resolve from the Go module cache, and `go.sum` pins every one
+of them cryptographically — a download that does not match it fails the build. Change them with
+`go get` and `go mod tidy`, and commit `go.mod` and `go.sum` together.
+
+`vendor/` is in `.gitignore`, and that is deliberate (MAPCO-11521). The fork inherited vendoring
+from Tegola, which vendors, and kept it only while it was tracking Tegola. The costs outlived that
+reason: the directory was 88% of the tracked files and 72% of the bytes, and it is never
+`gofmt -s` clean, so the formatting gate had to carve it out and a `gofmt -s -w .` at the root
+rewrote 257 files of other people's code. What it bought was **availability, not integrity** —
+`go.sum` already provided the integrity.
+
+The consequence is that **a build needs the module proxy, or a module cache that already holds
+what `go.sum` names.** CI, the release builds and the container build all have network, so none of
+them needs anything arranged. For a build that has to run offline, seed it rather than reinstating
+`vendor/`:
+
+```bash
+go mod download                     # with network, fills $(go env GOMODCACHE)
+GOPROXY=off go build ./cmd/shigola   # offline, from that cache alone
+```
+
+Or point `GOPROXY` at an internal proxy the offline network can reach. Either keeps the tree free of
+a copy of its dependencies.
+
 ## Code conventions
 
 * **`gofmt -s` and `go vet` are required**, and CI enforces both (see [Required checks](#required-checks)).
-  Never run `gofmt -s -w .` at the root: it rewrites `vendor/`. Format the paths you changed, and if
-  that produces changes in parts of the tree you are not working on, send those in a separate pull
-  request.
+  Format the paths you changed, and if that produces changes in parts of the tree you are not
+  working on, send those in a separate pull request.
 * **Error variables** take the form `var ErrErrorName = errors.New("provider: canceled")` — the text
   all lowercase, with no punctuation at the end.
 * **Table-driven subtests keyed by name**, with a `fn := func(tc tcase) func(*testing.T)` closure.
@@ -331,8 +353,8 @@ CGO_ENABLED=0 go test -run '^$' ./...   # links every test binary, runs none
 CI fails a pull request on any of these, so run them before you push:
 
 ```bash
-git ls-files -z '*.go' ':!:vendor/**' | xargs -0 gofmt -s -l   # vendor/ is never -s clean; must print nothing
-go vet ./...              # the default analyzers; the tree is clean against them
+git ls-files -z '*.go' | xargs -0 gofmt -s -l   # must print nothing
+go vet ./...                                    # the default analyzers; the tree is clean against them
 govulncheck ./...
 ```
 
