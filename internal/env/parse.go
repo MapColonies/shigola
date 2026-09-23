@@ -21,7 +21,7 @@ func ParseString(v interface{}) (*string, error) {
 		}
 		return &val, nil
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantString}
 	}
 }
 
@@ -58,9 +58,12 @@ func ParseBool(v interface{}) (*bool, error) {
 		}
 
 		b, err := strconv.ParseBool(val)
-		return &b, err
+		if err != nil {
+			return nil, ErrType{v: val, want: wantBool}
+		}
+		return &b, nil
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantBool}
 	}
 }
 
@@ -105,9 +108,12 @@ func ParseInt(v interface{}) (*int, error) {
 		}
 
 		i, err := strconv.Atoi(val)
-		return &i, err
+		if err != nil {
+			return nil, ErrType{v: val, want: wantInt}
+		}
+		return &i, nil
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantInt}
 	}
 }
 
@@ -147,12 +153,12 @@ func ParseUint(v interface{}) (*uint, error) {
 		return &ui, nil
 	case int:
 		if val < 0 {
-			return nil, ErrType{v}
+			return nil, ErrType{v: v, want: wantUint}
 		}
 		return p.Uint(uint(val)), nil
 	case int64:
 		if val < 0 {
-			return nil, ErrType{v}
+			return nil, ErrType{v: v, want: wantUint}
 		}
 		return p.Uint(uint(val)), nil
 	case string:
@@ -162,10 +168,13 @@ func ParseUint(v interface{}) (*uint, error) {
 		}
 
 		ui64, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return nil, ErrType{v: val, want: wantUint}
+		}
 		ui := uint(ui64)
-		return &ui, err
+		return &ui, nil
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantUint}
 	}
 }
 
@@ -210,9 +219,12 @@ func ParseFloat(v interface{}) (*float64, error) {
 		}
 
 		flt, err := strconv.ParseFloat(val, 64)
-		return &flt, err
+		if err != nil {
+			return nil, ErrType{v: val, want: wantFloat}
+		}
+		return &flt, nil
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantFloat}
 	}
 }
 
@@ -268,7 +280,7 @@ func ParseDict(v interface{}) (*Dict, error) {
 			}
 		}
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantDict}
 	}
 
 	return &d, nil
@@ -288,6 +300,6 @@ func ParseURL(v any) (*url.URL, error) {
 
 		return url.Parse(val)
 	default:
-		return nil, ErrType{v}
+		return nil, ErrType{v: v, want: wantURL}
 	}
 }

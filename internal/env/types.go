@@ -19,14 +19,39 @@ func (e ErrEnvVar) Error() string {
 	return fmt.Sprintf("environment variable %q not found", string(e))
 }
 
-// ErrType corresponds with an incorrect type passed to UnmarshalTOML
+// ErrType corresponds with a value of the wrong type, or a string that does not
+// parse as the type, passed to UnmarshalTOML.
+//
+// It names the value and what the value should have been, and nothing else:
+// UnmarshalTOML is never told the key it is decoding, so the key is not ours to
+// report. config.Parse adds it where the TOML parser knows it (MAPCO-11617).
 type ErrType struct {
 	v any
+	// want is what v should have been, as a noun phrase: "a boolean".
+	want string
 }
 
 func (te ErrType) Error() string {
-	return fmt.Sprintf("type %t could not be converted", te.v)
+	// A string is shown quoted and without its type, because in a config the
+	// quotes already say it was a string.
+	if s, ok := te.v.(string); ok {
+		return fmt.Sprintf("%q is not %s", s, te.want)
+	}
+	return fmt.Sprintf("%v (%T) is not %s", te.v, te.v, te.want)
 }
+
+// What each parser wants, shared with the slice parsers in dict.go.
+const (
+	wantString = "a string"
+	wantBool   = "a boolean (true or false)"
+	wantInt    = "an integer"
+	wantUint   = "a non-negative integer"
+	// TOML reads 1 as an integer, and ParseFloat takes only a float, so the
+	// message has to show what a float looks like.
+	wantFloat = "a floating-point number (e.g. 1.0)"
+	wantDict  = "a table"
+	wantURL   = "a URL string"
+)
 
 // replaceEnvVars replaces environment variable placeholders in reader stream with values
 func replaceEnvVar(in string) (string, error) {
