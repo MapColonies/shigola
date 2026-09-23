@@ -14,7 +14,6 @@ import (
 
 func TestMaps(t *testing.T) {
 	type tcase struct {
-		atlas       atlas.Atlas
 		maps        []provider.Map
 		providers   []dict.Dict
 		expectedErr error
@@ -36,7 +35,10 @@ func TestMaps(t *testing.T) {
 				return
 			}
 
-			err = register.Maps(&tc.atlas, tc.maps, providers)
+			// A fresh atlas per case, not one carried in tcase: an Atlas holds a
+			// mutex, and a tcase is copied by value into fn and by range.
+			var a atlas.Atlas
+			err = register.Maps(&a, tc.maps, providers)
 			if !errors.Is(err, tc.expectedErr) {
 				t.Errorf("invalid error, expected %v got %v", tc.expectedErr, err)
 			}
