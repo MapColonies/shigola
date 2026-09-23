@@ -170,11 +170,13 @@ Extending it is a separate change per client library.
 
 Log records written while serving a traced request carry that request's ids as
 top-level fields, so a trace in Tempo reaches the log lines it produced and a
-log line reaches its trace (MAPCO-11494):
+log line reaches its trace (MAPCO-11494). The rest of the record is described in
+`internal/log/README.md`:
 
 ```json
-{"time":"...","level":"ERROR","msg":"cache/multi: tier (redis) get: dial tcp: connection refused",
- "shigola":{"version":"1.4.0","pid":1,"rev":"9f3c1ab"},
+{"time":1790161525425,"level":"error","msg":"cache/multi: tier (redis) get: dial tcp: connection refused",
+ "pid":1,"hostname":"web-01","version":"1.4.0","rev":"9f3c1ab",
+ "err":{"type":"*net.OpError","message":"dial tcp: connection refused","stack":"goroutine 42 [running]:\n..."},
  "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
 ```
 
@@ -205,11 +207,10 @@ provider construction, never per request.)
 
 Three properties of this are load-bearing.
 
-**Top level, not under the `shigola` group.** The group is attached as a single
-grouped attribute rather than with `WithGroup`, because an open group qualifies
-everything after it and would emit `shigola.trace_id` — not a name any log
-pipeline looks for. `internal/log.ServiceAttrs` returns an `slog.Attr` precisely
-so that placement cannot be undone by a caller reaching for `WithGroup`.
+**Top level.** Everything the logger binds — the process identity included — is
+a plain top-level attribute, never an open `WithGroup`: an open group qualifies
+everything after it and would emit `shigola.trace_id`, which is not a name any
+log pipeline looks for.
 
 **The span, not just the trace.** The ids are the innermost span active where
 the line was written, so a tier read failure hangs off `cache.Get`, a pgx
@@ -234,10 +235,6 @@ Two consequences worth knowing:
   shutdown and the pool-level saturation warnings have no request context by
   definition, and no empty fields are added for them. Nor does anything logged
   when `[tracing]` is disabled: there is no span, so there are no ids.
-- **The `stack` field moved.** `ServiceAttrs` is what took the process identity
-  out of an open group, and an ERROR record's stack trace was inside that group
-  too — it is now `stack` at the top level rather than `shigola.stack`. Anything
-  parsing that path needs updating; nothing else about the record changed.
 
 ## Costs when disabled
 
@@ -281,8 +278,8 @@ now sets an error handler of its own, and bridges OTEL's internal logger into
 slog so its diagnostics arrive structured and levelled rather than as plain text
 on stderr.
 
-So: if tracing is enabled and no traces arrive, look for `ERROR` lines prefixed
-`tracing:`.
+So: if tracing is enabled and no traces arrive, look for `error` records whose
+message is prefixed `tracing:`.
 
 ## Shutdown
 
