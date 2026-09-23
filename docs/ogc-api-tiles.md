@@ -271,7 +271,7 @@ The suite's data source is the Athens OSM extract in the PostGIS fixture, served
 
 ```sh
 docker compose up -d && docker wait migration       # the Athens fixture, in PostGIS
-go build -mod vendor -o /tmp/shigola ./cmd/shigola
+go build -o /tmp/shigola ./cmd/shigola
 /tmp/shigola serve --config .github/cite/config.toml --port ":8081" &
 .github/cite/run.sh WebMercatorQuad 14 6324 9271
 .github/cite/run.sh WorldCRS84Quad 14 4740 18542

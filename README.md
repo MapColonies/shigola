@@ -398,7 +398,7 @@ To build shigola from the source, make sure you have Go installed and have clone
 Navigate to the repository then run the following command:
 
 ```bash
-go generate ... && cd cmd/shigola/ && go build -mod vendor
+go generate ... && cd cmd/shigola/ && go build
 ```
 
 You will now have a binary named `shigola` in the current directory which is [ready to run](#running-shigola-as-a-vector-tile-server).

@@ -265,7 +265,7 @@ repository does.
 git clone https://github.com/MapColonies/shigola
 cd shigola
 
-go build -mod vendor ./cmd/shigola
+go build ./cmd/shigola
 ./shigola serve --config=path/to/config.toml
 ```
 
@@ -312,7 +312,7 @@ it:
 docker compose up -d
 docker wait migration        # must print 0 before going on
 
-go test -mod vendor -race ./...
+go test -race ./...
 docker compose down
 ```
 
@@ -322,8 +322,8 @@ true. Leave it unset: `go test -race` links a C runtime for its detector and nee
 That the tree still *builds* without a C toolchain is checked separately, and CI checks it:
 
 ```bash
-CGO_ENABLED=0 go build -mod vendor ./...
-CGO_ENABLED=0 go test -run '^$' -mod vendor ./...   # links every test binary, runs none
+CGO_ENABLED=0 go build ./...
+CGO_ENABLED=0 go test -run '^$' ./...   # links every test binary, runs none
 ```
 
 ### Required checks
@@ -332,7 +332,7 @@ CI fails a pull request on any of these, so run them before you push:
 
 ```bash
 git ls-files -z '*.go' ':!:vendor/**' | xargs -0 gofmt -s -l   # vendor/ is never -s clean; must print nothing
-go vet -mod vendor ./...              # the default analyzers; the tree is clean against them
+go vet ./...              # the default analyzers; the tree is clean against them
 govulncheck ./...
 ```
 
@@ -382,7 +382,7 @@ docker wait migration        # must print 0 before going on
 RUN_DATA_TESTS=yes \
   PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
   PGSSLMODE=disable \
-  go test -mod vendor ./server/tilecontent/
+  go test ./server/tilecontent/
 ```
 
 They live in a package of their own so CI can name the whole set without naming the tests in it: the
@@ -437,9 +437,9 @@ RUN_POSTGIS_TESTS=yes RUN_REDIS_TESTS=yes \
   PGURI="postgres://postgres:postgres@localhost:5432/shigola?sslmode=disable" \
   PGURI_NO_ACCESS="postgres://shigola_no_access:postgres@localhost:5432/shigola?sslmode=disable" \
   PGSSLMODE=disable \
-  go test -mod vendor -race -covermode atomic -coverprofile=profile.cov ./...
+  go test -race -covermode atomic -coverprofile=profile.cov ./...
 
-go run -mod vendor ./ci/coverage        # check the profile against the floor
+go run ./ci/coverage        # check the profile against the floor
 ```
 
 `-race` alongside `-covermode atomic` is not redundant: atomic is race-safe *counting*, not race
@@ -466,7 +466,7 @@ ran the tests — it records the `RUN_*_TESTS` gates it finds set, so the baseli
 its numbers came from:
 
 ```bash
-go run -mod vendor ./ci/coverage -write
+go run ./ci/coverage -write
 ```
 
 Regenerating keeps the recorded floor unless you pass `-floor` — lowering it is meant to be an
