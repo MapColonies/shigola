@@ -28,3 +28,8 @@ cmd/shigola_lambda/shigola_lambda
 # Coverage profiles. The measured baseline in ci/coverage-baseline.txt is
 # committed; the profile it is derived from is a build artifact and is not.
 profile.cov
+
+# Dependencies resolve from the module cache against go.sum; nothing is
+# vendored (MAPCO-11521). Ignored so a local `go mod vendor` cannot creep back
+# into a commit -- see CONTRIBUTING.md, "Dependencies".
+/vendor/

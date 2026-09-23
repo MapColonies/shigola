@@ -46,14 +46,22 @@ ENV BUILD_PKG="${BUILDPKG}"
 # install that used to precede this build for roughly 1:30.
 ENV CGO_ENABLED=0
 
+WORKDIR /go/src/github.com/MapColonies/shigola
+
+# Dependencies before source, in a layer of their own, so that a source-only
+# change reuses the downloaded module cache instead of fetching it again. This
+# step is the build's one network dependency: nothing is vendored, and go.sum
+# is what makes the download trustworthy (MAPCO-11521).
+COPY go.mod go.sum ./
+RUN go mod download
+
 # Set up source for compilation
-RUN mkdir -p /go/src/github.com/MapColonies/shigola
-COPY . /go/src/github.com/MapColonies/shigola
+COPY . .
 
 RUN env
 
 # Build binary
-RUN cd /go/src/github.com/MapColonies/shigola/cmd/shigola \
+RUN cd cmd/shigola \
 	&& go build -v  \
 	-ldflags "-w -X '${BUILD_PKG}.Version=${VERSION}' -X '${BUILD_PKG}.GitRevision=${GIT_REVISION}' -X '${BUILD_PKG}.GitBranch=${GIT_BRANCH}'" \
 	-gcflags "-N -l" \

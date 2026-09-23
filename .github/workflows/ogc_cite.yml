@@ -89,7 +89,7 @@ jobs:
       - name: Build shigola
         env:
           CGO_ENABLED: 0
-        run: go build -mod vendor -o "${{ runner.temp }}/shigola" ./cmd/shigola
+        run: go build -o "${{ runner.temp }}/shigola" ./cmd/shigola
 
       # Pulled before shigola starts so the ~1 GB download is not counted against
       # the readiness timeouts in run.sh.

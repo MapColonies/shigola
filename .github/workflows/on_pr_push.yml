@@ -42,8 +42,8 @@ jobs:
         env:
           CGO_ENABLED: 0
         run: |
-          go build -mod vendor ./...
-          go test -run '^$' -mod vendor ./...
+          go build ./...
+          go test -run '^$' ./...
 
       # `up -d` returns as soon as the containers start, not when the fixture is
       # loaded, so the suite could begin against a half-restored database. The
@@ -96,7 +96,7 @@ jobs:
         # race *detection*. The cache write path runs a goroutine pool, detached
         # contexts and a concurrent tier fan-out, none of which -covermode checks.
         run: |
-          go test -mod vendor -race -covermode atomic -coverprofile=profile.cov ./...
+          go test -race -covermode atomic -coverprofile=profile.cov ./...
 
       - name: Send coverage report to Coveralls
         env:
@@ -109,7 +109,7 @@ jobs:
             echo "Skipping Coveralls upload: no GitHub token is available"
             exit 0
           fi
-          go install -mod=vendor github.com/mattn/goveralls
+          go install github.com/mattn/goveralls
           $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
 
       # Deliberately after the Coveralls upload rather than before it: when this
@@ -132,7 +132,7 @@ jobs:
       # real finding rather than a reason to lower the floor -- read the
       # per-package rows to see which package lost coverage.
       - name: Check coverage against the floor
-        run: go run -mod vendor ./ci/coverage
+        run: go run ./ci/coverage
 
       # always(): the coverage gate above can fail the job, and a teardown that
       # only runs on success leaves the fixture containers behind.
@@ -200,7 +200,7 @@ jobs:
         # it a passing run prints one "ok" line, which cannot tell a suite that
         # verified twenty things apart from one that silently verified none --
         # the exact failure this job exists to rule out.
-        run: go test -mod vendor -race -v ./server/tilecontent/
+        run: go test -race -v ./server/tilecontent/
 
       - name: Tear down test environment
         if: always()
@@ -221,13 +221,14 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
 
-      # vendor/ is committed and is not `gofmt -s` clean, so `gofmt -s -l .`
-      # would report hundreds of files nobody here owns. List the tracked Go
-      # files outside it instead -- a filter on gofmt's output would have to
+      # Tracked Go files rather than `gofmt -s -l .`: the gate is about what a
+      # pull request can change, so an untracked tree on disk -- a local
+      # `go mod vendor`, which is ignored and never -s clean -- cannot fail it.
+      # Listing files beats filtering gofmt's output, which would have to
       # survive grep exiting 1 on the clean run under the runner's pipefail.
       - name: Check formatting
         run: |
-          unformatted=$(git ls-files -z '*.go' ':!:vendor/**' | xargs -0 gofmt -s -l)
+          unformatted=$(git ls-files -z '*.go' | xargs -0 gofmt -s -l)
           if [ -n "$unformatted" ]; then
             echo "::error::these files are not gofmt -s clean:"
             echo "$unformatted"
@@ -235,16 +236,15 @@ jobs:
           fi
 
       # The default analyzers, nothing added: the tree was brought clean against
-      # exactly these (MAPCO-11498), so a finding here is new. vet skips vendor/
-      # on its own; ./... never matches it.
+      # exactly these (MAPCO-11498), so a finding here is new.
       #
       # Twice, because vet only sees the files the build tags select. The second
       # run sets every opt-out tag plus pprof, so the stub files that stand in
       # for a compiled-out backend are vetted too, not only the default build.
       - name: Vet
         run: |
-          go vet -mod vendor ./...
-          go vet -mod vendor -tags 'noS3Cache noRedisCache noAzblobCache noGCSCache noGpkgProvider noPostgisProvider noPrometheusObserver pprof' ./...
+          go vet ./...
+          go vet -tags 'noS3Cache noRedisCache noAzblobCache noGCSCache noGpkgProvider noPostgisProvider noPrometheusObserver pprof' ./...
 
   govulncheck:
     name: Run govulncheck

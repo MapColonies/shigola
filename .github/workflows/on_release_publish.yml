@@ -78,7 +78,7 @@ jobs:
         GOOS: linux
       run: |
           cd cmd/shigola
-          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+          go build -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
@@ -108,7 +108,7 @@ jobs:
         GOARCH: arm64
       run: |
           cd cmd/shigola
-          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+          go build -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
@@ -145,7 +145,7 @@ jobs:
         GOARCH: amd64
       run: |
           cd cmd/shigola_lambda
-          go build -mod vendor -tags lambda.norpc \
+          go build -tags lambda.norpc \
             -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}" \
             -o bootstrap
 
@@ -185,7 +185,7 @@ jobs:
         GOARCH: arm64
       run: |
           cd cmd/shigola_lambda
-          go build -mod vendor -tags lambda.norpc \
+          go build -tags lambda.norpc \
             -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}" \
             -o bootstrap
 
@@ -216,7 +216,7 @@ jobs:
         GOOS: darwin
       run: |
           cd cmd/shigola
-          go build -mod vendor -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
+          go build -ldflags "-w -X ${BUILD_PKG}.Version=${VERSION} -X ${BUILD_PKG}.GitRevision=${GIT_REVISION} -X ${BUILD_PKG}.GitBranch=${GIT_BRANCH}"
 
     - name: Upload artifact
       uses: ./.github/actions/upload-artifact
