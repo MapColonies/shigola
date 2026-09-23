@@ -1,8 +1,9 @@
 package postgis
 
 import (
-	"os"
 	"strings"
+
+	"github.com/MapColonies/shigola/internal/env"
 )
 
 // debug determines weather extra debugging output is enabled.
@@ -11,7 +12,7 @@ import (
 const debug = false
 
 const (
-	EnvSQLDebugName    = "TEGOLA_SQL_DEBUG"
+	EnvSQLDebugName    = env.Prefix + "SQL_DEBUG"
 	EnvSQLDebugLayer   = "LAYER_SQL"
 	EnvSQLDebugExecute = "EXECUTE_SQL"
 )
@@ -22,6 +23,13 @@ var (
 )
 
 func init() {
-	debugLayerSQL = strings.Contains(os.Getenv(EnvSQLDebugName), EnvSQLDebugLayer)
-	debugExecuteSQL = strings.Contains(os.Getenv(EnvSQLDebugName), EnvSQLDebugExecute)
+	debugLayerSQL, debugExecuteSQL = sqlDebugFlags()
+}
+
+// sqlDebugFlags reads EnvSQLDebugName through the env shim, so the pre-rename
+// TEGOLA_SQL_DEBUG keeps working and says it is deprecated. It read the legacy
+// name directly until MAPCO-11504, which left the documented name inert.
+func sqlDebugFlags() (layer, execute bool) {
+	v := env.Getenv(EnvSQLDebugName)
+	return strings.Contains(v, EnvSQLDebugLayer), strings.Contains(v, EnvSQLDebugExecute)
 }
