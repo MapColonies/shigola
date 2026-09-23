@@ -209,7 +209,7 @@ func (r *Registry) Available(id string) bool {
 // The order is part of the contract, not a detail. A map that names no schemes
 // is registered with all of them, and `cache seed --map` then takes the first
 // as the run's scheme — so this order decides what a seed run of an
-// unconfigured map covers, and shigola's grid has always been WebMercatorQuad.
+// unconfigured map covers, and Tegola's only grid was WebMercatorQuad.
 // Sorting alone would put WGS1984Quad there, since 'G' sorts before 'e'.
 func (r *Registry) AvailableIDs() []string {
 	var out []string

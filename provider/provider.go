@@ -13,8 +13,8 @@ import (
 	"github.com/go-spatial/geom/slippy"
 )
 
-// defaultGridForSRID maps a bare tile SRID onto the TileMatrixSet shigola has
-// historically meant by it.
+// defaultGridForSRID maps a bare tile SRID onto the TileMatrixSet Tegola meant
+// by it.
 //
 // It exists only for callers that still describe a tile by its SRID — a
 // description that is genuinely ambiguous, since WorldCRS84Quad and WGS1984Quad
@@ -46,8 +46,8 @@ type tile_t struct {
 	srid uint64
 }
 
-// NewTile creates a new slippy tile with a Buffer, in the grid shigola
-// historically associates with srid (see defaultGridForSRID). Prefer
+// NewTile creates a new slippy tile with a Buffer, in the grid Tegola
+// associated with srid (see defaultGridForSRID). Prefer
 // NewTileForGrid, which names the grid outright.
 func NewTile(z slippy.Zoom, x uint, y uint, buf, srid uint) Tile {
 	if srid == 0 {

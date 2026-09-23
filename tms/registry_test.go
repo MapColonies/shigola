@@ -328,7 +328,7 @@ func containsString(haystack []string, needle string) bool {
 
 // TestAvailableIDsOrder pins the ordering contract: a caller that defaults to
 // "every available grid" — a map's tiling schemes, for one — takes the first
-// entry as the default, and shigola's default has always been WebMercatorQuad.
+// entry as the default, and Tegola's only grid was WebMercatorQuad.
 // Plain sorting would put WGS1984Quad first, since 'G' sorts before 'e'.
 func TestAvailableIDsOrder(t *testing.T) {
 	ids := AvailableIDs()

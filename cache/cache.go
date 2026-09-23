@@ -357,8 +357,8 @@ type Key struct {
 	// path or redis key from String() — partitions by grid, and so that a purge
 	// can address one grid's tiles as a subtree.
 	//
-	// An unset value means WebMercatorQuad, the grid shigola served before this
-	// field existed.
+	// An unset value means WebMercatorQuad, the only grid Tegola served, and so
+	// the grid of every key written before this field existed.
 	TileMatrixSetID string
 	MapName         string
 	LayerName       string

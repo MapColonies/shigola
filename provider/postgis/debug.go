@@ -30,6 +30,6 @@ func init() {
 // TEGOLA_SQL_DEBUG keeps working and says it is deprecated. It read the legacy
 // name directly until MAPCO-11504, which left the documented name inert.
 func sqlDebugFlags() (layer, execute bool) {
-	v := env.Getenv(EnvSQLDebugName)
+	v := env.Getenv("SQL_DEBUG")
 	return strings.Contains(v, EnvSQLDebugLayer), strings.Contains(v, EnvSQLDebugExecute)
 }

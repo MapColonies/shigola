@@ -222,8 +222,8 @@ func validateTileInGrid(tile slippy.Tile, grid *tms.TileMatrixSet) error {
 // writes them under.
 //
 // --tile-matrix-set wins. Without it, a run scoped to one map takes the first
-// scheme that map lists, and a run over every map takes WebMercatorQuad — what
-// shigola seeded before the grid was configurable.
+// scheme that map lists, and a run over every map takes WebMercatorQuad — the only
+// grid Tegola could seed.
 //
 // That first entry is this command's convention, not a property of the map: the
 // server reads no default off the list (see atlas.Map.TileMatrixSets), so there
@@ -253,7 +253,7 @@ func resolveSeedPurgeGrid() (*tms.TileMatrixSet, error) {
 	}
 
 	// Every other run — over all maps, or over a map that lists none — takes
-	// WebMercatorQuad, what shigola seeded before the grid was configurable.
+	// WebMercatorQuad, the only grid Tegola could seed.
 	if id == "" {
 		id = tms.WebMercatorQuad
 		chosenBy = "the default for a run not scoped to one map with --map"

@@ -8,7 +8,7 @@
 // ADR-0003 recorded taking it as a trade, because it displaced the embedded
 // viewer to /viewer, and neither the viewer nor that trade remains.
 //
-// The package deliberately does not import server: the server mounts this
+// The package deliberately does not import the `server` package: the server mounts this
 // surface, so the dependency runs one way. Everything this package needs from
 // its host — where the service is reachable, what it is mounted under, which
 // atlas to read — arrives in Config.

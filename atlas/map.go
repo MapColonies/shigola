@@ -31,7 +31,7 @@ func NewWebMercatorMap(name string) Map {
 }
 
 // DefaultTileGrid is the TileMatrixSet a Map carries when nothing else names
-// one: WebMercatorQuad, the grid shigola has always served.
+// one: WebMercatorQuad, the only grid Tegola ever served.
 //
 // WebMercatorQuad is bundled and active in every build, so a failure to resolve
 // it means the tms package's embedded definitions are broken — the same
