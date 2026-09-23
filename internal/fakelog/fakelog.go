@@ -13,9 +13,9 @@
 // public API, alongside faketier and faketracer, which exist for the same
 // reason on the cache and tracing sides.
 //
-// The recorder deliberately wraps the real internal/log.Handler rather than a
-// plain JSON handler: what these tests are about is what that handler adds, so
-// a fake in its place would assert nothing.
+// The recorder deliberately writes through the real internal/log.New rather
+// than a plain JSON handler: what these tests are about is what that logger
+// adds, so a fake in its place would assert nothing.
 package fakelog
 
 import (
@@ -72,16 +72,23 @@ type Recorder struct {
 	buf bytes.Buffer
 }
 
+// Version and Revision are the process identity New's logger carries, fixed
+// for the same reason as the ids above.
+const (
+	Version  = "v1.2.3"
+	Revision = "cafe123"
+)
+
 // New returns a recorder and the logger writing into it, leaving slog's default
-// alone — for a test that holds its own logger.
+// alone — for a test that holds its own logger. It is the logger the binaries
+// install, so its records have the production shape.
 //
 // Every level is enabled, so a test asserting that something is *not* logged is
 // testing the code rather than the handler options.
 func New() (*slog.Logger, *Recorder) {
 	rec := &Recorder{}
-	handler := log.NewHandler(slog.NewJSONHandler(&rec.buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	return slog.New(handler), rec
+	return log.New(&rec.buf, slog.LevelDebug, Version, Revision), rec
 }
 
 // Default installs New's logger as slog's default for the rest of the test,

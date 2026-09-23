@@ -3,10 +3,12 @@ package log
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -30,71 +32,84 @@ const (
 	SpanIDKey  = "span_id"
 )
 
-// NewLogger returns a new tegola JSON logger.
-func NewLogger(lvl slog.Level, options ...func(opts *slog.HandlerOptions)) *slog.Logger {
-	handlerOptions := &slog.HandlerOptions{
-		Level: lvl,
-		// TODO: enable once we switch to slog.Default
-		// instead of internal/log methods
-		AddSource: false,
+// ErrorKey is the key an error is reported under, as pino's err serialiser
+// reports it: an object of type, message and — at ERROR and above — the stack
+// of the log site.
+const ErrorKey = "err"
+
+// New returns the logger every shigola binary installs as slog's default,
+// writing records in the MapColonies format (MAPCO-11544):
+//
+//	{"time":1756557582774,"level":"info","msg":"...","pid":197,"hostname":"web-01","version":"v1.4.0","rev":"9f3c1ab"}
+//
+// That is js-logger's output on its default path — pino with a label level
+// formatter — so one collector, one dashboard and one set of queries work
+// across shigola and the JS services. js-logger switches to pino's numeric
+// levels only when its OTLP log transport is on, which shigola does not have.
+//
+// The fields are produced here and nowhere else: the binaries pass what only
+// they know and the rest is read from the process. version and revision are
+// parameters rather than read from internal/build because this is the package
+// every other package logs through, and importing build from it would point the
+// dependency the wrong way round.
+//
+// The process identity is top-level, where pino's base puts pid and hostname,
+// rather than under a group as it used to be: a pino consumer looks for them
+// there, and a group attached with WithGroup would also qualify the trace ids
+// Handle adds (MAPCO-11494).
+func New(w io.Writer, lvl slog.Leveler, version, revision string) *slog.Logger {
+	handler := NewHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{
+		Level:       lvl,
+		ReplaceAttr: replaceBuiltins,
+	}))
+
+	attrs := []any{slog.Int("pid", os.Getpid())}
+	// pino reads os.hostname(), which cannot fail; Go's can, and a record
+	// without the key says so more honestly than one with an empty string.
+	if hostname, err := os.Hostname(); err == nil {
+		attrs = append(attrs, slog.String("hostname", hostname))
 	}
+	attrs = append(attrs, slog.String("version", version), slog.String("rev", revision))
 
-	for _, opt := range options {
-		opt(handlerOptions)
-	}
-
-	// Create a base handler that outputs to stderr.
-	// The AddSource option includes file and line info in each log record.
-	baseHandler := slog.NewJSONHandler(os.Stderr, handlerOptions)
-
-	// Wrap the base handler with our custom handler to add stack traces for errors.
-	handler := NewHandler(baseHandler)
-	logger := slog.New(handler)
-
-	return logger
+	return slog.New(handler).With(attrs...)
 }
 
-// ServiceGroup is the attribute group under which every record carries the
-// identity of the process that wrote it.
-const ServiceGroup = "shigola"
+// replaceBuiltins rewrites slog's built-in time and level into pino's
+// spelling: integer milliseconds since the Unix epoch, and the lowercase
+// label. Only at the top level — a caller's own attribute that happens to be
+// called "time" inside a group is theirs.
+//
+// A level between the named ones keeps slog's offset notation ("info+2"), so
+// nothing is silently rounded onto a neighbour.
+func replaceBuiltins(groups []string, a slog.Attr) slog.Attr {
+	if len(groups) != 0 {
+		return a
+	}
 
-// ServiceAttrs returns that process identity, for the binaries to hang on the
-// logger they install as slog's default.
-//
-// One grouped attribute rather than a logger-wide WithGroup, which is what this
-// used to be: an open group qualifies everything that follows it, including the
-// attributes Handle adds per record, so correlation would be logged as
-// shigola.trace_id — not a name any log pipeline looks for. As a single
-// attribute the group nests only its own contents, and what it writes is
-// otherwise byte-for-byte what WithGroup wrote.
-//
-// Returning an slog.Attr rather than a whole logger is deliberate too: an
-// slog.Attr can only reach a logger through With, so the placement cannot be
-// undone by a caller who reaches for WithGroup out of habit.
-//
-// version and revision are parameters while pid is read here because the first
-// two come from internal/build's ldflag targets: importing that from the
-// package every other package logs through would point the dependency the wrong
-// way round. The pid is the running process's own and needs nothing.
-func ServiceAttrs(version, revision string) slog.Attr {
-	return slog.Group(ServiceGroup,
-		"version", version,
-		"pid", os.Getpid(),
-		"rev", revision,
-	)
+	switch a.Key {
+	case slog.TimeKey:
+		if t, ok := a.Value.Any().(time.Time); ok {
+			return slog.Int64(slog.TimeKey, t.UnixMilli())
+		}
+	case slog.LevelKey:
+		if l, ok := a.Value.Any().(slog.Level); ok {
+			return slog.String(slog.LevelKey, strings.ToLower(l.String()))
+		}
+	}
+
+	return a
 }
 
 // NewHandler returns a new custom slog.Handler that wraps the provided baseHandler.
-// The returned handler augments error-level logs by appending a stack trace.
+// The returned handler serialises errors and adds trace correlation; see Handle.
 func NewHandler(baseHandler slog.Handler) slog.Handler {
 	return &Handler{
 		handler: baseHandler,
 	}
 }
 
-// Handler is a custom slog.Handler wrapper that adds a stack trace to error logs.
-// It wraps an underlying slog.Handler and delegates all log handling, augmenting
-// the log record when the log level is error or higher.
+// Handler is a custom slog.Handler wrapper that shapes what a record carries
+// before the wrapped handler writes it.
 type Handler struct {
 	handler slog.Handler
 }
@@ -105,14 +120,17 @@ func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.handler.Enabled(ctx, level)
 }
 
-// Handle processes the log record r. If the log level is error or higher,
-// it adds a "stack" attribute containing the current stack trace to the record.
-// Records emitted inside a trace also carry that trace's ids. The modified
-// record is then passed to the underlying handler for output.
+// Handle processes the log record r. An error under ErrorKey is serialised as
+// pino serialises one, and records emitted inside a trace also carry that
+// trace's ids. The modified record is then passed to the underlying handler
+// for output.
 func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
-	// For errors and more severe logs, include the current stack trace.
-	if r.Level >= slog.LevelError {
-		r.Add("stack", string(debug.Stack()))
+	// This used to add debug.Stack() as a top-level "stack" on every ERROR
+	// record, error or not: a large field on a hot path, in a place no pino
+	// consumer looks. The stack now lives in err, and only where there is an
+	// error for it to explain.
+	if hasError(r) {
+		r = serialiseErrors(r)
 	}
 
 	// Correlation is added here, on the record, rather than by the caller:
@@ -133,6 +151,71 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	}
 
 	return h.handler.Handle(ctx, r)
+}
+
+// hasError reports whether r carries an error value under ErrorKey. It is the
+// cheap half of serialiseErrors, so the common record — no error — is not
+// copied.
+func hasError(r slog.Record) bool {
+	found := false
+	r.Attrs(func(a slog.Attr) bool {
+		found = isError(a)
+		return !found
+	})
+
+	return found
+}
+
+func isError(a slog.Attr) bool {
+	if a.Key != ErrorKey || a.Value.Kind() != slog.KindAny {
+		return false
+	}
+	_, ok := a.Value.Any().(error)
+
+	return ok
+}
+
+// serialiseErrors returns a copy of r with each error under ErrorKey replaced
+// by pino's err shape. A copy because slog.Record has no way to replace an
+// attribute in place.
+//
+// Only the record's own attributes are seen here, not ones bound earlier with
+// Logger.With: those were formatted when they were bound, and a stack captured
+// then would be the wrong one anyway.
+func serialiseErrors(r slog.Record) slog.Record {
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		if isError(a) {
+			a = errorAttr(a.Value.Any().(error), r.Level)
+		}
+		out.AddAttrs(a)
+		return true
+	})
+
+	return out
+}
+
+// errorAttr is pino's err serialiser in Go: the error's dynamic type in place
+// of a JS constructor name, and its message.
+//
+// The stack is the log site's, captured here — Go errors carry none of their
+// own — and only at ERROR and above. Below that, an error is usually a
+// degradation the caller has already handled (a cache tier that failed a read
+// is a miss), and a stack on every one would put back the hot-path cost this
+// replaced.
+//
+// fmt.Sprint rather than err.Error(): a typed nil behind a non-nil error
+// interface panics in Error(), and fmt recovers that into "<nil>".
+func errorAttr(err error, level slog.Level) slog.Attr {
+	fields := []any{
+		slog.String("type", fmt.Sprintf("%T", err)),
+		slog.String("message", fmt.Sprint(err)),
+	}
+	if level >= slog.LevelError {
+		fields = append(fields, slog.String("stack", string(debug.Stack())))
+	}
+
+	return slog.Group(ErrorKey, fields...)
 }
 
 // WithAttrs returns a new Handler that includes the specified attributes with every log record.
@@ -171,57 +254,98 @@ func ParseLogLevel(level string) slog.Level {
 // called in (see Handle). They take a format string rather than attributes so
 // that a request-path call site can gain correlation without its message
 // changing — nothing that greps today's logs for a message should have to be
-// re-taught for the sake of two new fields. They go the same way as their
-// context-free siblings when the TODO above is done.
+// re-taught for the sake of two new fields.
+//
+// Every helper below attaches the first error among its arguments under
+// ErrorKey, which is how an error reaches the err property without its call
+// site being rewritten: almost every one reports it through a %v.
 func ErrorfContext(ctx context.Context, format string, args ...any) {
-	slog.ErrorContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelError, format, args)
 }
 
 func WarnfContext(ctx context.Context, format string, args ...any) {
-	slog.WarnContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelWarn, format, args)
 }
 
 func InfofContext(ctx context.Context, format string, args ...any) {
-	slog.InfoContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelInfo, format, args)
 }
 
 func DebugfContext(ctx context.Context, format string, args ...any) {
-	slog.DebugContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelDebug, format, args)
 }
 
-// TODO: remove those methods and use slog straight up
 func Errorf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Error(msg)
-}
-
-func Error(args ...any) {
-	slog.Error(args[0].(string), args...)
+	logf(context.Background(), slog.LevelError, format, args)
 }
 
 func Warnf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Warn(msg)
-}
-
-func Warn(args ...any) {
-	slog.Warn(args[0].(string), args...)
+	logf(context.Background(), slog.LevelWarn, format, args)
 }
 
 func Infof(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Info(msg)
-}
-
-func Info(args ...any) {
-	slog.Info(args[0].(string), args...)
+	logf(context.Background(), slog.LevelInfo, format, args)
 }
 
 func Debugf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Debug(msg)
+	logf(context.Background(), slog.LevelDebug, format, args)
+}
+
+// Error, Warn, Info and Debug format their operands as fmt.Sprintln does,
+// without the newline: the call sites were written against that
+// ("zoom list: ", zooms), and against an error on its own, which Println
+// renders as its message.
+//
+// They used to pass args[0].(string) to slog as the message and all of args as
+// attributes, so a non-string first argument — log.Error(err) — panicked, and
+// every other call repeated its message as an attribute key.
+func Error(args ...any) {
+	logln(slog.LevelError, args)
+}
+
+func Warn(args ...any) {
+	logln(slog.LevelWarn, args)
+}
+
+func Info(args ...any) {
+	logln(slog.LevelInfo, args)
 }
 
 func Debug(args ...any) {
-	slog.Debug(args[0].(string), args...)
+	logln(slog.LevelDebug, args)
+}
+
+func logf(ctx context.Context, level slog.Level, format string, args []any) {
+	emit(ctx, level, func() string { return fmt.Sprintf(format, args...) }, args)
+}
+
+func logln(level slog.Level, args []any) {
+	emit(context.Background(), level, func() string {
+		return strings.TrimSuffix(fmt.Sprintln(args...), "\n")
+	}, args)
+}
+
+// emit takes the message as a func so that a disabled level returns before
+// paying for the formatting.
+func emit(ctx context.Context, level slog.Level, msg func() string, args []any) {
+	logger := slog.Default()
+	if !logger.Enabled(ctx, level) {
+		return
+	}
+
+	if err := firstError(args); err != nil {
+		logger.Log(ctx, level, msg(), slog.Any(ErrorKey, err))
+		return
+	}
+	logger.Log(ctx, level, msg())
+}
+
+func firstError(args []any) error {
+	for _, arg := range args {
+		if err, ok := arg.(error); ok && err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

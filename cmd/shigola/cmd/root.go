@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cmd/internal/register"
@@ -50,6 +51,9 @@ var RootCmd = &cobra.Command{
 	Long: fmt.Sprintf(`shigola is a vector tile server
 Version: %v`, build.Version),
 	PersistentPreRunE: rootCmdValidatePersistent,
+	// main reports the error as a log record; cobra's own "Error: ..." line
+	// would be a second, unstructured copy of it.
+	SilenceErrors: true,
 }
 
 func rootCmdValidatePersistent(cmd *cobra.Command, _ []string) (err error) {
@@ -68,10 +72,7 @@ func initConfig(configFile string, cacheRequired bool, logLevel string) (err err
 	// Parse the provided log level; default to INFO if parsing fails.
 	lvl := log.ParseLogLevel(logLevel)
 
-	logger := log.NewLogger(lvl).With(log.ServiceAttrs(build.Version, build.GitRevision))
-
-	// set out logger as the new default slog logger
-	slog.SetDefault(logger)
+	slog.SetDefault(log.New(os.Stderr, lvl, build.Version, build.GitRevision))
 
 	if conf, err = config.Load(configFile); err != nil {
 		return err

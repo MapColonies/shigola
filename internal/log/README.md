@@ -1,61 +1,71 @@
-Logger Proxy API
-================
+internal/log
+============
 
-## Consts (in decreasing order of severity):
- * FATAL
- * ERROR
- * WARN
- * INFO
- * DEBUG
- * TRACE
+Shigola's logging: the logger the binaries install as slog's default, the
+handler behind it, and the package-level helpers every other package logs
+through.
 
-## Functions:
- * log.SetLogLevel(<const from above>):
-    Log messages below this level of severity will be ignored.
-    Default Log Level is INFO.
+## The record
 
- * Each of the following also has a formatting string variety; i.e. Fatalf(), Errorf(), etc
-    which behaves the same as fmt.Printf() but outputs to the log instead of stdout.
+Every record is one line of JSON in the MapColonies format — the shape
+[js-logger](https://github.com/MapColonies/infra-packages/tree/master/packages/js-logger)
+writes on its default path, so the same collector, dashboards and queries work
+across shigola and the JS services (MAPCO-11544):
 
- * log.Fatal(vals... interface{}):
-    prevents the program from continuing
-    i.e. can't allocate additional memory
+```json
+{"time":1790161525425,"level":"error","msg":"config file at location (/nope.toml) not found",
+ "pid":83,"hostname":"web-01","version":"v1.4.0","rev":"9f3c1ab",
+ "err":{"type":"*errors.errorString","message":"config file at location (/nope.toml) not found","stack":"goroutine 1 [running]:\n..."}}
+```
 
- * log.Error(vals... interface{}):
-    non-fatal, but prevents valid execution
-    i.e. can't connect to a database, complete a function call, open file, invalid format
+| Key | Always | What |
+|:---|:---:|:---|
+| `time` | yes | integer milliseconds since the Unix epoch |
+| `level` | yes | `debug`, `info`, `warn` or `error` — pino's labels, lowercase |
+| `msg` | yes | the message |
+| `pid` | yes | the process id |
+| `hostname` | yes | the host's name; absent only if the OS will not say |
+| `version`, `rev` | yes | the build's version and git revision (`internal/build`) |
+| `err` | no | an error, as `{type, message, stack}`; see below |
+| `trace_id`, `span_id` | no | the request's trace, when logged inside one (`tracing/README.md`) |
 
- * log.Warn(vals... interface{}):
-    looks unusual, but does not clearly prevent execution
+Records go to stderr. The test that pins this shape is `TestRecordShape` in
+`format_test.go`.
 
- * log.Info(vals... interface{}):
-    Least severe message that a sysadmin would be interested in
-    i.e. server request logs
+### Errors
 
- * log.Debug(vals... interface{}):
-    high level info for a developer. more than what a sysadmin would typically want
+An error value logged under the key `err` (`log.ErrorKey`) is serialised the way
+pino's error serialiser does it:
 
- * log.Trace(vals... interface{}):
-    excruciating detail.
+- `type` — the error's dynamic Go type, e.g. `*fs.PathError`;
+- `message` — its `Error()` text;
+- `stack` — the stack of the **log site**, at ERROR and above only. Go errors do
+  not carry a stack of their own, and capturing one costs the same on every
+  record, so records below ERROR go without.
 
- * log.SetOutput(io.Writer):
-    Indicates the location for log messages to be written.
-    Default is stdout.
+An ERROR record with no error value carries no stack at all.
 
-## Flags:
+## Building a logger
 
-    These package-level flags are provided to disable expensive code when the code is only needed at
-	a lower severity than the logger is set at:
-        IsError
-        IsWarn
-        IsInfo
-        IsDebug
-        IsTrace
+```go
+slog.SetDefault(log.New(os.Stderr, lvl, build.Version, build.GitRevision))
+```
 
-	example usage:
-         if log.IsDebug {
-             ...
-         }
+`log.New` is the one place the record's fields are produced. `cmd/shigola` and
+`cmd/shigola_lambda` both call it; tests reach it through `internal/fakelog`.
+`log.ParseLogLevel` turns the `--log-level` flag into a level.
 
-## Output will look like:
-	"timestamp•LOG_LEVEL•filename.go•linenumber•output"
+## Logging
+
+Anything that can use slog directly should. The package-level helpers exist for
+the call sites inherited from tegola, and log through `slog.Default()`:
+
+| Helpers | Message |
+|:---|:---|
+| `Errorf`, `Warnf`, `Infof`, `Debugf` | `fmt.Sprintf(format, args...)` |
+| `ErrorfContext`, `WarnfContext`, `InfofContext`, `DebugfContext` | the same, with the request's trace ids |
+| `Error`, `Warn`, `Info`, `Debug` | the operands as `fmt.Println` joins them |
+
+All of them attach the first non-nil `error` among their arguments under `err`,
+so `log.Errorf("tier get: %v", err)` produces both a readable message and a
+structured error. A disabled level returns before formatting anything.

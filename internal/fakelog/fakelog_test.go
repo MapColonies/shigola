@@ -36,8 +36,8 @@ func TestRecorderReadsWhatWasWritten(t *testing.T) {
 		t.Error("a written-to recorder reports empty")
 	}
 
-	if got := rec.Containing(t, "second")["level"]; got != "WARN" {
-		t.Errorf("level = %v, want WARN", got)
+	if got := rec.Containing(t, "second")["level"]; got != "warn" {
+		t.Errorf("level = %v, want warn", got)
 	}
 }
 
