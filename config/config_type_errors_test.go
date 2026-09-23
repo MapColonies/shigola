@@ -52,19 +52,48 @@ func TestParseTypeErrorMessages(t *testing.T) {
 				"(maps.serve_layer_collections takes a boolean, true or false)",
 			},
 		},
+		// A value that parses as TOML but not as the field's type fails in the
+		// decoder, which reports the key. The error already says what the
+		// value should have been, so a hint would only repeat it.
 		"a quoted non-boolean": {
-			config:  "[[maps]]\nname = \"osm\"\nserve_layer_collections = \"xx\"\n",
-			want:    []string{`"xx" is not a boolean (true or false)`},
-			notWant: []string{"strconv"},
+			config: "[[maps]]\nname = \"osm\"\nserve_layer_collections = \"xx\"\n",
+			want: []string{
+				`line 3 (last key "maps.serve_layer_collections")`,
+				`"xx" is not a boolean (true or false)`,
+			},
+			notWant: []string{"strconv", "takes"},
 		},
 		"a number for a boolean": {
-			config:  "[[maps]]\nname = \"osm\"\nserve_layer_collections = 1\n",
-			want:    []string{"1 (int64) is not a boolean (true or false)"},
-			notWant: []string{"%!"},
+			config: "[[maps]]\nname = \"osm\"\nserve_layer_collections = 1\n",
+			want: []string{
+				`line 3 (last key "maps.serve_layer_collections")`,
+				"1 (int64) is not a boolean (true or false)",
+			},
+			notWant: []string{"%!", "takes"},
+		},
+		"a quoted non-integer": {
+			config: "tile_buffer = \"x\"\n",
+			want: []string{
+				`line 1 (last key "tile_buffer")`,
+				`"x" is not an integer`,
+			},
+			notWant: []string{"takes"},
+		},
+		"a quoted non-integer in a nested table": {
+			config: "[[maps]]\nname = \"osm\"\n[[maps.layers]]\nmin_zoom = \"x\"\n",
+			want: []string{
+				`line 4 (last key "maps.layers.min_zoom")`,
+				`"x" is not a non-negative integer`,
+			},
+			notWant: []string{"takes"},
 		},
 		"a missing env var": {
 			config: "[[maps]]\nname = \"osm\"\nserve_layer_collections = \"${MAPCO_11617_UNSET}\"\n",
-			want:   []string{`environment variable "MAPCO_11617_UNSET" not found`},
+			want: []string{
+				`line 3 (last key "maps.serve_layer_collections")`,
+				`environment variable "MAPCO_11617_UNSET" not found`,
+			},
+			notWant: []string{"takes"},
 		},
 		"unquoted garbage for a nested unsigned key": {
 			config: "[[maps]]\nname = \"osm\"\n[[maps.layers]]\nmin_zoom = abc\n",

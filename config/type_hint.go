@@ -12,7 +12,7 @@ import (
 	"github.com/MapColonies/shigola/internal/env"
 )
 
-// withTypeHint adds what the offending key takes to a TOML parse error, when
+// withTypeHint adds what the offending key takes to a TOML syntax error, when
 // that can be said for certain (MAPCO-11617).
 //
 // A value the lexer cannot read at all, like `enabled = xx`, is rejected before
@@ -21,12 +21,22 @@ import (
 // what the value should have been. Reading it off the struct rather than from a
 // hand-kept table means the hint cannot go stale as keys are added.
 //
-// Any other error is returned unchanged, and so is a parse error whose key does
-// not resolve to a field typeHint can describe. The result wraps err, so
+// Only a syntax error gets the hint. A value that is valid TOML but wrong for
+// its field, like `enabled = 1`, fails in the decoder instead, which reports
+// the key and the env error that already names the wanted type; a hint would
+// repeat it, and on a missing ${VAR} would be beside the point. data is what
+// tells the two apart: a syntax error is one plain TOML rejects too. That
+// second parse happens only on the error path.
+//
+// Any other error is returned unchanged, and so is one whose key does not
+// resolve to a field typeHint can describe. The result wraps err, so
 // errors.As still finds the toml.ParseError.
-func withTypeHint(err error) error {
+func withTypeHint(err error, data []byte) error {
 	var pe toml.ParseError
 	if !errors.As(err, &pe) {
+		return err
+	}
+	if _, synErr := toml.Decode(string(data), new(map[string]any)); synErr == nil {
 		return err
 	}
 

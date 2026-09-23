@@ -9,7 +9,8 @@ import (
 // TestParseErrorMessages pins what an operator reads when a config value has
 // the wrong type (MAPCO-11617). The value and what it should have been are the
 // whole message: these parsers run inside UnmarshalTOML, which is never told
-// the key it is decoding, so the value is all they can name.
+// the key it is decoding, so the value is all they can name; the TOML decoder
+// adds the key and line around it.
 func TestParseErrorMessages(t *testing.T) {
 	type tcase struct {
 		parse func(t *testing.T) error

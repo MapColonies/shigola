@@ -24,7 +24,8 @@ func (e ErrEnvVar) Error() string {
 //
 // It names the value and what the value should have been, and nothing else:
 // UnmarshalTOML is never told the key it is decoding, so the key is not ours to
-// report. config.Parse adds it where the TOML parser knows it (MAPCO-11617).
+// report. The TOML decoder wraps this error with the key and line it came from
+// (MAPCO-11617).
 type ErrType struct {
 	v any
 	// want is what v should have been, as a noun phrase: "a boolean".
