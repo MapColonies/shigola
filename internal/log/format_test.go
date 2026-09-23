@@ -236,10 +236,10 @@ func TestWrappers(t *testing.T) {
 			wantMsg: "boom",
 			wantErr: "boom",
 		},
-		// Operands are separated as Println separates them — always by a
-		// space — which reads right for the call sites that pass a message
-		// and a value, and doubles the space where the message already ends
-		// in one ("zoom list: ", zooms).
+		// Operands are separated as Println separates them, always by a
+		// space. That reads right for a message and a value, and doubles the
+		// space where the message already ends in one, which is why no call
+		// site's message does.
 		"a message and a value": {
 			emit:    func() { log.Info("zoom list:", []int{0, 1}) },
 			wantMsg: "zoom list: [0 1]",

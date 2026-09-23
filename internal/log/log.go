@@ -292,9 +292,14 @@ func Debugf(format string, args ...any) {
 }
 
 // Error, Warn, Info and Debug format their operands as fmt.Sprintln does,
-// without the newline: the call sites were written against that
-// ("zoom list: ", zooms), and against an error on its own, which Println
-// renders as its message.
+// without the newline. The call sites pass operands — usually a message, a
+// message and a value ("zoom list:", zooms), or an error on its own, which
+// Println renders as its message. Println always separates operands with a
+// space, so a message must not end in one.
+//
+// fmt.Sprint was the other candidate, and would have spared the call sites
+// written as ("zoom list: ", zooms), but it puts no space next to a string
+// operand: ("could not purge", err) would have read "could not purgeboom".
 //
 // They used to pass args[0].(string) to slog as the message and all of args as
 // attributes, so a non-string first argument — log.Error(err) — panicked, and
