@@ -417,7 +417,7 @@ func Parse(reader io.Reader, location string) (conf Config, err error) {
 	// decode conf file, don't care about the meta data.
 	_, err = toml.NewDecoder(reader).Decode(&conf)
 	if err != nil {
-		return conf, err
+		return conf, withTypeHint(err)
 	}
 
 	for _, m := range conf.Maps {
