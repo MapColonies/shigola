@@ -34,9 +34,9 @@ const (
 // formatAliases are spellings of a format that this service accepts but never
 // emits.
 //
-// "pbf" is what tegola's native routes call a Mapbox Vector Tile — the tile
-// extension, and the `format` member of the TileJSON this service serves.
-// Without this, a client that read that and asked for ?f=pbf would be refused
+// "pbf" is what the removed native routes called a Mapbox Vector Tile — their
+// tile extension — and is still the `format` member of the TileJSON this
+// service serves. Without this, a client that read that and asked for ?f=pbf would be refused
 // for naming the format the way we named it to them.
 //
 // An alias is resolved before the resource's own formats are consulted, so it

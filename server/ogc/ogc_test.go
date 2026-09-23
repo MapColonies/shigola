@@ -22,7 +22,7 @@ func newRouter(t *testing.T, uriPrefix string) *httptreemux.TreeMux {
 
 	svc := ogc.New(ogc.Config{
 		Atlas:     &atlas.Atlas{},
-		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "tegola.io"} },
+		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "example.com"} },
 		URIPrefix: uriPrefix,
 	})
 
@@ -66,11 +66,11 @@ func TestLandingPage(t *testing.T) {
 
 	// Every relation a client needs to bootstrap from the landing page alone.
 	want := map[string]string{
-		"self":         "http://tegola.io/",
-		"service-desc": "http://tegola.io/api",
-		"conformance":  "http://tegola.io/conformance",
-		"data":         "http://tegola.io/collections",
-		"http://www.opengis.net/def/rel/ogc/1.0/tiling-schemes": "http://tegola.io/tileMatrixSets",
+		"self":         "http://example.com/",
+		"service-desc": "http://example.com/api",
+		"conformance":  "http://example.com/conformance",
+		"data":         "http://example.com/collections",
+		"http://www.opengis.net/def/rel/ogc/1.0/tiling-schemes": "http://example.com/tileMatrixSets",
 	}
 
 	got := map[string]string{}
@@ -89,7 +89,7 @@ func TestLandingPage(t *testing.T) {
 // must carry the prefix, or a client follows them straight off the service.
 func TestLandingPageURIPrefix(t *testing.T) {
 	var doc ogc.LandingPage
-	w := get(t, newRouter(t, "/tegola"), "/tegola/", &doc)
+	w := get(t, newRouter(t, "/shigola"), "/shigola/", &doc)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -100,7 +100,7 @@ func TestLandingPageURIPrefix(t *testing.T) {
 			continue
 		}
 
-		if want := "http://tegola.io/tegola/"; len(link.Href) < len(want) || link.Href[:len(want)] != want {
+		if want := "http://example.com/shigola/"; len(link.Href) < len(want) || link.Href[:len(want)] != want {
 			t.Errorf("link %q = %q, want it under %q", link.Rel, link.Href, want)
 		}
 	}
@@ -165,7 +165,7 @@ func TestTileMatrixSets(t *testing.T) {
 			t.Errorf("%v has no links", item.ID)
 			continue
 		}
-		if want := "http://tegola.io/tileMatrixSets/" + item.ID; item.Links[0].Href != want {
+		if want := "http://example.com/tileMatrixSets/" + item.ID; item.Links[0].Href != want {
 			t.Errorf("%v self link = %q, want %q", item.ID, item.Links[0].Href, want)
 		}
 	}

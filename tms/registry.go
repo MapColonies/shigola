@@ -209,7 +209,7 @@ func (r *Registry) Available(id string) bool {
 // The order is part of the contract, not a detail. A map that names no schemes
 // is registered with all of them, and `cache seed --map` then takes the first
 // as the run's scheme — so this order decides what a seed run of an
-// unconfigured map covers, and tegola's grid has always been WebMercatorQuad.
+// unconfigured map covers, and Tegola's only grid was WebMercatorQuad.
 // Sorting alone would put WGS1984Quad there, since 'G' sorts before 'e'.
 func (r *Registry) AvailableIDs() []string {
 	var out []string
@@ -319,7 +319,7 @@ func bundledFactory(id, entry string) Factory {
 // The three reasons are genuinely different, and each must name itself honestly.
 // Most gated grids are projected and have no arithmetic Transformer. The
 // variable-width grids are geographic — a transform does exist — and are held
-// back because coalesced columns do not fit tegola's tile pipeline. The last case
+// back because coalesced columns do not fit shigola's tile pipeline. The last case
 // is a grid this build could serve but has not been asked to.
 func gatingReason(grid *TileMatrixSet) error {
 	switch {

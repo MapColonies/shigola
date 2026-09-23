@@ -13,7 +13,7 @@ import (
 
 	"github.com/MapColonies/shigola/internal/p"
 
-	tegolaCache "github.com/MapColonies/shigola/cache"
+	shigolaCache "github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
@@ -245,7 +245,7 @@ func (obs *observer) InstrumentedAPIHttpHandler(method, route string, next http.
 	return handler.InstrumentedHttpHandler(method, route, next)
 }
 
-func (obs *observer) InstrumentedCache(cacheObject tegolaCache.Interface) tegolaCache.Interface {
+func (obs *observer) InstrumentedCache(cacheObject shigolaCache.Interface) shigolaCache.Interface {
 	if obs == nil {
 		// if we are nil assume no metrics recording is going to happen
 		return cacheObject
@@ -262,15 +262,15 @@ func (obs *observer) InstrumentedCache(cacheObject tegolaCache.Interface) tegola
 // const label *names* feed dimHash, and the registry rejects a second
 // descriptor with the same fully-qualified name and a different dimHash —
 // through MustRegister, which panics rather than returning. Registering
-// tegola_cache_hits_total once without a tier label and once with one would
+// shigola_cache_hits_total once without a tier label and once with one would
 // therefore fail at startup on the first chain deployment with an observer
 // configured.
 //
 // And they count different things. A whole-cache hit is one tile served from
 // somewhere in the chain; tier hits are per-tier lookups, several per request.
-// sum(tegola_cache_tier_hits_total) is *not* the chain hit count, and separate
+// sum(shigola_cache_tier_hits_total) is *not* the chain hit count, and separate
 // names make that impossible to get wrong by accident.
-func (obs *observer) InstrumentedTierCache(tier string, cacheObject tegolaCache.Interface) tegolaCache.Interface {
+func (obs *observer) InstrumentedTierCache(tier string, cacheObject shigolaCache.Interface) shigolaCache.Interface {
 	if obs == nil {
 		return cacheObject
 	}

@@ -38,11 +38,3 @@ default of each type on import; change them in the dashboard's variable row.
 - **Layers are keyed `<map>:<layer>`**, matching the OGC collection id, because
   `layer_name` alone is ambiguous once more than one map is served. A whole-map
   tile carries no layer and renders as the bare `<map>`.
-
-## `$provider_prefix`
-
-The PostGIS provider collectors are still registered under the `tegola_` prefix —
-`atlas.SetObservability` passes a hardcoded `"tegola"` to `Map.Collectors`, so
-`postgres_*` and `*_provider_sql_query_seconds` did not get renamed with the rest.
-The Providers row queries `${provider_prefix}_...`; the variable defaults to
-`tegola`. Set it to `shigola` once that is fixed.

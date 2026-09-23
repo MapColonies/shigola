@@ -27,7 +27,7 @@ const (
 // WithoutPromotion suppresses read-through promotion for reads made with the
 // returned context.
 //
-// `tegola cache seed` without --overwrite reads every tile through the cache
+// `shigola cache seed` without --overwrite reads every tile through the cache
 // before deciding whether to generate it. With promotion on, a seed over a
 // large area would promote every durable-tier tile into the hot tier, in seed
 // order, at seeding throughput — overwriting the live working set with cold

@@ -86,7 +86,7 @@ func newRouterFor(t *testing.T, a *atlas.Atlas) *httptreemux.TreeMux {
 
 	svc := ogc.New(ogc.Config{
 		Atlas:     a,
-		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "tegola.io"} },
+		URLRoot:   func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "example.com"} },
 		URIPrefix: "/",
 	})
 
@@ -132,7 +132,7 @@ func TestCollections(t *testing.T) {
 			if link.Rel == "http://www.opengis.net/def/rel/ogc/1.0/tilesets-vector" {
 				hasTilesets = true
 
-				if want := "http://tegola.io/collections/" + c.ID + "/tiles"; link.Href != want {
+				if want := "http://example.com/collections/" + c.ID + "/tiles"; link.Href != want {
 					t.Errorf("%v tilesets link = %q, want %q", c.ID, link.Href, want)
 				}
 			}
@@ -319,7 +319,7 @@ func TestTileSetMetadata(t *testing.T) {
 		t.Error("item link is not marked templated")
 	}
 
-	want := "http://tegola.io/collections/osm/tiles/WorldCRS84Quad/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
+	want := "http://example.com/collections/osm/tiles/WorldCRS84Quad/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
 	if item.Href != want {
 		t.Errorf("item href = %q, want %q", item.Href, want)
 	}
@@ -381,7 +381,7 @@ func TestTile(t *testing.T) {
 		}
 	})
 
-	// "pbf" is what tegola's native routes and our own TileJSON call a Mapbox
+	// "pbf" is what the removed native routes and our own TileJSON call a Mapbox
 	// Vector Tile, so a client that read either would otherwise be rejected for
 	// naming the same thing we do.
 	t.Run("f=pbf is accepted as a spelling of mvt", func(t *testing.T) {
@@ -557,7 +557,7 @@ func TestTileSetTileJSON(t *testing.T) {
 
 	// The template must keep the OGC path order, or a client substituting its
 	// own z/x/y fetches transposed tiles.
-	want := "http://tegola.io/collections/osm/tiles/WorldCRS84Quad/{z}/{y}/{x}?f=mvt"
+	want := "http://example.com/collections/osm/tiles/WorldCRS84Quad/{z}/{y}/{x}?f=mvt"
 	if tiles[0] != want {
 		t.Errorf("tiles[0] = %v, want %v", tiles[0], want)
 	}
@@ -622,7 +622,7 @@ func TestTileSetItemHasTemplatedTileLink(t *testing.T) {
 				t.Errorf("tileset %v item link is not marked templated", ts.TileMatrixSetID)
 			}
 
-			want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID + "/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
+			want := "http://example.com/collections/osm/tiles/" + ts.TileMatrixSetID + "/{tileMatrix}/{tileRow}/{tileCol}?f=mvt"
 			if item.Href != want {
 				t.Errorf("tileset %v item href = %q, want %q", ts.TileMatrixSetID, item.Href, want)
 			}
@@ -709,12 +709,12 @@ func TestTileSetsListSatisfiesRequirement10(t *testing.T) {
 				rels[l.Rel] = l.Href
 			}
 
-			if want := "http://tegola.io/collections/osm/tiles/" + ts.TileMatrixSetID; rels["self"] != want {
+			if want := "http://example.com/collections/osm/tiles/" + ts.TileMatrixSetID; rels["self"] != want {
 				t.Errorf("self link = %q, want %q", rels["self"], want)
 			}
 
 			const tilingScheme = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme"
-			if want := "http://tegola.io/tileMatrixSets/" + ts.TileMatrixSetID; rels[tilingScheme] != want {
+			if want := "http://example.com/tileMatrixSets/" + ts.TileMatrixSetID; rels[tilingScheme] != want {
 				t.Errorf("tiling-scheme link = %q, want %q", rels[tilingScheme], want)
 			}
 		})
@@ -760,7 +760,7 @@ func TestTileCaching(t *testing.T) {
 	})
 
 	// A parameter this surface does not own may select a different rendering —
-	// tegola maps can declare query parameters that change what a tile contains.
+	// shigola maps can declare query parameters that change what a tile contains.
 	// The key cannot express that, so such a request must not be answered from,
 	// or written to, the cache.
 	t.Run("a request carrying other parameters is not cached", func(t *testing.T) {

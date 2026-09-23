@@ -38,7 +38,7 @@ type = "multi"
 
     [[cache.layers.layers]]
     type     = "file"
-    basepath = "/tmp/tegola"
+    basepath = "/tmp/shigola"
 `
 
 	t.Setenv("TEST_REDIS_PASSWORD", "hunter2")
@@ -89,7 +89,7 @@ type = "multi"
 	// time, so it still fires two levels of array-of-table down.
 	assertString(t, nested[0], "bucket", "tiles-from-the-environment")
 	assertString(t, nested[1], "type", "file")
-	assertString(t, nested[1], "basepath", "/tmp/tegola")
+	assertString(t, nested[1], "basepath", "/tmp/shigola")
 }
 
 // TestCacheLayersSiblingsAreNotNesting pins the trap next to the feature: an

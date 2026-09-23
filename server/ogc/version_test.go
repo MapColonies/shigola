@@ -18,7 +18,7 @@ func newRouterWithVersion(t *testing.T, version string) *httptreemux.TreeMux {
 
 	svc := ogc.New(ogc.Config{
 		Atlas:   &atlas.Atlas{},
-		URLRoot: func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "tegola.io"} },
+		URLRoot: func(*http.Request) *url.URL { return &url.URL{Scheme: "http", Host: "example.com"} },
 		Version: version,
 	})
 

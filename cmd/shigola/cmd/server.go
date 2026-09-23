@@ -30,7 +30,7 @@ var serverCmd = &cobra.Command{
 	Use:     "serve",
 	Short:   "Use shigola as a tile server",
 	Aliases: []string{"server"},
-	Long:    `Use tegola as a vector tile server. Maps tiles will be served at /maps/:map_name/:z/:x/:y`,
+	Long:    `Use shigola as a vector tile server. Tiles are served as OGC API - Tiles, with the landing page at /`,
 	Run: func(cmd *cobra.Command, args []string) {
 		gdcmd.New()
 		gdcmd.OnComplete(provider.Cleanup)

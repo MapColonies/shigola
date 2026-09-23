@@ -59,7 +59,7 @@ type WritePoolStats struct {
 	// acquisition rather than the write.
 	//
 	// A mean, not a distribution. Read the *tail* from the per-tier histogram
-	// tegola_cache_tier_duration_seconds{sub_command="set"} instead: the tail
+	// shigola_cache_tier_duration_seconds{sub_command="set"} instead: the tail
 	// is what holds slots long enough to exhaust the pool, and this hides it.
 	WriteNanos uint64
 }
@@ -223,7 +223,7 @@ func (p *WritePool) warnSaturated() {
 
 	log.Warnf(
 		"cache: detached write pool saturated at %v slots, dropping writes (%v further drops suppressed since the last warning). "+
-			"raise TEGOLA_OPTIONS=DetachedWriteSlots, or find why writes are slow",
+			"raise SHIGOLA_OPTIONS=DetachedWriteSlots, or find why writes are slow",
 		p.capacity, p.warnSkip,
 	)
 
@@ -290,7 +290,7 @@ func (p *WritePool) Drain(deadline time.Duration) {
 		}
 		log.Warnf(
 			"cache: detached write pool drain expired after %v with %v writes still in flight, abandoning them. "+
-				"raise TEGOLA_OPTIONS=DetachedWriteDrainMs, or fix a slow durable tier",
+				"raise SHIGOLA_OPTIONS=DetachedWriteDrainMs, or fix a slow durable tier",
 			deadline, remaining,
 		)
 	}

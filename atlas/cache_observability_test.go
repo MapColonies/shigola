@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/internal/faketier"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/observability/prometheus"
+	"github.com/MapColonies/shigola/provider"
 )
 
 // The prometheus observer registers against prometheus.DefaultRegisterer, so
@@ -427,4 +428,42 @@ func TestErrorsCounterIsPrefixed(t *testing.T) {
 	if got := counter(t, "shigola_cache_tier_errors_total", map[string]string{"tier": "hot8", "sub_command": "get"}); got != 1 {
 		t.Errorf("hot tier errors: got %v, expected 1", got)
 	}
+}
+
+// collectingProvider is an MVT provider that publishes one gauge under
+// whatever prefix the atlas hands it, so the test reads the prefix off the
+// metric name an operator would actually scrape.
+type collectingProvider struct {
+	provider.MVTTiler
+}
+
+func (collectingProvider) Collectors(prefix string, _ func(string) map[string]interface{}) ([]observability.Collector, error) {
+	return []observability.Collector{
+		promclient.NewGauge(promclient.GaugeOpts{Name: prefix + "_collecting_provider_up"}),
+	}, nil
+}
+
+// TestProviderCollectorsArePrefixed pins provider metrics to the shigola_
+// prefix. They were the last family still published as tegola_*, because the
+// prefix was a literal at the call site rather than the one the rest of the
+// metrics use.
+func TestProviderCollectorsArePrefixed(t *testing.T) {
+	m := NewWebMercatorMap("collecting")
+	m.SetMVTProvider("collecting", collectingProvider{})
+
+	a := &Atlas{}
+	a.AddMap(m)
+	a.SetObservability(newObserver(t))
+
+	families, err := promclient.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+
+	for _, family := range families {
+		if family.GetName() == "shigola_collecting_provider_up" {
+			return
+		}
+	}
+	t.Errorf("shigola_collecting_provider_up is not published")
 }

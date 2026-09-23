@@ -70,23 +70,23 @@ func TestMiddlewareHeaders(t *testing.T) {
 			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodGet,
 			customHeaders: map[string]string{
-				"Test-Header": "tegola",
+				"Test-Header": "shigola",
 			},
 			expectedResponseHeaders: map[string]string{
 				"Access-Control-Allow-Origin":  DefaultCORSAllowedOrigin,
 				"Access-Control-Allow-Methods": DefaultCORSAllowedMethods,
-				"Test-Header":                  "tegola",
+				"Test-Header":                  "shigola",
 			},
 		},
 		"user defined cors override GET": {
 			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodGet,
 			customHeaders: map[string]string{
-				"Access-Control-Allow-Origin":  "tegola.io",
+				"Access-Control-Allow-Origin":  "example.com",
 				"Access-Control-Allow-Methods": "GET, POST",
 			},
 			expectedResponseHeaders: map[string]string{
-				"Access-Control-Allow-Origin":  "tegola.io",
+				"Access-Control-Allow-Origin":  "example.com",
 				"Access-Control-Allow-Methods": "GET, POST",
 			},
 		},
@@ -103,23 +103,23 @@ func TestMiddlewareHeaders(t *testing.T) {
 			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodOptions,
 			customHeaders: map[string]string{
-				"Test-Header": "tegola",
+				"Test-Header": "shigola",
 			},
 			expectedResponseHeaders: map[string]string{
 				"Access-Control-Allow-Origin":  DefaultCORSAllowedOrigin,
 				"Access-Control-Allow-Methods": DefaultCORSAllowedMethods,
-				"Test-Header":                  "tegola",
+				"Test-Header":                  "shigola",
 			},
 		},
 		"user defined cors override OPTIONS": {
 			uri:        "/collections/test-map/tiles/WebMercatorQuad/10/3/2",
 			httpMethod: http.MethodOptions,
 			customHeaders: map[string]string{
-				"Access-Control-Allow-Origin":  "tegola.io",
+				"Access-Control-Allow-Origin":  "example.com",
 				"Access-Control-Allow-Methods": "GET, POST",
 			},
 			expectedResponseHeaders: map[string]string{
-				"Access-Control-Allow-Origin":  "tegola.io",
+				"Access-Control-Allow-Origin":  "example.com",
 				"Access-Control-Allow-Methods": "GET, POST",
 			},
 		},

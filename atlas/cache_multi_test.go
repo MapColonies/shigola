@@ -61,7 +61,7 @@ func TestMultiCacheEndToEnd(t *testing.T) {
 		t.Fatalf("building the hot-tier lens: unexpected error: %v", err)
 	}
 
-	// Write the durable tier only — what `tegola cache seed` does by default,
+	// Write the durable tier only — what `shigola cache seed` does by default,
 	// including its synchronous writes. Without those the write is handed to
 	// the detached pool and Set returns before anything has been written, which
 	// is exactly why the CLI path sets the flag.

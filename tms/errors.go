@@ -124,7 +124,7 @@ func (e ErrPointOutsideBounds) Error() string {
 
 // ErrVariableWidthUnsupported reports a grid whose tile matrices coalesce
 // columns. The document model and tile arithmetic handle these grids, but
-// tegola's tile pipeline assumes a tile's column index maps to one column of
+// shigola's tile pipeline assumes a tile's column index maps to one column of
 // the matrix, so they are not activated.
 var ErrVariableWidthUnsupported = errors.New("tms: variable-width tile matrices are not supported by the tile pipeline")
 

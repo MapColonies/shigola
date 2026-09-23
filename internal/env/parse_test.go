@@ -46,15 +46,15 @@ func TestParseURL(t *testing.T) {
 
 	tests := map[string]tcase{
 		"happy path": {
-			in: "https://go-spatial.org/tegola",
+			in: "https://example.com/shigola",
 			expected: &url.URL{
 				Scheme: "https",
-				Host:   "go-spatial.org",
-				Path:   "/tegola",
+				Host:   "example.com",
+				Path:   "/shigola",
 			},
 		},
 		"invalid url escape": {
-			in:          "https://go-spatial.org/tegola/_20_%+off_60000_",
+			in:          "https://example.com/shigola/_20_%+off_60000_",
 			expectedErr: url.EscapeError(""),
 		},
 		"nil": {

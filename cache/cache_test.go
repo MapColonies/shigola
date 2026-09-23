@@ -104,7 +104,7 @@ func TestKeyStringPartitionsByGrid(t *testing.T) {
 		t.Fatalf("keys collide across grids: %v", webMercator.String())
 	}
 
-	// An unset grid means the grid tegola served before the field existed.
+	// An unset grid means the grid every key had before the field existed.
 	var legacy cache.Key = webMercator
 	legacy.TileMatrixSetID = ""
 

@@ -110,7 +110,7 @@ type CollectionDesc struct {
 	Title       string  `json:"title,omitempty"`
 	Description string  `json:"description,omitempty"`
 	Extent      *Extent `json:"extent,omitempty"`
-	// DataType is "vector" for every collection this service publishes: tegola
+	// DataType is "vector" for every collection this service publishes: shigola
 	// produces MVT and nothing else (ADR-0001).
 	DataType string   `json:"dataType,omitempty"`
 	CRS      []string `json:"crs,omitempty"`
@@ -194,7 +194,7 @@ type BoundingBox struct {
 	CRS        string    `json:"crs,omitempty"`
 }
 
-// Data types. tegola serves vector tiles only (ADR-0001).
+// Data types. Shigola serves vector tiles only (ADR-0001).
 const (
 	dataTypeVector = "vector"
 )

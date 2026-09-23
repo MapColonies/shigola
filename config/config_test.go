@@ -25,8 +25,8 @@ const (
 	ENV_TEST_CENTER_Y                = 39.153492567373
 	ENV_TEST_CENTER_Z                = 8.0
 	ENV_TEST_HOST_1                  = "cdn"
-	ENV_TEST_HOST_2                  = "tegola"
-	ENV_TEST_HOST_3                  = "io"
+	ENV_TEST_HOST_2                  = "example"
+	ENV_TEST_HOST_3                  = "com"
 	ENV_TEST_HOST_CONCAT             = ENV_TEST_HOST_1 + "." + ENV_TEST_HOST_2 + "." + ENV_TEST_HOST_3
 	ENV_TEST_WEBSERVER_HEADER_STRING = "s-maxage=10"
 	ENV_TEST_WEBSERVER_PORT          = "1234"
@@ -118,7 +118,7 @@ func TestParse(t *testing.T) {
 				Webserver: config.Webserver{
 					HostName: env.URL{
 						Scheme: "https",
-						Host:   "cdn.tegola.io",
+						Host:   "cdn.example.com",
 					},
 					Port:          ":8080",
 					ProxyProtocol: "https",
@@ -129,7 +129,7 @@ func TestParse(t *testing.T) {
 				},
 				Cache: env.Dict{
 					"type":     "file",
-					"basepath": "/tmp/tegola-cache",
+					"basepath": "/tmp/shigola-cache",
 				},
 				Providers: []env.Dict{
 					{

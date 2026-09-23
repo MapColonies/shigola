@@ -188,8 +188,8 @@ type RedisCache struct {
 	// byte-for-byte the keys this cache wrote before the option existed.
 	//
 	// It is concatenated, not path-joined, so redis' own ':' namespacing works
-	// as written — and so the separator is the operator's to supply: "tegola:"
-	// gives "tegola:map/layer/z/x/y" where "tegola" gives "tegolamap/layer/z/x/y".
+	// as written — and so the separator is the operator's to supply: "shigola:"
+	// gives "shigola:map/layer/z/x/y" where "shigola" gives "shigolamap/layer/z/x/y".
 	KeyPrefix string
 }
 

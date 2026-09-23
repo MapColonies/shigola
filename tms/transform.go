@@ -60,7 +60,7 @@ func (identityTransformer) FromGeographic(lon, lat float64) (float64, float64, e
 // webMercatorTransformer implements EPSG:3857 (WGS 84 / Pseudo-Mercator), the
 // spherical Mercator projection of the WGS 84 datum, in closed form.
 //
-// Latitude is deliberately *not* clamped. tegola's maths/webmercator.LatToY
+// Latitude is deliberately *not* clamped. shigola's maths/webmercator.LatToY
 // clamps to +/-89.5 degrees, which is fine for a grid that only ever reaches
 // +/-85.05, but clamping here would silently corrupt the grid bounds this
 // package reports. Latitudes beyond the projection's domain produce infinities,

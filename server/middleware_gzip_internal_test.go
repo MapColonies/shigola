@@ -77,11 +77,11 @@ func TestGzipDecompressResponseWriter(t *testing.T) {
 	tests := map[string]tcase{
 		"decompress": {
 			responseCode: http.StatusOK,
-			data:         []byte("tegola"),
+			data:         []byte("shigola"),
 		},
 		"internal server error": {
 			responseCode: http.StatusInternalServerError,
-			data:         []byte("tegola"),
+			data:         []byte("shigola"),
 		},
 		"no data": {
 			responseCode: http.StatusOK,

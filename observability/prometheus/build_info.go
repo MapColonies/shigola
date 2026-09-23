@@ -21,7 +21,7 @@ func NewBuildInfo(registry prometheus.Registerer) {
 				Help: "Build information",
 			},
 			[]string{
-				// command is the command line; e.g. tegola serve
+				// command is the command line; e.g. shigola serve
 				"command",
 				// version is the version string
 				"version",

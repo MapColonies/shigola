@@ -4,9 +4,9 @@
 package main
 
 // The point of this file is to load the Go profiler.
-// You need to compile Tegola with `go build -tags 'pprof'` and you need to
-// enabled it by setting the TEGOLA_HTTP_PPROF_BIND environment to a
-// hostname:port combination (e.g. TEGOLA_HTTP_PPROF_BIND=localhost:6060).
+// You need to compile Shigola with `go build -tags 'pprof'` and you need to
+// enabled it by setting the SHIGOLA_HTTP_PPROF_BIND environment to a
+// hostname:port combination (e.g. SHIGOLA_HTTP_PPROF_BIND=localhost:6060).
 
 // To show 30s CPU profile:
 //   % go tool pprof -web http://localhost:6060/debug/pprof/profile

@@ -5,7 +5,7 @@ package tms
 //
 // GNOSISGlobalGrid and CDB1GlobalGrid coalesce columns towards the poles, so
 // several column indices alias to one tile. This build does not activate them
-// (their coalesced columns do not fit tegola's tile pipeline), but their
+// (their coalesced columns do not fit shigola's tile pipeline), but their
 // arithmetic is CRS-transform-free and the model must carry variable widths for
 // the projected grids to be activatable later — so the upstream golden values
 // are exercised here through LoadGrid.

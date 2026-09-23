@@ -78,6 +78,9 @@ jobs:
 
           # AWS S3 tests
           RUN_S3_TESTS: yes
+          # The bucket keeps its pre-rename name: it is an existing S3 bucket,
+          # and a bucket cannot be renamed, only replaced. Rename it here when
+          # that happens.
           AWS_TEST_BUCKET: tegola-ci
           AWS_REGION: us-east-2
 

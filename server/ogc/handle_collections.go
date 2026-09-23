@@ -219,7 +219,7 @@ func (s *Service) tileTemplateLink(r *http.Request, c Collection, grid *tms.Tile
 
 	return Link{
 		// OGC orders a tile path {tileMatrix}/{tileRow}/{tileCol} — z/y/x,
-		// transposed from tegola's native z/x/y.
+		// transposed from the XYZ convention's z/x/y.
 		Rel:       relItem,
 		Href:      s.hrefTemplate(r, base, "{tileMatrix}", "{tileRow}", "{tileCol}") + "?f=mvt",
 		Type:      MediaTypeMVT,

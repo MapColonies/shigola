@@ -251,9 +251,7 @@ stop connecting; set only `RUN_POSTGIS_TESTS=yes` there.
 
 The compose stack's `migration` service restores `testdata/postgis/shigola.dump`
 into a database called **`shigola`** and creates the `shigola_no_access` role the
-permission-error tests log in as. It also drops the pre-rename `tegola` database
-and role, so a volume that predates the rename does not keep a stale copy around
-for `PGURI` to find.
+permission-error tests log in as.
 
 The fixture holds two groups of tables:
 

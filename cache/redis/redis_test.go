@@ -373,41 +373,41 @@ func TestRedisKey(t *testing.T) {
 			expected:  "WebMercatorQuad/osm/water/10/511/340",
 		},
 		"colon separated prefix": {
-			keyPrefix: "tegola:",
+			keyPrefix: "shigola:",
 			key:       key,
-			expected:  "tegola:WebMercatorQuad/osm/water/10/511/340",
+			expected:  "shigola:WebMercatorQuad/osm/water/10/511/340",
 		},
 		// The documented sharp edge of concatenating rather than path-joining: a
 		// prefix without a separator runs into the grid id. Pinned so it cannot
 		// change silently.
 		"prefix without a separator": {
-			keyPrefix: "tegola",
+			keyPrefix: "shigola",
 			key:       key,
-			expected:  "tegolaWebMercatorQuad/osm/water/10/511/340",
+			expected:  "shigolaWebMercatorQuad/osm/water/10/511/340",
 		},
 		// filepath.Join would collapse the doubled slash here. Concatenation does
 		// not touch the prefix, which is what lets ':' namespacing survive.
 		"prefix is passed through verbatim": {
-			keyPrefix: "tegola//",
+			keyPrefix: "shigola//",
 			key:       key,
-			expected:  "tegola//WebMercatorQuad/osm/water/10/511/340",
+			expected:  "shigola//WebMercatorQuad/osm/water/10/511/340",
 		},
 		"prefix on a key with no map or layer": {
-			keyPrefix: "tegola:",
+			keyPrefix: "shigola:",
 			key:       cache.Key{Z: 0, X: 1, Y: 2},
-			expected:  "tegola:WebMercatorQuad/0/1/2",
+			expected:  "shigola:WebMercatorQuad/0/1/2",
 		},
 		// The grid partitions the redis keyspace under the same prefix, so a
 		// shared redis cannot serve one grid's tiles for another (ADR-0007).
 		"another grid, same prefix and tile": {
-			keyPrefix: "tegola:",
+			keyPrefix: "shigola:",
 			key: cache.Key{
 				TileMatrixSetID: tms.WorldCRS84Quad,
 				MapName:         "osm",
 				LayerName:       "water",
 				Z:               10, X: 511, Y: 340,
 			},
-			expected: "tegola:WorldCRS84Quad/osm/water/10/511/340",
+			expected: "shigola:WorldCRS84Quad/osm/water/10/511/340",
 		},
 	}
 
@@ -489,7 +489,7 @@ func TestNew(t *testing.T) {
 		},
 		"explicit config with key_prefix": {
 			config: map[string]any{
-				"key_prefix": "tegola:",
+				"key_prefix": "shigola:",
 			},
 		},
 		"bad config address": {
@@ -819,7 +819,7 @@ func TestMaxZoom(t *testing.T) {
 
 // TestKeyPrefix checks the property TestRedisKey cannot: that the prefix reaches
 // the wire on all three operations. A prefix honoured by Set but not Purge would
-// leave keys no tegola can delete, and one honoured by Set but not Get would miss
+// leave keys no shigola can delete, and one honoured by Set but not Get would miss
 // everything it wrote — both pass a round-trip test that only talks to itself, so
 // this one reads the raw key with a client of its own.
 func TestKeyPrefix(t *testing.T) {
@@ -827,7 +827,7 @@ func TestKeyPrefix(t *testing.T) {
 
 	ctx := context.Background()
 
-	const keyPrefix = "tegola-prefix-test:"
+	const keyPrefix = "shigola-prefix-test:"
 	key := cache.Key{MapName: "prefixtest", LayerName: "water", Z: 4, X: 2, Y: 3}
 	val := []byte("\x53\x69\x6c\x61\x73")
 

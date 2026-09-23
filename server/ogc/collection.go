@@ -10,14 +10,14 @@ import (
 // LayerSeparator divides a Layer-collection's id into its map and layer parts.
 //
 // ':' rather than '/', '.' or '_': a slash would make the id look like two path
-// segments, and a dot or underscore can occur in a tegola map or layer name,
+// segments, and a dot or underscore can occur in a shigola map or layer name,
 // which would make the split ambiguous (ADR-0002).
 const LayerSeparator = ":"
 
-// Collection is one tileset's worth of geodata: a tegola map, or a single layer
+// Collection is one tileset's worth of geodata: a shigola map, or a single layer
 // of one (ADR-0002).
 //
-// The two tiers exist because tegola serves both — a map's tiles carry every
+// The two tiers exist because shigola serves both — a map's tiles carry every
 // layer, and a layer's tiles carry one — and OGC clients that can only consume a
 // single-layer tileset would otherwise be unable to use a multi-layer map.
 type Collection struct {

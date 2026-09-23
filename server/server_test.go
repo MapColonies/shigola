@@ -24,7 +24,7 @@ import (
 // test server config
 const (
 	httpPort       = ":8080"
-	serverHostName = "tegola.io"
+	serverHostName = "example.com"
 	serverCert     = "testcert/cert.pem"
 	serverKey      = "testcert/key.pem"
 )

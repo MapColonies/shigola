@@ -10,8 +10,8 @@ import "fmt"
 // identifier of the TileMatrix within the TileMatrixSet.
 //
 // Note that OGC API - Tiles orders tile paths as {tileMatrix}/{tileRow}/{tileCol},
-// i.e. z/y/x, whereas this struct — like morecantile and tegola's native
-// routes — is written x, y, z. Construct tiles by field name at request
+// i.e. z/y/x, whereas this struct — like morecantile and the XYZ
+// convention — is written x, y, z. Construct tiles by field name at request
 // boundaries to avoid transposing rows and columns.
 type Tile struct {
 	X int64

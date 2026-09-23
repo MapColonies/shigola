@@ -11,7 +11,7 @@ import "context"
 //
 // Applied once, at the top, and this is load-bearing. Detaching per tier would
 // make a composite Set return before any tier write, so its fan-out would have
-// no errors to join and `tegola cache seed` would report success for writes it
+// no errors to join and `shigola cache seed` would report success for writes it
 // never waited on. That is why a composite cache builds its children through
 // ForTier, which applies the deadline and never this.
 //
@@ -66,7 +66,7 @@ func (d *detachedCache) Get(ctx context.Context, key *Key) ([]byte, bool, error)
 // written, attempted-and-failed, and dropped — where nothing was attempted and
 // nil is still returned. A caller that needs the write to have actually
 // happened sets WithSynchronousWrites; a caller that needs to know drops
-// happened watches tegola_cache_writes_dropped_total.
+// happened watches shigola_cache_writes_dropped_total.
 //
 // val is not copied. The write outlives this call, so a caller must not reuse
 // or mutate the buffer it passes — which is already true of every backend, all

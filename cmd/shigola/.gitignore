@@ -1,5 +1,5 @@
 *.toml
-tegola
+shigola
 static/debug
 static/landuse2
 *.log

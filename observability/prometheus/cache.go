@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	tegolaCache "github.com/MapColonies/shigola/cache"
+	shigolaCache "github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -49,7 +49,7 @@ var (
 
 type cache struct {
 	observeVars       []string
-	cache             tegolaCache.Interface
+	cache             shigolaCache.Interface
 	hitsCounter       *prometheus.CounterVec
 	missesCounter     *prometheus.CounterVec
 	inFlightGauge     prometheus.Gauge
@@ -83,7 +83,7 @@ func registerOrReuse[T prometheus.Collector](registry prometheus.Registerer, c T
 	panic(err)
 }
 
-func newCache(registry prometheus.Registerer, prefix string, observeVars []string, subCache tegolaCache.Interface) *cache {
+func newCache(registry prometheus.Registerer, prefix string, observeVars []string, subCache shigolaCache.Interface) *cache {
 	var c = cache{
 		observeVars: observeVars,
 		cache:       subCache,
@@ -172,7 +172,7 @@ func (co *cache) labelNames() (names []string) {
 }
 
 // labels returns prometheus.Labels based on the configured observeVars
-func (co *cache) labels(cmd string, key *tegolaCache.Key) (lbs prometheus.Labels) {
+func (co *cache) labels(cmd string, key *shigolaCache.Key) (lbs prometheus.Labels) {
 	lbs = make(prometheus.Labels)
 	for _, keyName := range co.observeVars {
 		switch keyName {
@@ -193,7 +193,7 @@ func (co *cache) labels(cmd string, key *tegolaCache.Key) (lbs prometheus.Labels
 }
 
 // Get will record metrics around the getting the tile from the sub cache
-func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, error) {
+func (co *cache) Get(ctx context.Context, key *shigolaCache.Key) ([]byte, bool, error) {
 	co.inFlightGauge.Inc()
 	lbs := co.labels("get", key)
 	now := time.Now()
@@ -230,7 +230,7 @@ func (co *cache) Get(ctx context.Context, key *tegolaCache.Key) ([]byte, bool, e
 // Only a deadline the cache derived itself is a cache fault, and it says so by
 // returning the typed error.
 func (co *cache) countReadError(ctx context.Context, lbs prometheus.Labels, err error) {
-	var tierTimeout tegolaCache.ErrTierTimeout
+	var tierTimeout shigolaCache.ErrTierTimeout
 	if errors.As(err, &tierTimeout) {
 		co.errors.With(lbs).Add(1)
 		co.readTimeouts.With(lbs).Add(1)
@@ -245,7 +245,7 @@ func (co *cache) countReadError(ctx context.Context, lbs prometheus.Labels, err 
 }
 
 // Set will observe metrics around setting the tile via the sub cache.
-func (co *cache) Set(ctx context.Context, key *tegolaCache.Key, body []byte) error {
+func (co *cache) Set(ctx context.Context, key *shigolaCache.Key, body []byte) error {
 	co.inFlightGauge.Inc()
 	lbs := co.labels("set", key)
 	now := time.Now()
@@ -262,7 +262,7 @@ func (co *cache) Set(ctx context.Context, key *tegolaCache.Key, body []byte) err
 }
 
 // Purge will record the metrics around purging the tile from the sub cache.
-func (co *cache) Purge(ctx context.Context, key *tegolaCache.Key) error {
+func (co *cache) Purge(ctx context.Context, key *shigolaCache.Key) error {
 	co.inFlightGauge.Inc()
 	lbs := co.labels("purge", key)
 	now := time.Now()
@@ -280,10 +280,10 @@ func (co *cache) Purge(ctx context.Context, key *tegolaCache.Key) error {
 // instrumented cache instead of instrumenting it a second time. The method was
 // named Wrapped() until 2026-08-10, which no interface required and nothing
 // called, so the assertion below is the whole point of the rename.
-func (co cache) Original() tegolaCache.Interface { return co.cache }
-func (co cache) IsObserver() bool                { return true }
+func (co cache) Original() shigolaCache.Interface { return co.cache }
+func (co cache) IsObserver() bool                 { return true }
 
 var (
-	_ observability.Cache = (*cache)(nil)
-	_ tegolaCache.Wrapped = (*cache)(nil)
+	_ observability.Cache  = (*cache)(nil)
+	_ shigolaCache.Wrapped = (*cache)(nil)
 )
