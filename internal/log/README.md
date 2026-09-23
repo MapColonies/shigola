@@ -69,3 +69,6 @@ the call sites inherited from tegola, and log through `slog.Default()`:
 All of them attach the first non-nil `error` among their arguments under `err`,
 so `log.Errorf("tier get: %v", err)` produces both a readable message and a
 structured error. A disabled level returns before formatting anything.
+
+`fmt.Println` puts a space between every pair of operands, so a message passed to
+`Error`, `Warn`, `Info` or `Debug` should not end in one: `log.Info("zoom list:", zooms)`.

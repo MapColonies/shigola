@@ -438,8 +438,8 @@ func seedPurgeCommand(_ *cobra.Command, _ []string) (err error) {
 		}
 	}()
 
-	log.Info("zoom list: ", zooms)
-	log.Info("tile matrix set: ", seedPurgeGrid.ID())
+	log.Info("zoom list:", zooms)
+	log.Info("tile matrix set:", seedPurgeGrid.ID())
 	tileChannel := generateTilesForBounds(ctx, seedPurgeBounds, zooms, seedPurgeGrid)
 
 	return doWork(ctx, tileChannel, seedPurgeMaps, cacheConcurrency, seedPurgeWorker)
