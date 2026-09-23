@@ -2,6 +2,7 @@ package log
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,22 +57,46 @@ const ErrorKey = "err"
 // The process identity is top-level, where pino's base puts pid and hostname,
 // rather than under a group as it used to be: a pino consumer looks for them
 // there, and a group attached with WithGroup would also qualify the trace ids
-// Handle adds (MAPCO-11494).
-func New(w io.Writer, lvl slog.Leveler, version, revision string) *slog.Logger {
-	handler := NewHandler(slog.NewJSONHandler(w, &slog.HandlerOptions{
+// correlating adds (MAPCO-11494).
+//
+// exports are further outputs every record is copied to after stderr — the
+// OTLP log bridge, when logs are exported (see logexport). They receive the
+// record with its err serialised as stderr's is, but not the process identity
+// or the trace ids, which an OTLP record carries natively. js-logger keeps its
+// local output alongside its OTLP transport in the same way.
+func New(w io.Writer, lvl slog.Leveler, version, revision string, exports ...slog.Handler) *slog.Logger {
+	var stderr slog.Handler = slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:       lvl,
 		ReplaceAttr: replaceBuiltins,
-	}))
+	})
+	stderr = &correlating{handler: stderr.WithAttrs(processAttrs(version, revision))}
 
-	attrs := []any{slog.Int("pid", os.Getpid())}
+	if len(exports) == 0 {
+		return slog.New(&serialising{handler: stderr})
+	}
+
+	// Errors are serialised once, above the fan-out, so every output reports
+	// the same err — one stack, not one captured per output.
+	return slog.New(&serialising{handler: &fanout{
+		level:    lvl,
+		handlers: append([]slog.Handler{stderr}, exports...),
+	}})
+}
+
+// processAttrs is the identity of the process writing the record.
+//
+// Bound to stderr alone. An export such as OTLP describes the process in its
+// resource instead, and repeating it on every record there would only add
+// duplicates to what the backend stores.
+func processAttrs(version, revision string) []slog.Attr {
+	attrs := []slog.Attr{slog.Int("pid", os.Getpid())}
 	// pino reads os.hostname(), which cannot fail; Go's can, and a record
 	// without the key says so more honestly than one with an empty string.
 	if hostname, err := os.Hostname(); err == nil {
 		attrs = append(attrs, slog.String("hostname", hostname))
 	}
-	attrs = append(attrs, slog.String("version", version), slog.String("rev", revision))
 
-	return slog.New(handler).With(attrs...)
+	return append(attrs, slog.String("version", version), slog.String("rev", revision))
 }
 
 // replaceBuiltins rewrites slog's built-in time and level into pino's
@@ -100,39 +125,59 @@ func replaceBuiltins(groups []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-// NewHandler returns a new custom slog.Handler that wraps the provided baseHandler.
-// The returned handler serialises errors and adds trace correlation; see Handle.
-func NewHandler(baseHandler slog.Handler) slog.Handler {
-	return &Handler{
-		handler: baseHandler,
-	}
+// NewHandler returns base wrapped in the handlers every shigola record passes
+// through: err serialisation, then trace correlation. See serialising and
+// correlating.
+func NewHandler(base slog.Handler) slog.Handler {
+	return &serialising{handler: &correlating{handler: base}}
 }
 
-// Handler is a custom slog.Handler wrapper that shapes what a record carries
-// before the wrapped handler writes it.
-type Handler struct {
+// serialising replaces an error under ErrorKey with pino's err shape before
+// the record reaches the handler it wraps.
+type serialising struct {
 	handler slog.Handler
 }
 
-// Enabled reports whether the underlying handler is enabled for the provided log level.
-// It delegates the check to the wrapped handler.
-func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
+func (h *serialising) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.handler.Enabled(ctx, level)
 }
 
-// Handle processes the log record r. An error under ErrorKey is serialised as
-// pino serialises one, and records emitted inside a trace also carry that
-// trace's ids. The modified record is then passed to the underlying handler
-// for output.
-func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
-	// This used to add debug.Stack() as a top-level "stack" on every ERROR
-	// record, error or not: a large field on a hot path, in a place no pino
-	// consumer looks. The stack now lives in err, and only where there is an
-	// error for it to explain.
+// This used to add debug.Stack() as a top-level "stack" on every ERROR
+// record, error or not: a large field on a hot path, in a place no pino
+// consumer looks. The stack now lives in err, and only where there is an
+// error for it to explain.
+func (h *serialising) Handle(ctx context.Context, r slog.Record) error {
 	if hasError(r) {
 		r = serialiseErrors(r)
 	}
 
+	return h.handler.Handle(ctx, r)
+}
+
+func (h *serialising) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &serialising{handler: h.handler.WithAttrs(attrs)}
+}
+
+func (h *serialising) WithGroup(name string) slog.Handler {
+	return &serialising{handler: h.handler.WithGroup(name)}
+}
+
+// correlating adds the ids of the trace a record was written in.
+//
+// Its own handler, rather than part of serialising, because it belongs to
+// stderr alone: an OTLP log record carries its trace and span natively, read
+// by the bridge from the same context, and the ids as attributes too would be
+// duplicates — in Loki, colliding ones, since its OTLP intake already stores
+// the native trace id as trace_id.
+type correlating struct {
+	handler slog.Handler
+}
+
+func (h *correlating) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.handler.Enabled(ctx, level)
+}
+
+func (h *correlating) Handle(ctx context.Context, r slog.Record) error {
 	// Correlation is added here, on the record, rather than by the caller:
 	// every log line in a request should carry it, and the context is the only
 	// thing every logging call site has in common.
@@ -151,6 +196,64 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	}
 
 	return h.handler.Handle(ctx, r)
+}
+
+func (h *correlating) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &correlating{handler: h.handler.WithAttrs(attrs)}
+}
+
+func (h *correlating) WithGroup(name string) slog.Handler {
+	return &correlating{handler: h.handler.WithGroup(name)}
+}
+
+// fanout hands each record to every output: stderr first, then the exports.
+//
+// The level is decided once, here, so every output honours the one
+// --log-level. An output that fails does not stop the ones after it — stderr
+// is written before any export is tried, so a collector that is down cannot
+// cost the local log — and the failures are joined for slog, which discards
+// them; an export reports its own delivery failures through OTEL's error
+// handler.
+type fanout struct {
+	level    slog.Leveler
+	handlers []slog.Handler
+}
+
+func (h *fanout) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= h.level.Level()
+}
+
+func (h *fanout) Handle(ctx context.Context, r slog.Record) error {
+	var errs []error
+	for _, handler := range h.handlers {
+		if !handler.Enabled(ctx, r.Level) {
+			continue
+		}
+		// Cloned because a handler may add attributes to the record it is
+		// given, as correlating does, and the copies share storage.
+		if err := handler.Handle(ctx, r.Clone()); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (h *fanout) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h.derive(func(handler slog.Handler) slog.Handler { return handler.WithAttrs(attrs) })
+}
+
+func (h *fanout) WithGroup(name string) slog.Handler {
+	return h.derive(func(handler slog.Handler) slog.Handler { return handler.WithGroup(name) })
+}
+
+func (h *fanout) derive(with func(slog.Handler) slog.Handler) slog.Handler {
+	handlers := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		handlers[i] = with(handler)
+	}
+
+	return &fanout{level: h.level, handlers: handlers}
 }
 
 // hasError reports whether r carries an error value under ErrorKey. It is the
@@ -216,18 +319,6 @@ func errorAttr(err error, level slog.Level) slog.Attr {
 	}
 
 	return slog.Group(ErrorKey, fields...)
-}
-
-// WithAttrs returns a new Handler that includes the specified attributes with every log record.
-// It derives a new underlying handler with the extra attributes.
-func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &Handler{handler: h.handler.WithAttrs(attrs)}
-}
-
-// WithGroup returns a new Handler that associates log records with the specified group name.
-// It derives a new underlying handler with the group context applied.
-func (h *Handler) WithGroup(name string) slog.Handler {
-	return &Handler{handler: h.handler.WithGroup(name)}
 }
 
 // ParseLogLevel converts the provided log level string to the corresponding slog.Level.

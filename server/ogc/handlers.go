@@ -13,7 +13,7 @@ import (
 // package logs is something it could not do.
 //
 // It takes the request so the record carries that request's trace and span ids
-// (internal/log.Handler): what goes wrong here — a response that could not be
+// (internal/log.NewHandler): what goes wrong here — a response that could not be
 // written, a cache that could not be read — is only diagnosable against the
 // request it happened to.
 func logf(r *http.Request, format string, args ...any) {
