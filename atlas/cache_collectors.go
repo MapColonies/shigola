@@ -7,6 +7,12 @@ import (
 	"github.com/MapColonies/shigola/observability"
 )
 
+// metricPrefix names every metric family atlas publishes on behalf of
+// something else: the cache's pool and chain counters, and each map's provider
+// collectors. It matches the prefix the prometheus observer gives its own
+// families, so one product publishes under one name.
+const metricPrefix = "shigola"
+
 // cacheStatsCollector publishes the write pool's and the chain's counters.
 //
 // They cannot publish themselves: observability imports cache, so cache can
@@ -52,7 +58,7 @@ func newCacheStatsCollector(prefix string, pool *cache.WritePool, chain cache.Ch
 		slotsInFlight: desc("_write_slots_in_flight",
 			"Detached cache writes currently in flight. Alert on this approaching capacity: drops only begin once the pool is already exhausted."),
 		slotsCapacity: desc("_write_slots_capacity",
-			"Configured detached write slots (TEGOLA_OPTIONS=DetachedWriteSlots)."),
+			"Configured detached write slots (SHIGOLA_OPTIONS=DetachedWriteSlots)."),
 
 		dropped: desc("_writes_dropped_total",
 			"Detached writes never attempted because the pool was full at admission."),
@@ -64,7 +70,7 @@ func newCacheStatsCollector(prefix string, pool *cache.WritePool, chain cache.Ch
 		failed:    desc("_writes_failed_total", "Detached writes attempted that returned an error."),
 		completed: desc("_writes_completed_total", "Detached writes attempted that succeeded."),
 		writeDuration: desc("_write_duration_seconds_total",
-			"Cumulative duration of completed detached writes. A mean when divided by writes_completed_total; read the tail from tegola_cache_tier_duration_seconds{sub_command=\"set\"} instead."),
+			"Cumulative duration of completed detached writes. A mean when divided by writes_completed_total; read the tail from shigola_cache_tier_duration_seconds{sub_command=\"set\"} instead."),
 
 		promotions:        desc("_promotions_total", "Tiles promoted into an earlier tier after a lower-tier hit."),
 		promotionsDropped: desc("_promotions_dropped_total", "Promotions the write pool refused at admission."),
@@ -122,5 +128,5 @@ func cacheCollectors(c cache.Interface) []observability.Collector {
 		return nil
 	}
 
-	return []observability.Collector{newCacheStatsCollector("shigola_cache", pool, chain)}
+	return []observability.Collector{newCacheStatsCollector(metricPrefix+"_cache", pool, chain)}
 }

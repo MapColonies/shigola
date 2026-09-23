@@ -99,19 +99,6 @@
         "hide": 0,
         "sort": 1,
         "options": []
-      },
-      {
-        "type": "constant",
-        "name": "provider_prefix",
-        "label": "Provider metric prefix",
-        "query": "tegola",
-        "current": {
-          "text": "tegola",
-          "value": "tegola"
-        },
-        "hide": 0,
-        "skipUrlSync": false,
-        "description": "Provider/postgres metrics are still emitted as tegola_* — atlas.go:406 hardcodes the prefix. Set to shigola once fixed."
       }
     ]
   },
@@ -3501,7 +3488,6 @@
       "type": "row",
       "title": "Providers & Postgres",
       "collapsed": false,
-      "description": "NOTE: these still carry the tegola_ prefix — atlas.go passes a hardcoded \"tegola\" as the provider collector prefix. Change $provider_prefix once that is fixed.",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3595,7 +3581,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(${provider_prefix}_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(shigola_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "range": true,
           "refId": "A"
@@ -3606,7 +3592,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(${provider_prefix}_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(shigola_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "range": true,
           "refId": "B"
@@ -3617,7 +3603,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(${provider_prefix}_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(shigola_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "range": true,
           "refId": "C"
@@ -3709,7 +3695,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum by (provider_name) (rate(${provider_prefix}_mvt_provider_sql_query_seconds_count{map_name=~\"$map\"}[$__rate_interval]))",
+          "expr": "sum by (provider_name) (rate(shigola_mvt_provider_sql_query_seconds_count{map_name=~\"$map\"}[$__rate_interval]))",
           "legendFormat": "mvt {{provider_name}}",
           "range": true,
           "refId": "A"
@@ -3720,7 +3706,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum by (provider_name) (rate(${provider_prefix}_provider_sql_query_seconds_count{map_name=~\"$map\"}[$__rate_interval]))",
+          "expr": "sum by (provider_name) (rate(shigola_provider_sql_query_seconds_count{map_name=~\"$map\"}[$__rate_interval]))",
           "legendFormat": "std {{provider_name}}",
           "range": true,
           "refId": "B"
@@ -3812,7 +3798,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le, z) (rate(${provider_prefix}_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, z) (rate(shigola_mvt_provider_sql_query_seconds_bucket{map_name=~\"$map\"}[$__rate_interval])))",
           "legendFormat": "z{{z}}",
           "range": true,
           "refId": "A"
@@ -3904,7 +3890,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum by (provider_name) (${provider_prefix}_postgres_current_connections)",
+          "expr": "sum by (provider_name) (shigola_postgres_current_connections)",
           "legendFormat": "current {{provider_name}}",
           "range": true,
           "refId": "A"
@@ -3915,7 +3901,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum by (provider_name) (${provider_prefix}_postgres_available_connections)",
+          "expr": "sum by (provider_name) (shigola_postgres_available_connections)",
           "legendFormat": "available {{provider_name}}",
           "range": true,
           "refId": "B"
@@ -3926,7 +3912,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum by (provider_name) (${provider_prefix}_postgres_max_connections)",
+          "expr": "sum by (provider_name) (shigola_postgres_max_connections)",
           "legendFormat": "max {{provider_name}}",
           "range": true,
           "refId": "C"
@@ -4020,7 +4006,7 @@
             "uid": "${ds_prom}"
           },
           "editorMode": "code",
-          "expr": "sum(${provider_prefix}_postgres_current_connections) / clamp_min(sum(${provider_prefix}_postgres_max_connections), 1)",
+          "expr": "sum(shigola_postgres_current_connections) / clamp_min(sum(shigola_postgres_max_connections), 1)",
           "legendFormat": "pool usage",
           "range": true,
           "refId": "A"

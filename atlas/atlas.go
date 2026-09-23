@@ -403,7 +403,7 @@ func (a *Atlas) SetObservability(o observability.Interface) {
 	}
 	for _, aMap := range a.maps {
 
-		collectors, err := aMap.Collectors("tegola", o.CollectorConfig)
+		collectors, err := aMap.Collectors(metricPrefix, o.CollectorConfig)
 		if err != nil {
 			log.Errorf("failed to register collector for map: %v ignoring", aMap.Name)
 			continue
