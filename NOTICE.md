@@ -49,8 +49,8 @@ as the port's correctness oracle.
 ## Go module dependencies
 
 Third-party Go modules are compiled into Shigola's binaries. Each retains its
-own license file within its module source; see [`go.mod`](go.mod) for the
-full list and versions. These include, among others:
+own license file within its module source; [`go.mod`](go.mod) lists them and
+their versions, alongside a few tool-only modules that are not compiled in. These include, among others:
 
 - `github.com/go-spatial/geom`, `github.com/go-spatial/proj`,
   `github.com/go-spatial/cobra` — Go Spatial, MIT

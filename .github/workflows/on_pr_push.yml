@@ -224,6 +224,8 @@ jobs:
       # Tracked Go files rather than `gofmt -s -l .`: the gate is about what a
       # pull request can change, so an untracked tree on disk -- a local
       # `go mod vendor`, which is ignored and never -s clean -- cannot fail it.
+      # Listing files beats filtering gofmt's output, which would have to
+      # survive grep exiting 1 on the clean run under the runner's pipefail.
       - name: Check formatting
         run: |
           unformatted=$(git ls-files -z '*.go' | xargs -0 gofmt -s -l)

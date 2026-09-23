@@ -61,7 +61,7 @@ COPY . .
 RUN env
 
 # Build binary
-RUN cd /go/src/github.com/MapColonies/shigola/cmd/shigola \
+RUN cd cmd/shigola \
 	&& go build -v  \
 	-ldflags "-w -X '${BUILD_PKG}.Version=${VERSION}' -X '${BUILD_PKG}.GitRevision=${GIT_REVISION}' -X '${BUILD_PKG}.GitBranch=${GIT_BRANCH}'" \
 	-gcflags "-N -l" \

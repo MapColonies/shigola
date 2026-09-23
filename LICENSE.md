@@ -67,5 +67,5 @@ full, unmodified, at tms/LICENSE-morecantile.
 --------------------------------------------------------------------------------
 
 Third-party Go modules compiled into this software retain their own licence
-files within their module sources, as listed in go.mod. See NOTICE.md for the complete list of third-party
-works redistributed with this software.
+files within their module sources; go.mod pins their versions. See NOTICE.md
+for the complete list of third-party works redistributed with this software.

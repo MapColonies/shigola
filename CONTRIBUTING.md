@@ -302,6 +302,10 @@ GOPROXY=off go build ./cmd/shigola   # offline, from that cache alone
 Or point `GOPROXY` at an internal proxy the offline network can reach. Either keeps the tree free of
 a copy of its dependencies.
 
+If you do run `go mod vendor` locally, remove the result when you are done: while
+`vendor/modules.txt` exists, `go build` switches to vendor mode on its own and builds from that copy,
+not from `go.sum`.
+
 ## Code conventions
 
 * **`gofmt -s` and `go vet` are required**, and CI enforces both (see [Required checks](#required-checks)).

@@ -338,7 +338,7 @@ func (s3c *Cache) Set(ctx context.Context, key *cache.Key, val []byte) error {
 	// write-pool slot forever, so enough of them over a process lifetime
 	// empty the pool and every write is dropped until a restart.
 	//
-	// In the vendored SDK the only difference between the two calls is
+	// In the pinned SDK the only difference between the two calls is
 	// req.SetContext(ctx).
 	_, err = s3c.Client.PutObjectWithContext(ctx, &input)
 	if err != nil {

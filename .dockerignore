@@ -1,12 +1,15 @@
 # What the image build does not need.
 #
-# The Dockerfile ends with `COPY . /go/src/...`, so without this every build
+# The Dockerfile ends with `COPY . .`, so without this every build
 # ships the whole working tree to the daemon. The build stage runs `go build`
 # and nothing else -- no tests, no generators -- so anything `go build` ignores
 # is freight.
 #
 # Dependencies are not in the context at all: the build stage downloads them
-# against go.sum (MAPCO-11521).
+# against go.sum (MAPCO-11521). vendor/ is listed below for the same reason it
+# is gitignored: a local `go mod vendor` would otherwise be copied in, and go
+# build switches to vendor mode by itself whenever vendor/modules.txt exists,
+# so the image would build from that local copy instead of the download.
 
 # By far the largest single thing in the context, and of no use to a build that
 # takes its version, branch and revision as build arguments.
@@ -23,6 +26,8 @@ internal/mvttest
 internal/ttools
 provider/test
 server/testcert
+
+vendor
 
 # CI, docs and local development. None of it is compiled.
 .github
