@@ -281,8 +281,10 @@ Optional features compile out behind `noS3Cache`, `noRedisCache`, `noAzblobCache
 
 ## Code conventions
 
-* **`gofmt -s`.** If running it produces changes in parts of the tree you are not working on, send
-  those in a separate pull request.
+* **`gofmt -s` and `go vet` are required**, and CI enforces both (see [Required checks](#required-checks)).
+  Never run `gofmt -s -w .` at the root: it rewrites `vendor/`. Format the paths you changed, and if
+  that produces changes in parts of the tree you are not working on, send those in a separate pull
+  request.
 * **Error variables** take the form `var ErrErrorName = errors.New("provider: canceled")` — the text
   all lowercase, with no punctuation at the end.
 * **Table-driven subtests keyed by name**, with a `fn := func(tc tcase) func(*testing.T)` closure.
@@ -324,12 +326,18 @@ CGO_ENABLED=0 go build -mod vendor ./...
 CGO_ENABLED=0 go test -run '^$' -mod vendor ./...   # links every test binary, runs none
 ```
 
-Two more gates worth running before you push:
+### Required checks
+
+CI fails a pull request on any of these, so run them before you push:
 
 ```bash
-gofmt -s -l . | grep -v '^vendor/'    # vendor/ is never -s clean; nothing else may appear
+git ls-files -z '*.go' ':!:vendor/**' | xargs -0 gofmt -s -l   # vendor/ is never -s clean; must print nothing
+go vet -mod vendor ./...              # the default analyzers; the tree is clean against them
 govulncheck ./...
 ```
+
+The tree is clean against `gofmt -s` and `go vet` today, so a finding from either is one your change
+introduced. Fix it rather than working around the check.
 
 ### Opt-in suites
 

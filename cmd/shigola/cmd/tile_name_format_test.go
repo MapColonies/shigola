@@ -160,10 +160,11 @@ func TestFormatParse(t *testing.T) {
 	for k, tc := range testcases {
 
 		z, x, y, err := tc.format.Parse(tc.input)
-		if errOk(tc.err, err) {
-			continue
-		} else {
+		if !errOk(tc.err, err) {
 			t.Errorf("[%v] unexpected err, expected %v got %v", k, tc.err, err)
+			continue
+		}
+		if tc.err != nil {
 			continue
 		}
 

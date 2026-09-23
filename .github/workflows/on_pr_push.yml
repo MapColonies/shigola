@@ -203,6 +203,46 @@ jobs:
         if: always()
         run: docker compose down
 
+  # Its own job, so a formatting or vet failure is named in the checks list
+  # and arrives in seconds rather than after the fixture restore and the suite.
+  static:
+    name: Static checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      # vendor/ is committed and is not `gofmt -s` clean, so `gofmt -s -l .`
+      # would report hundreds of files nobody here owns. List the tracked Go
+      # files outside it instead -- a filter on gofmt's output would have to
+      # survive grep exiting 1 on the clean run under the runner's pipefail.
+      - name: Check formatting
+        run: |
+          unformatted=$(git ls-files -z '*.go' ':!:vendor/**' | xargs -0 gofmt -s -l)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt -s clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # The default analyzers, nothing added: the tree was brought clean against
+      # exactly these (MAPCO-11498), so a finding here is new. vet skips vendor/
+      # on its own; ./... never matches it.
+      #
+      # Twice, because vet only sees the files the build tags select. The second
+      # run sets every opt-out tag plus pprof, so the stub files that stand in
+      # for a compiled-out backend are vetted too, not only the default build.
+      - name: Vet
+        run: |
+          go vet -mod vendor ./...
+          go vet -mod vendor -tags 'noS3Cache noRedisCache noAzblobCache noGCSCache noGpkgProvider noPostgisProvider noPrometheusObserver pprof' ./...
+
   govulncheck:
     name: Run govulncheck
     runs-on: ubuntu-22.04
