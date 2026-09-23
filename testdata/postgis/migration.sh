@@ -24,16 +24,6 @@ export PGDATABASE="postgres"
 DB="shigola"
 NO_ACCESS_ROLE="shigola_no_access"
 
-# The pre-rename names. Dropped rather than ignored: a developer whose volume
-# predates the rename would otherwise keep a stale, Athens-less "tegola"
-# database alongside the real one, and PGURI pointing at either would connect.
-LEGACY_DB="tegola"
-LEGACY_NO_ACCESS_ROLE="tegola_no_access"
-
-echo "Dropping pre-rename '$LEGACY_DB' database and '$LEGACY_NO_ACCESS_ROLE' role (if any)..."
-run psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "DROP DATABASE IF EXISTS $LEGACY_DB;"
-run psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "DROP ROLE IF EXISTS $LEGACY_NO_ACCESS_ROLE;"
-
 echo "Dropping existing '$DB' database (if any)..."
 run psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "DROP DATABASE IF EXISTS $DB;"
 

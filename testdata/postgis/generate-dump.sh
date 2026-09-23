@@ -5,9 +5,9 @@
 # Why this script has to exist at all: a pg_dump custom-format archive records
 # the name of the database it was dumped from in its header, and `pg_restore -C`
 # creates *that* name. The fixture database name is therefore data inside the
-# archive, not a reference to it -- which is why renaming every mention of
-# "tegola" in the tree never renamed the database, and why regenerating the
-# archive from a database that is genuinely called "shigola" is the only fix.
+# archive, not a reference to it -- which is why renaming the project in the
+# tree never renamed the database, and why regenerating the archive from a
+# database that is genuinely called "shigola" is the only fix.
 #
 # The same rebuild is the moment the Athens OSM extract can be added, so the
 # PostGIS fixture carries the layers the OGC CITE suite exercises (see
