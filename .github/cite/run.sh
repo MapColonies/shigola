@@ -43,14 +43,7 @@ OUT=${5:-cite-$SCHEME.xml}
 # run that silently tested nothing fails instead of passing.
 MIN_PASSED=${MIN_PASSED:-15}
 
-# SHIGOLA_PORT, falling back to the pre-rename TEGOLA_PORT so an existing caller
-# keeps working. internal/env.Getenv resolves the same way and warns on the
-# legacy name; warn here too, or the deprecation is silent in exactly the place
-# someone is still using it.
-if [ -z "${SHIGOLA_PORT:-}" ] && [ -n "${TEGOLA_PORT:-}" ]; then
-	echo "warning: TEGOLA_PORT is deprecated, use SHIGOLA_PORT" >&2
-fi
-SHIGOLA_PORT=${SHIGOLA_PORT:-${TEGOLA_PORT:-8081}}
+SHIGOLA_PORT=${SHIGOLA_PORT:-8081}
 TE_PORT=${TE_PORT:-8080}
 TE_IMAGE=${TE_IMAGE:-ogccite/ets-ogcapi-tiles10}
 TE_NAME=${TE_NAME:-cite-teamengine}
