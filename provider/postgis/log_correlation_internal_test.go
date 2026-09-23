@@ -21,9 +21,9 @@ func TestLoggerAdapterCorrelates(t *testing.T) {
 	}
 
 	testCases := map[string]tcase{
-		"error in a trace": {ctx: fakelog.TracedContext(true), level: tracelog.LogLevelError, want: "ERROR", trace: true},
-		"warn in a trace":  {ctx: fakelog.TracedContext(true), level: tracelog.LogLevelWarn, want: "WARN", trace: true},
-		"error untraced":   {ctx: context.Background(), level: tracelog.LogLevelError, want: "ERROR"},
+		"error in a trace": {ctx: fakelog.TracedContext(true), level: tracelog.LogLevelError, want: "error", trace: true},
+		"warn in a trace":  {ctx: fakelog.TracedContext(true), level: tracelog.LogLevelWarn, want: "warn", trace: true},
+		"error untraced":   {ctx: context.Background(), level: tracelog.LogLevelError, want: "error"},
 		// Anything below warn is dropped, which the adapter did before and
 		// still does: correlation does not make a silent level speak.
 		"info in a trace":  {ctx: fakelog.TracedContext(true), level: tracelog.LogLevelInfo},

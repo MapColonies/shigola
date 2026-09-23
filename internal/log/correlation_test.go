@@ -51,7 +51,7 @@ func TestCorrelationIDs(t *testing.T) {
 			ctx:   fakelog.ContextWith(fakelog.TraceID, trace.SpanID{}, true),
 			level: slog.LevelInfo,
 		},
-		// Errors already carry a stack; correlation is added alongside it.
+		// Correlation is added to error records as to any other.
 		"on an error": {
 			ctx:   fakelog.TracedContext(true),
 			level: slog.LevelError,
@@ -67,12 +67,6 @@ func TestCorrelationIDs(t *testing.T) {
 
 			record := rec.One(t)
 			fakelog.AssertCorrelation(t, record, tc.trace, tc.span)
-
-			if tc.level >= slog.LevelError {
-				if _, ok := record["stack"]; !ok {
-					t.Error("stack: absent on an error record")
-				}
-			}
 		}
 	}
 
@@ -81,44 +75,26 @@ func TestCorrelationIDs(t *testing.T) {
 	}
 }
 
-// TestServiceAttrsKeepCorrelationAtTheTopLevel composes a logger exactly as the
-// binaries do, because where the correlation ids land is a property of that
-// composition rather than of the handler alone: an open group would qualify
-// them, and shigola.trace_id is not the name a log pipeline looks for.
-func TestServiceAttrsKeepCorrelationAtTheTopLevel(t *testing.T) {
+// TestProcessIdentityLeavesCorrelationAtTheTopLevel uses the logger the
+// binaries install, because where the correlation ids land is a property of
+// the fields that logger binds rather than of the handler alone: binding the
+// process identity under an open group would qualify the ids as well, and
+// shigola.trace_id is not the name a log pipeline looks for.
+func TestProcessIdentityLeavesCorrelationAtTheTopLevel(t *testing.T) {
 	logger, rec := fakelog.New()
-	logger.With(log.ServiceAttrs("v1.2.3", "cafe123")).
-		ErrorContext(fakelog.TracedContext(true), "boom")
+	logger.ErrorContext(fakelog.TracedContext(true), "boom")
 
 	record := rec.One(t)
 	fakelog.AssertCorrelation(t, record, fakelog.TraceIDHex, fakelog.SpanIDHex)
 
-	// The stack trace is top-level for the same reason, which is a change from
-	// when the group was open and carried it.
-	if _, ok := record["stack"]; !ok {
-		t.Error("stack: not at the top level of an error record")
+	if record["version"] != fakelog.Version {
+		t.Errorf("version: %v, want %v", record["version"], fakelog.Version)
 	}
-
-	// The process identity keeps the shape it had under WithGroup: the point of
-	// the change is that correlation escapes the group, not that anything else
-	// moves.
-	group, ok := record[log.ServiceGroup].(map[string]any)
-	if !ok {
-		t.Fatalf("%v: %#v, want an object", log.ServiceGroup, record[log.ServiceGroup])
+	if record["rev"] != fakelog.Revision {
+		t.Errorf("rev: %v, want %v", record["rev"], fakelog.Revision)
 	}
-	if group["version"] != "v1.2.3" {
-		t.Errorf("%v.version: %v, want v1.2.3", log.ServiceGroup, group["version"])
-	}
-	if group["rev"] != "cafe123" {
-		t.Errorf("%v.rev: %v, want cafe123", log.ServiceGroup, group["rev"])
-	}
-	if _, ok := group["pid"]; !ok {
-		t.Errorf("%v.pid: absent", log.ServiceGroup)
-	}
-	for _, key := range []string{log.TraceIDKey, log.SpanIDKey} {
-		if _, ok := group[key]; ok {
-			t.Errorf("%v.%v: present, want it at the top level only", log.ServiceGroup, key)
-		}
+	if _, ok := record["shigola"]; ok {
+		t.Error("shigola: present, want the process identity at the top level")
 	}
 }
 
@@ -133,10 +109,10 @@ func TestContextHelpersCorrelate(t *testing.T) {
 	}
 
 	testCases := map[string]tcase{
-		"error": {emit: log.ErrorfContext, level: "ERROR"},
-		"warn":  {emit: log.WarnfContext, level: "WARN"},
-		"info":  {emit: log.InfofContext, level: "INFO"},
-		"debug": {emit: log.DebugfContext, level: "DEBUG"},
+		"error": {emit: log.ErrorfContext, level: "error"},
+		"warn":  {emit: log.WarnfContext, level: "warn"},
+		"info":  {emit: log.InfofContext, level: "info"},
+		"debug": {emit: log.DebugfContext, level: "debug"},
 	}
 
 	fn := func(tc tcase) func(t *testing.T) {
@@ -188,7 +164,7 @@ func BenchmarkHandleInATrace(b *testing.B) {
 var benchOpts = &slog.HandlerOptions{Level: slog.LevelDebug}
 
 func benchmarkHandle(b *testing.B, handler slog.Handler, ctx context.Context) {
-	logger := slog.New(handler).With(log.ServiceAttrs("v1.2.3", "cafe123"))
+	logger := slog.New(handler).With("pid", 1, "hostname", "web-01", "version", "v1.2.3", "rev", "cafe123")
 
 	b.ReportAllocs()
 	b.ResetTimer()

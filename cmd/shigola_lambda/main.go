@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,6 +37,11 @@ const DefaultConfLocation = "config.toml"
 // https://docs.aws.amazon.com/lambda/latest/dg/go-programming-model-handler-types.html
 func init() {
 	var err error
+
+	// First, so everything below — config errors included — is written in the
+	// same format as the server's records rather than slog's default text.
+	// There is no --log-level here; Lambda logs at INFO.
+	slog.SetDefault(log.New(os.Stderr, slog.LevelInfo, build.Version, build.GitRevision))
 
 	// override the URLRoot func with a lambda specific one
 	server.URLRoot = URLRoot
