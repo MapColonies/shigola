@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	cloud.google.com/go/storage v1.56.0
 	github.com/Azure/azure-storage-blob-go v0.0.0-20180706173141-f0a732ea9441
-	github.com/BurntSushi/toml v0.4.1
+	github.com/BurntSushi/toml v1.6.0
 	github.com/akrylysov/algnhsa v1.0.0
 	github.com/aws/aws-sdk-go v1.34.0
 	github.com/dimfeld/httptreemux v5.0.1+incompatible

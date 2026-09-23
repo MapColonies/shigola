@@ -308,7 +308,7 @@ func (d Dict) UintSlice(key string) (v []uint, err error) {
 		var iv []interface{}
 		if iv, ok = val.([]interface{}); !ok {
 			// Could not convert to the generic type, so we don't have the correct thing.
-			return v, &ErrType{val}
+			return v, dict.ErrKeyType{Key: key, Value: val, T: reflect.TypeOf(v)}
 		}
 		v = make([]uint, len(iv))
 		for k := range iv {
@@ -382,7 +382,7 @@ func (d Dict) FloatSlice(key string) (v []float64, err error) {
 		var iv []interface{}
 		if iv, ok = val.([]interface{}); !ok {
 			// Could not convert to the generic type, so we don't have the correct thing.
-			return v, &ErrType{val}
+			return v, dict.ErrKeyType{Key: key, Value: val, T: reflect.TypeOf(v)}
 		}
 		v = make([]float64, len(iv))
 		for k := range iv {

@@ -414,10 +414,16 @@ func (c *Config) ConfigureTileBuffers() {
 
 // Parse will parse the Tegola config file provided by the io.Reader.
 func Parse(reader io.Reader, location string) (conf Config, err error) {
-	// decode conf file, don't care about the meta data.
-	_, err = toml.NewDecoder(reader).Decode(&conf)
+	// Read whole, so a failed decode can be told apart from a syntax error.
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return conf, err
+	}
+
+	// decode conf file, don't care about the meta data.
+	_, err = toml.Decode(string(data), &conf)
+	if err != nil {
+		return conf, withTypeHint(err, data)
 	}
 
 	for _, m := range conf.Maps {

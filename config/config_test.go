@@ -279,10 +279,12 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		// The decoder reports the key an UnmarshalTOML error came from; headers
+		// is one env.Dict, so the key is the table's.
 		"missing env": {
 			configPath:  "testdata/missing_env.toml",
 			expected:    config.Config{},
-			expectedErr: env.ErrEnvVar("I_AM_MISSING"),
+			expectedErr: errors.New(`toml: line 5 (last key "webserver.headers"): environment variable "I_AM_MISSING" not found`),
 		},
 		"empty proxy_protocol": {
 			configPath: "testdata/empty_proxy_protocol.toml",
