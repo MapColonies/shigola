@@ -40,7 +40,7 @@ func (te ErrType) Error() string {
 	return fmt.Sprintf("%v (%T) is not %s", te.v, te.v, te.want)
 }
 
-// What each parser wants, shared with the slice parsers in dict.go.
+// What each parser wants, as ErrType reports it.
 const (
 	wantString = "a string"
 	wantBool   = "a boolean (true or false)"

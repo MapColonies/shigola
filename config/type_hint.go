@@ -63,6 +63,14 @@ func typeHint(t reflect.Type, key string) (string, bool) {
 	return describe(t)
 }
 
+// deref strips the pointers from t.
+func deref(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
+}
+
 // tableType strips the pointers and arrays of tables between a key and the
 // struct its sub-keys are fields of.
 func tableType(t reflect.Type) reflect.Type {
@@ -105,15 +113,26 @@ func fieldByKey(t reflect.Type, name string) (reflect.StructField, bool) {
 	return *byName, true
 }
 
-// A scalar's kind, described as the value a key takes and, for arrays, as what
-// the array holds.
-var scalarHints = map[reflect.Kind][2]string{
+// scalarHint describes a scalar kind as the value a key takes (one) and as what
+// an array of it holds (many).
+type scalarHint struct {
+	one, many string
+}
+
+var scalarHints = map[reflect.Kind]scalarHint{
 	reflect.Bool:    {"a boolean, true or false", "booleans"},
 	reflect.String:  {"a string", "strings"},
 	reflect.Int:     {"an integer", "integers"},
+	reflect.Int8:    {"an integer", "integers"},
+	reflect.Int16:   {"an integer", "integers"},
+	reflect.Int32:   {"an integer", "integers"},
 	reflect.Int64:   {"an integer", "integers"},
 	reflect.Uint:    {"a non-negative integer", "non-negative integers"},
+	reflect.Uint8:   {"a non-negative integer", "non-negative integers"},
+	reflect.Uint16:  {"a non-negative integer", "non-negative integers"},
+	reflect.Uint32:  {"a non-negative integer", "non-negative integers"},
 	reflect.Uint64:  {"a non-negative integer", "non-negative integers"},
+	reflect.Float32: {"a floating-point number, e.g. 1.0", "floating-point numbers"},
 	reflect.Float64: {"a floating-point number, e.g. 1.0", "floating-point numbers"},
 }
 
@@ -125,15 +144,10 @@ var scalarHints = map[reflect.Kind][2]string{
 // env.Dict is a table of anything; an array of tables has nothing useful to say
 // about a key that named the array itself.
 func describe(t reflect.Type) (string, bool) {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
+	t = deref(t)
 
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		elem := t.Elem()
-		for elem.Kind() == reflect.Pointer {
-			elem = elem.Elem()
-		}
+		elem := deref(t.Elem())
 		if !kindIsTruthful(elem) {
 			return "", false
 		}
@@ -141,14 +155,14 @@ func describe(t reflect.Type) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		return "an array of " + hint[1], true
+		return "an array of " + hint.many, true
 	}
 
 	if !kindIsTruthful(t) {
 		return "", false
 	}
 	hint, ok := scalarHints[t.Kind()]
-	return hint[0], ok
+	return hint.one, ok
 }
 
 var (
