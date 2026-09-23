@@ -51,6 +51,9 @@ var RootCmd = &cobra.Command{
 	Long: fmt.Sprintf(`shigola is a vector tile server
 Version: %v`, build.Version),
 	PersistentPreRunE: rootCmdValidatePersistent,
+	// main reports the error as a log record; cobra's own "Error: ..." line
+	// would be a second, unstructured copy of it.
+	SilenceErrors: true,
 }
 
 func rootCmdValidatePersistent(cmd *cobra.Command, _ []string) (err error) {
