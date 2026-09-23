@@ -2,36 +2,23 @@ package tracing
 
 import (
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/MapColonies/shigola/internal/env"
+	"github.com/MapColonies/shigola/internal/otlp"
 )
 
-// Exporter names accepted by Config.Exporter.
-//
-// Tempo listens for OTLP on both, on different ports (4317 and 4318), and a
-// collector in front of it may accept only one — so the protocol is an operator
-// decision rather than something this service can pick for them.
+// Exporter names accepted by Config.Exporter. See internal/otlp, which every
+// OTLP export shares.
 const (
-	ExporterOTLPGRPC = "otlp_grpc"
-	ExporterOTLPHTTP = "otlp_http"
+	ExporterOTLPGRPC = otlp.ExporterGRPC
+	ExporterOTLPHTTP = otlp.ExporterHTTP
 )
 
 // Defaults applied to an enabled Config that leaves a field unset.
 const (
-	// DefaultServiceName is what spans are attributed to in Tempo when the
-	// config does not say. It is the process, not the deployment: an operator
-	// running several shigolas against one Tempo should set service_name per
-	// deployment.
-	DefaultServiceName = "shigola"
-
-	// DefaultExporter is OTLP over gRPC — Tempo's own default receiver, and
-	// the cheaper of the two per span.
-	DefaultExporter = ExporterOTLPGRPC
+	DefaultServiceName = otlp.DefaultServiceName
+	DefaultExporter    = otlp.DefaultExporter
 
 	// DefaultSampleRatio is 1%, and it is deliberately not 100%.
 	//
@@ -46,10 +33,7 @@ const (
 	// tracing/otlp, which always follows an upstream decision.
 	DefaultSampleRatio = 0.01
 
-	// DefaultTimeout bounds one export attempt. Long enough to ride out a
-	// collector's GC pause, short enough that a black-holed endpoint does not
-	// pile spans up in the batch processor's queue indefinitely.
-	DefaultTimeout = 10 * time.Second
+	DefaultTimeout = otlp.DefaultTimeout
 )
 
 // Config is the [tracing] section of the config file.
@@ -139,85 +123,15 @@ func (c Config) Validate() error {
 }
 
 // IsEndpointURL reports whether Endpoint is a full URL rather than a bare host
-// and port.
-//
-// On the scheme separator, not on url.Parse succeeding: url.Parse accepts
-// "tempo:4318" quite happily, reading "tempo" as the scheme and "4318" as an
-// opaque path, so it cannot tell the two shapes apart.
+// and port. See otlp.IsEndpointURL.
 func (c Config) IsEndpointURL() bool {
-	return strings.Contains(string(c.Endpoint), "://")
+	return otlp.IsEndpointURL(string(c.Endpoint))
 }
 
-// validateEndpoint rejects an endpoint neither exporter can use.
-//
-// This is checked at startup because getting it wrong does not fail at
-// startup. Handing a URL to WithEndpoint, which wants host and port only,
-// makes the exporter treat the whole string as a host — percent-encoding it,
-// prefixing a scheme and appending the signal path — and then fail on every
-// single export with
-//
-//	traces export: parse "http://https:%2F%2Fcollector.example%2Fv1%2Ftraces/v1/traces":
-//	invalid port ":%2F%2Fcollector.example%2Fv1%2Ftraces" after host
-//
-// which is what a real deployment hit: a server healthy by every other signal,
-// exporting nothing, for as long as nobody read the logs closely. The shape is
-// decided here instead.
+// validateEndpoint rejects an endpoint neither exporter can use. See
+// otlp.ValidateEndpoint for why it is checked at startup.
 func (c Config) validateEndpoint() error {
-	endpoint := string(c.Endpoint)
-	if endpoint == "" {
-		// Left to the SDK, which reads OTEL_EXPORTER_OTLP_ENDPOINT and
-		// otherwise defaults to localhost.
-		return nil
-	}
-
-	if c.IsEndpointURL() {
-		u, err := url.Parse(endpoint)
-		if err != nil {
-			return fmt.Errorf("tracing: endpoint (%v) is not a valid URL: %w", endpoint, err)
-		}
-
-		switch u.Scheme {
-		case "http", "https":
-		default:
-			return fmt.Errorf("tracing: endpoint (%v) has scheme %q, want http or https", endpoint, u.Scheme)
-		}
-
-		if u.Host == "" {
-			return fmt.Errorf("tracing: endpoint (%v) names no host", endpoint)
-		}
-
-		// Rejected rather than resolved either way: the two keys are asking
-		// for opposite things, and silently picking one would mean either
-		// sending credentials in the clear or failing a handshake, depending
-		// on which.
-		if u.Scheme == "https" && bool(c.Insecure) {
-			return fmt.Errorf("tracing: endpoint (%v) is https but insecure is true; drop one", endpoint)
-		}
-
-		return nil
-	}
-
-	// No scheme, so this is the host-and-port shape, which carries no path.
-	// A path here is the other half of the same mistake — "tempo:4318/v1/traces"
-	// fails exactly as mysteriously as the URL did.
-	if strings.ContainsAny(endpoint, "/?#") {
-		return fmt.Errorf("tracing: endpoint (%v) has a path but no scheme; write host:port, or a full URL", endpoint)
-	}
-
-	if strings.Contains(endpoint, ":") {
-		_, port, err := net.SplitHostPort(endpoint)
-		if err != nil {
-			return fmt.Errorf("tracing: endpoint (%v) is not host:port: %w", endpoint, err)
-		}
-
-		// SplitHostPort only splits; it does not check that the port is a
-		// number, so "tempo:htpp" reaches it intact and fails at dial time.
-		if _, err := strconv.Atoi(port); err != nil {
-			return fmt.Errorf("tracing: endpoint (%v) has a non-numeric port (%v)", endpoint, port)
-		}
-	}
-
-	return nil
+	return otlp.ValidateEndpoint("tracing", string(c.Endpoint), bool(c.Insecure))
 }
 
 // ExporterName returns the configured exporter, or the default.
@@ -249,23 +163,10 @@ func (c Config) Ratio() float64 {
 
 // Timeout returns the per-export timeout, or the default.
 func (c Config) Timeout() time.Duration {
-	if c.TimeoutMS <= 0 {
-		return DefaultTimeout
-	}
-
-	return time.Duration(c.TimeoutMS) * time.Millisecond
+	return otlp.Timeout(c.TimeoutMS)
 }
 
 // HeaderMap flattens Headers for the exporter, which takes map[string]string.
 func (c Config) HeaderMap() map[string]string {
-	if len(c.Headers) == 0 {
-		return nil
-	}
-
-	headers := make(map[string]string, len(c.Headers))
-	for name, value := range c.Headers {
-		headers[name] = fmt.Sprintf("%v", value)
-	}
-
-	return headers
+	return otlp.HeaderMap(c.Headers)
 }

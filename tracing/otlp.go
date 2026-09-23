@@ -7,12 +7,10 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
-	"github.com/MapColonies/shigola/internal/build"
 	"github.com/MapColonies/shigola/internal/log"
+	"github.com/MapColonies/shigola/internal/otlp"
 )
 
 // New returns the tracing backend cfg describes.
@@ -38,7 +36,7 @@ func New(ctx context.Context, cfg Config) (Interface, error) {
 		return NullTracer, err
 	}
 
-	res, err := newResource(cfg)
+	res, err := otlp.Resource("tracing", cfg.Service())
 	if err != nil {
 		return NullTracer, err
 	}
@@ -69,29 +67,6 @@ func New(ctx context.Context, cfg Config) (Interface, error) {
 // applies the ratio only to traces this service roots itself.
 func newSampler(ratio float64) sdktrace.Sampler {
 	return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
-}
-
-// newResource describes this process to Tempo.
-//
-// Merged onto resource.Default() rather than replacing it, so the host,
-// process and telemetry.sdk attributes an operator expects to filter on are
-// still there. The schema URL is pinned to the same semconv version the SDK's
-// own resource package uses; a different one makes Merge report a schema
-// conflict instead of merging.
-func newResource(cfg Config) (*resource.Resource, error) {
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(cfg.Service()),
-			semconv.ServiceVersion(build.Version),
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("tracing: describing this process: %w", err)
-	}
-
-	return res, nil
 }
 
 // newExporter dials the collector.
