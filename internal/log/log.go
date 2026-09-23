@@ -254,57 +254,98 @@ func ParseLogLevel(level string) slog.Level {
 // called in (see Handle). They take a format string rather than attributes so
 // that a request-path call site can gain correlation without its message
 // changing — nothing that greps today's logs for a message should have to be
-// re-taught for the sake of two new fields. They go the same way as their
-// context-free siblings when the TODO above is done.
+// re-taught for the sake of two new fields.
+//
+// Every helper below attaches the first error among its arguments under
+// ErrorKey, which is how an error reaches the err property without its call
+// site being rewritten: almost every one reports it through a %v.
 func ErrorfContext(ctx context.Context, format string, args ...any) {
-	slog.ErrorContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelError, format, args)
 }
 
 func WarnfContext(ctx context.Context, format string, args ...any) {
-	slog.WarnContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelWarn, format, args)
 }
 
 func InfofContext(ctx context.Context, format string, args ...any) {
-	slog.InfoContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelInfo, format, args)
 }
 
 func DebugfContext(ctx context.Context, format string, args ...any) {
-	slog.DebugContext(ctx, fmt.Sprintf(format, args...))
+	logf(ctx, slog.LevelDebug, format, args)
 }
 
-// TODO: remove those methods and use slog straight up
 func Errorf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Error(msg)
-}
-
-func Error(args ...any) {
-	slog.Error(args[0].(string), args...)
+	logf(context.Background(), slog.LevelError, format, args)
 }
 
 func Warnf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Warn(msg)
-}
-
-func Warn(args ...any) {
-	slog.Warn(args[0].(string), args...)
+	logf(context.Background(), slog.LevelWarn, format, args)
 }
 
 func Infof(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Info(msg)
-}
-
-func Info(args ...any) {
-	slog.Info(args[0].(string), args...)
+	logf(context.Background(), slog.LevelInfo, format, args)
 }
 
 func Debugf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Debug(msg)
+	logf(context.Background(), slog.LevelDebug, format, args)
+}
+
+// Error, Warn, Info and Debug format their operands as fmt.Sprintln does,
+// without the newline: the call sites were written against that
+// ("zoom list: ", zooms), and against an error on its own, which Println
+// renders as its message.
+//
+// They used to pass args[0].(string) to slog as the message and all of args as
+// attributes, so a non-string first argument — log.Error(err) — panicked, and
+// every other call repeated its message as an attribute key.
+func Error(args ...any) {
+	logln(slog.LevelError, args)
+}
+
+func Warn(args ...any) {
+	logln(slog.LevelWarn, args)
+}
+
+func Info(args ...any) {
+	logln(slog.LevelInfo, args)
 }
 
 func Debug(args ...any) {
-	slog.Debug(args[0].(string), args...)
+	logln(slog.LevelDebug, args)
+}
+
+func logf(ctx context.Context, level slog.Level, format string, args []any) {
+	emit(ctx, level, func() string { return fmt.Sprintf(format, args...) }, args)
+}
+
+func logln(level slog.Level, args []any) {
+	emit(context.Background(), level, func() string {
+		return strings.TrimSuffix(fmt.Sprintln(args...), "\n")
+	}, args)
+}
+
+// emit takes the message as a func so that a disabled level returns before
+// paying for the formatting.
+func emit(ctx context.Context, level slog.Level, msg func() string, args []any) {
+	logger := slog.Default()
+	if !logger.Enabled(ctx, level) {
+		return
+	}
+
+	if err := firstError(args); err != nil {
+		logger.Log(ctx, level, msg(), slog.Any(ErrorKey, err))
+		return
+	}
+	logger.Log(ctx, level, msg())
+}
+
+func firstError(args []any) error {
+	for _, arg := range args {
+		if err, ok := arg.(error); ok && err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

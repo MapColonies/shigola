@@ -3,6 +3,7 @@ package log_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MapColonies/shigola/internal/fakelog"
 	"github.com/MapColonies/shigola/internal/log"
 )
 
@@ -200,6 +202,104 @@ func TestErrorSerialisation(t *testing.T) {
 			}
 			if hasStack && !strings.Contains(stack, "TestErrorSerialisation") {
 				t.Errorf("err.stack does not reach the log site:\n%s", stack)
+			}
+		}
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, fn(tc))
+	}
+}
+
+// nilErr is a typed nil behind a non-nil error interface — the classic way an
+// error reaches a logger that then panics calling Error() on it.
+type nilErr struct{ msg string }
+
+func (e *nilErr) Error() string { return e.msg }
+
+// TestWrappers covers the package-level helpers the call sites use. They
+// previously asserted their first argument was a string and repeated every
+// argument as an attribute key; log.Error(err) panicked.
+func TestWrappers(t *testing.T) {
+	boom := errors.New("boom")
+
+	type tcase struct {
+		emit    func()
+		wantMsg string
+		// wantErr is err.message, or "" for no err property at all.
+		wantErr string
+	}
+
+	testCases := map[string]tcase{
+		"an error alone": {
+			emit:    func() { log.Error(boom) },
+			wantMsg: "boom",
+			wantErr: "boom",
+		},
+		// Operands are separated as Println separates them — always by a
+		// space — which reads right for the call sites that pass a message
+		// and a value, and doubles the space where the message already ends
+		// in one ("zoom list: ", zooms).
+		"a message and a value": {
+			emit:    func() { log.Info("zoom list:", []int{0, 1}) },
+			wantMsg: "zoom list: [0 1]",
+		},
+		"a message and an error": {
+			emit:    func() { log.Warn("could not purge", boom) },
+			wantMsg: "could not purge boom",
+			wantErr: "boom",
+		},
+		// The formatted helpers are how almost every call site reports an
+		// error, so this is where err is mostly going to come from.
+		"a formatted error": {
+			emit:    func() { log.Errorf("tier (%v) get: %v", "redis", boom) },
+			wantMsg: "tier (redis) get: boom",
+			wantErr: "boom",
+		},
+		"a formatted error with a context": {
+			emit:    func() { log.WarnfContext(t.Context(), "get: %v", boom) },
+			wantMsg: "get: boom",
+			wantErr: "boom",
+		},
+		"a typed nil error": {
+			emit:    func() { log.Errorf("got %v", (*nilErr)(nil)) },
+			wantMsg: "got <nil>",
+			wantErr: "<nil>",
+		},
+		"nothing at all": {
+			emit:    func() { log.Debug() },
+			wantMsg: "",
+		},
+	}
+
+	fn := func(tc tcase) func(t *testing.T) {
+		return func(t *testing.T) {
+			rec := fakelog.Default(t)
+			tc.emit()
+
+			record := rec.One(t)
+			if got := record["msg"]; got != tc.wantMsg {
+				t.Errorf("msg = %q, want %q", got, tc.wantMsg)
+			}
+
+			errObj, isObj := record[log.ErrorKey].(map[string]any)
+			switch {
+			case tc.wantErr == "" && isObj:
+				t.Errorf("err = %v, want none", errObj)
+			case tc.wantErr != "" && !isObj:
+				t.Errorf("err = %#v, want an object", record[log.ErrorKey])
+			case tc.wantErr != "" && errObj["message"] != tc.wantErr:
+				t.Errorf("err.message = %v, want %v", errObj["message"], tc.wantErr)
+			}
+
+			// Nothing but the record's own fields: the old wrappers repeated
+			// every argument as an attribute key, "!BADKEY" included.
+			for _, key := range keys(record) {
+				switch key {
+				case "level", "time", "pid", "hostname", "msg", "version", "rev", log.ErrorKey:
+				default:
+					t.Errorf("unexpected key %q = %v", key, record[key])
+				}
 			}
 		}
 	}
