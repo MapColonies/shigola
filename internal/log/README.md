@@ -55,6 +55,38 @@ slog.SetDefault(log.New(os.Stderr, lvl, build.Version, build.GitRevision))
 `cmd/shigola_lambda` both call it; tests reach it through `internal/fakelog`.
 `log.ParseLogLevel` turns the `--log-level` flag into a level.
 
+### Exporting over OTLP
+
+`log.New` takes optional further outputs, and `cmd/shigola` passes one when
+the config has an enabled `[logging.otlp]` section — the OTLP log bridge built
+by `logexport`. Every record then goes to stderr first and to the collector
+after, under the same level:
+
+```toml
+[logging.otlp]
+enabled = true
+exporter = "otlp_grpc"                 # or "otlp_http"
+endpoint = "otel-collector:4317"       # host:port, or a full URL
+insecure = true
+service_name = "shigola"
+timeout_ms = 10000
+
+  [logging.otlp.headers]
+  x-scope-orgid = "tenant-a"
+```
+
+The keys mean what they mean under `[tracing]` (see `tracing/README.md`), less
+`sample_ratio`; the two sections are independent and may name different
+collectors. An exported record carries the message, severity, attributes and
+`err` of the stderr record. The process identity (`pid`, `hostname`, `version`,
+`rev`) and the trace ids do not appear as attributes there: OTLP carries them
+natively, in the resource and the record's trace context.
+
+What is not exported: lines written before the config has loaded (it names the
+collector), and `cmd/shigola_lambda`'s records — Lambda freezes the process
+between invocations, so a batch exporter there would hold records until the
+next request or lose them.
+
 ## Logging
 
 Anything that can use slog directly should. The package-level helpers exist for
