@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/dict"
 	"github.com/MapColonies/shigola/internal/build"
 	"github.com/MapColonies/shigola/internal/log"
+	"github.com/MapColonies/shigola/logexport"
 	"github.com/go-spatial/cobra"
 )
 
@@ -79,6 +80,18 @@ func initConfig(configFile string, cacheRequired bool, logLevel string) (err err
 	}
 	if err = conf.Validate(); err != nil {
 		return err
+	}
+
+	// Straight after the config, so everything registration logs below is
+	// exported too. Until here records go to stderr alone: the collector is in
+	// the config, and the config is what just loaded.
+	export, err := logexport.New(context.Background(), conf.Logging.OTLP)
+	if err != nil {
+		return err
+	}
+	if export != nil {
+		logexport.Install(export)
+		slog.SetDefault(log.New(os.Stderr, lvl, build.Version, build.GitRevision, export.Handler()))
 	}
 
 	// init our providers

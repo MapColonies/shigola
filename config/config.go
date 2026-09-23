@@ -14,6 +14,7 @@ import (
 	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/internal/env"
 	"github.com/MapColonies/shigola/internal/log"
+	"github.com/MapColonies/shigola/logexport"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/MapColonies/shigola/tracing"
@@ -98,6 +99,9 @@ type Config struct {
 	// configures metrics, which Mimir scrapes, and the two are switched on
 	// independently of each other (MAPCO-11497). Absent means tracing off.
 	Tracing tracing.Config `toml:"tracing"`
+	// Logging configures where records go besides stderr. Absent means stderr
+	// alone.
+	Logging Logging `toml:"logging"`
 	// Map of providers.
 	//  all providers must have at least two entries.
 	// 1. name -- this is the name that is referenced in
@@ -194,6 +198,19 @@ func ValidateAndRegisterParams(mapName string, params []provider.QueryParameter)
 	return nil
 }
 
+// Logging is the [logging] section.
+//
+// A section of its own, with OTLP one key under it, rather than [logging_otlp]:
+// stderr is the log's first output and needs no configuring today, but the
+// options that would configure it belong beside this one, not in a second
+// top-level section. The level stays the --log-level flag, and applies to
+// every output.
+type Logging struct {
+	// OTLP exports records to a collector alongside stderr (logexport).
+	// Independent of [tracing]: either can be on without the other.
+	OTLP logexport.Config `toml:"otlp"`
+}
+
 // Validate checks the config for issues
 func (c *Config) Validate() error {
 
@@ -201,6 +218,9 @@ func (c *Config) Validate() error {
 	// someone is about to switch on fails now rather than the first time they
 	// switch it on.
 	if err := c.Tracing.Validate(); err != nil {
+		return err
+	}
+	if err := c.Logging.OTLP.Validate(); err != nil {
 		return err
 	}
 
