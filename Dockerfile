@@ -25,7 +25,7 @@
 # The Go version must track the go directive in go.mod: the module sets no
 # toolchain directive, so a lower Go fails with "go.mod requires go >= ..."
 # rather than downloading one. Also pinned in .devcontainer/Dockerfile.
-FROM golang:1.26.6-alpine3.23 AS build
+FROM golang:1.26.9-alpine3.23 AS build
 
 # Must match go.mod's module path exactly, case included: the linker silently
 # ignores an -X it cannot resolve, so a wrong case builds fine and reports
