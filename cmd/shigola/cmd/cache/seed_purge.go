@@ -67,6 +67,7 @@ var (
 	// cacheTileMatrixSet names the tiling scheme this run enumerates and
 	// writes. Empty means the default described by resolveSeedPurgeGrid.
 	cacheTileMatrixSet string
+	cacheLayers        string
 )
 
 // CacheTiersAll is the --cache-tiers value that lifts the restriction entirely.
@@ -176,6 +177,7 @@ func init() {
 	SeedPurgeCmd.PersistentFlags().Int64VarP(&cacheLogThreshold, "log-threshold", "", 0, "during seeding, only log tiles that take this number of milliseconds or longer to render (default all tiles)")
 	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheTiers, "cache-tiers", "", "", `for a layered cache (type = "multi"), the comma-separated tier names this run may write. defaults to the last tier in read order — the durable one; use "all" to write every tier, which is what you want to pre-warm. with --overwrite, the tiers NOT named here are purged after the write, so the hot tier stops serving pre-update tiles. no effect on a single-backend cache`)
 
+	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheLayers, "layers", "", "", "purge only: comma-separated layers of --map to purge, together with the map's whole-map tile. omitted, a purge clears the whole-map tile and every layer's tile. seed covers whole maps only")
 	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheTileMatrixSet, "tile-matrix-set", "", "", "the tiling scheme to seed or purge, by tileMatrixSetId. one run covers one scheme. omitted, a run with --map takes the first scheme that map lists and any other run takes WebMercatorQuad, with a warning naming it. every targeted map must support it")
 
 	SeedPurgeCmd.Flags().StringVarP(&cacheBounds, "bounds", "", "-180,-85.0511,180,85.0511", "lng/lat bounds to seed the cache with in the format: minx, miny, maxx, maxy")
@@ -323,6 +325,10 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 		if len(seedPurgeMaps) == 0 {
 			return fmt.Errorf("expected at least one map to be defined. check your config")
 		}
+	}
+
+	if cacheLayers != "" && cacheMap == "" {
+		return errors.New("--layers needs --map: layer names belong to one map")
 	}
 
 	if seedPurgeGrid, err = resolveSeedPurgeGrid(); err != nil {

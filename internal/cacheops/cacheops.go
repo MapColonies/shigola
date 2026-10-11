@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/internal/log"
@@ -53,11 +53,19 @@ func (tileChan) Err() error                    { return nil }
 // TileChan adapts a plain channel that cannot fail into a TileSource.
 func TileChan(c <-chan slippy.Tile) TileSource { return tileChan(c) }
 
+// Target is a map, optionally narrowed to some of its layers. With no layers a
+// purge clears the whole-map tile and every layer tile; with layers it clears
+// those and the whole-map tile, which contains them too.
+type Target struct {
+	Map    atlas.Map
+	Layers []string
+}
+
 type Options struct {
 	Op Op
 	// Atlas holds the cache the run works on. Nil means the default atlas.
 	Atlas       *atlas.Atlas
-	Maps        []atlas.Map
+	Targets     []Target
 	Grid        *tms.TileMatrixSet
 	Concurrency int
 	// Overwrite re-seeds tiles that are already cached. Seed only.
@@ -79,6 +87,15 @@ type Result struct {
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
 
+type ErrInvalidTarget struct {
+	Map    string
+	Reason string
+}
+
+func (e ErrInvalidTarget) Error() string {
+	return fmt.Sprintf("cacheops: map (%v): %v", e.Map, e.Reason)
+}
+
 type ErrTile struct {
 	Op      Op
 	MapName string
@@ -97,8 +114,8 @@ func (e ErrTile) Error() string {
 func (e ErrTile) Unwrap() error { return e.Err }
 
 type mapTile struct {
-	m    atlas.Map
-	tile slippy.Tile
+	target Target
+	tile   slippy.Tile
 }
 
 // Run works through src until it is exhausted, ctx is cancelled or a tile
@@ -106,11 +123,16 @@ type mapTile struct {
 func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 	var res Result
 
-	if len(opts.Maps) == 0 {
+	if len(opts.Targets) == 0 {
 		return res, ErrNoMaps
 	}
 	if opts.Grid == nil {
 		return res, atlas.ErrNilGrid
+	}
+	for _, t := range opts.Targets {
+		if err := opts.validate(t); err != nil {
+			return res, err
+		}
 	}
 
 	concurrency := opts.Concurrency
@@ -148,12 +170,12 @@ func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 
 feed:
 	for tile := range src.Channel() {
-		for _, m := range opts.Maps {
+		for _, target := range opts.Targets {
 			if ctx.Err() != nil {
 				break feed
 			}
 			select {
-			case tiles <- mapTile{m: m, tile: tile}:
+			case tiles <- mapTile{target: target, tile: tile}:
 			case <-ctx.Done():
 				break feed
 			}
@@ -186,6 +208,23 @@ feed:
 	return res, err
 }
 
+func (opts Options) validate(t Target) error {
+	if len(t.Layers) == 0 {
+		return nil
+	}
+	if opts.Op == Seed {
+		return ErrInvalidTarget{Map: t.Map.Name, Reason: "seed covers whole maps only, not layers"}
+	}
+
+	for _, name := range t.Layers {
+		if !slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool { return l.MVTName() == name }) {
+			return ErrInvalidTarget{Map: t.Map.Name, Reason: fmt.Sprintf("no layer named %q", name)}
+		}
+	}
+
+	return nil
+}
+
 func (opts Options) worker(res *Result) func(context.Context, mapTile) error {
 	op := opts.purge
 	if opts.Op == Seed {
@@ -198,7 +237,7 @@ func (opts Options) worker(res *Result) func(context.Context, mapTile) error {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
-			return ErrTile{Op: opts.Op, MapName: mt.m.Name, Tile: mt.tile, Err: err}
+			return ErrTile{Op: opts.Op, MapName: mt.target.Map.Name, Tile: mt.tile, Err: err}
 		}
 
 		if skipped {
@@ -232,6 +271,7 @@ func (opts Options) intent(ctx context.Context) context.Context {
 func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err error) {
 	start := time.Now()
 	z, x, y := mt.tile.ZXY()
+	m := mt.target.Map
 
 	if !opts.Overwrite {
 		c := opts.Atlas.GetCache()
@@ -239,7 +279,7 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 			return false, atlas.ErrMissingCache
 		}
 
-		key, err := cache.NewKey(opts.Grid, mt.m.Name, "", uint(z), x, y)
+		key, err := cache.NewKey(opts.Grid, m.Name, "", uint(z), x, y)
 		if err != nil {
 			return false, err
 		}
@@ -249,13 +289,12 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 			return false, fmt.Errorf("error reading from cache: %w", err)
 		}
 		if hit {
-			log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) tile (%v/%v/%v)", mt.m.Name, z, x, y)
+			log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) tile (%v/%v/%v)", m.Name, z, x, y)
 			return true, nil
 		}
 	}
 
-	m := mt.m.FilterLayersByZoom(z)
-	if err := opts.Atlas.SeedMapTile(ctx, m, opts.Grid, uint(z), x, y); err != nil {
+	if err := opts.Atlas.SeedMapTile(ctx, m.FilterLayersByZoom(z), opts.Grid, uint(z), x, y); err != nil {
 		return false, err
 	}
 
@@ -263,15 +302,50 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 	runtime.GC()
 
 	if took := time.Since(start); took >= opts.LogThreshold {
-		log.Infof("seeding map (%v) tile (%v/%v/%v) took: %dms", mt.m.Name, z, x, y, took.Milliseconds())
+		log.Infof("seeding map (%v) tile (%v/%v/%v) took: %dms", m.Name, z, x, y, took.Milliseconds())
 	}
 
 	return false, nil
 }
 
 func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err error) {
+	m := mt.target.Map
 	z, x, y := mt.tile.ZXY()
-	log.Infof("purging map (%v) tile (%v/%v/%v)", mt.m.Name, z, x, y)
+	log.Infof("purging map (%v) tile (%v/%v/%v)", m.Name, z, x, y)
 
-	return false, opts.Atlas.PurgeMapTile(ctx, mt.m, opts.Grid, shigola.TileFromSlippyTile(mt.tile))
+	if len(m.Params) > 0 {
+		return true, nil
+	}
+
+	c := opts.Atlas.GetCache()
+	if c == nil {
+		return false, atlas.ErrMissingCache
+	}
+
+	for _, layer := range purgedLayers(mt.target, z) {
+		key, err := cache.NewKey(opts.Grid, m.Name, layer, uint(z), x, y)
+		if err != nil {
+			return false, err
+		}
+		if err := c.Purge(ctx, &key); err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+// purgedLayers names the cache keys a purge clears: the whole-map tile ("")
+// and the target's layers that are active at zoom z.
+func purgedLayers(t Target, z slippy.Zoom) []string {
+	keys := []string{""}
+
+	for _, l := range t.Map.FilterLayersByZoom(z).Layers {
+		name := l.MVTName()
+		if len(t.Layers) == 0 || slices.Contains(t.Layers, name) {
+			keys = append(keys, name)
+		}
+	}
+
+	return keys
 }

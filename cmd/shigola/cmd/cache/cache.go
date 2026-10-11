@@ -118,9 +118,21 @@ func runSeedPurge(ctx context.Context, tiles *TileChannel) error {
 		}
 	}
 
+	var layers []string
+	for _, l := range strings.Split(cacheLayers, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			layers = append(layers, l)
+		}
+	}
+
+	targets := make([]cacheops.Target, len(seedPurgeMaps))
+	for i, m := range seedPurgeMaps {
+		targets[i] = cacheops.Target{Map: m, Layers: layers}
+	}
+
 	res, err := cacheops.Run(ctx, cacheops.Options{
 		Op:           seedPurgeOp,
-		Maps:         seedPurgeMaps,
+		Targets:      targets,
 		Grid:         seedPurgeGrid,
 		Concurrency:  cacheConcurrency,
 		Overwrite:    cacheOverwrite,

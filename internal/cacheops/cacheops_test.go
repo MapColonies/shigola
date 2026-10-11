@@ -65,7 +65,7 @@ func TestPurgeRemovesEveryListedTile(t *testing.T) {
 	res, err := cacheops.Run(context.Background(), cacheops.Options{
 		Op:          cacheops.Purge,
 		Atlas:       a,
-		Maps:        []atlas.Map{m},
+		Targets:     []cacheops.Target{{Map: m}},
 		Grid:        grid,
 		Concurrency: 2,
 	}, tiles(slippy.Tile{Z: 1, X: 0, Y: 0}, slippy.Tile{Z: 1, X: 1, Y: 1}))
@@ -105,10 +105,10 @@ func TestSeedWithoutOverwriteSkipsCachedTiles(t *testing.T) {
 	tier.Seed(cached, []byte("old"))
 
 	res, err := cacheops.Run(context.Background(), cacheops.Options{
-		Op:    cacheops.Seed,
-		Atlas: a,
-		Maps:  []atlas.Map{m},
-		Grid:  grid,
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: m}},
+		Grid:    grid,
 	}, tiles(slippy.Tile{Z: 2, X: 1, Y: 1}, slippy.Tile{Z: 2, X: 2, Y: 2}))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -157,7 +157,7 @@ func TestSeedOverwriteWritesNamedTiersThenPurgesTheRest(t *testing.T) {
 	_, err := cacheops.Run(context.Background(), cacheops.Options{
 		Op:         cacheops.Seed,
 		Atlas:      a,
-		Maps:       []atlas.Map{renderable("osm")},
+		Targets:    []cacheops.Target{{Map: renderable("osm")}},
 		Grid:       grid,
 		Overwrite:  true,
 		WriteTiers: []string{"durable"},
@@ -191,10 +191,10 @@ func TestSeedReadsDoNotPromoteIntoTheHotTier(t *testing.T) {
 	durable.Seed(k, []byte("cached"))
 
 	res, err := cacheops.Run(context.Background(), cacheops.Options{
-		Op:    cacheops.Seed,
-		Atlas: a,
-		Maps:  []atlas.Map{renderable("osm")},
-		Grid:  grid,
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: renderable("osm")}},
+		Grid:    grid,
 	}, tiles(slippy.Tile{Z: 3, X: 2, Y: 2}))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -235,10 +235,10 @@ func TestCancelledRunStopsAndReportsWhatItDid(t *testing.T) {
 	}()
 
 	res, err := cacheops.Run(ctx, cacheops.Options{
-		Op:    cacheops.Purge,
-		Atlas: a,
-		Maps:  []atlas.Map{atlas.NewWebMercatorMap("osm")},
-		Grid:  grid,
+		Op:      cacheops.Purge,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: atlas.NewWebMercatorMap("osm")}},
+		Grid:    grid,
 	}, cacheops.TileChan(ch))
 	if err != nil {
 		t.Fatalf("Run: got %v, expected a cancelled run to return nil", err)
@@ -262,10 +262,10 @@ func TestFailingTileStopsTheRun(t *testing.T) {
 	a.SetCache(tier)
 
 	_, err := cacheops.Run(context.Background(), cacheops.Options{
-		Op:    cacheops.Purge,
-		Atlas: a,
-		Maps:  []atlas.Map{atlas.NewWebMercatorMap("osm")},
-		Grid:  grid,
+		Op:      cacheops.Purge,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: atlas.NewWebMercatorMap("osm")}},
+		Grid:    grid,
 	}, tiles(slippy.Tile{Z: 1, X: 0, Y: 0}, slippy.Tile{Z: 1, X: 1, Y: 0}))
 
 	var te cacheops.ErrTile
@@ -308,7 +308,7 @@ func TestARunEndingEarlyStopsItsSource(t *testing.T) {
 	}()
 
 	if _, err := cacheops.Run(context.Background(), cacheops.Options{
-		Op: cacheops.Purge, Atlas: a, Maps: []atlas.Map{atlas.NewWebMercatorMap("osm")}, Grid: webMercator(t),
+		Op: cacheops.Purge, Atlas: a, Targets: []cacheops.Target{{Map: atlas.NewWebMercatorMap("osm")}}, Grid: webMercator(t),
 	}, src); err == nil {
 		t.Fatal("Run: got nil, expected the tier's error")
 	}
@@ -329,7 +329,7 @@ func TestConcurrentRunsDoNotShareSettings(t *testing.T) {
 
 		return func() (cacheops.Result, error) {
 			return cacheops.Run(context.Background(), cacheops.Options{
-				Op: op, Atlas: a, Maps: []atlas.Map{renderable("osm")}, Grid: grid,
+				Op: op, Atlas: a, Targets: []cacheops.Target{{Map: renderable("osm")}}, Grid: grid,
 				Overwrite: overwrite, Concurrency: 4,
 			}, tiles(slippy.Tile{Z: 5, X: 1, Y: 1}, slippy.Tile{Z: 5, X: 2, Y: 2}))
 		}
@@ -364,5 +364,138 @@ func TestConcurrentRunsDoNotShareSettings(t *testing.T) {
 	}
 	if purgeTier.Count(faketier.OpSet) != 0 || seedTier.Count(faketier.OpPurge) != 0 {
 		t.Error("one run's operation leaked into the other's cache")
+	}
+}
+
+func layeredMap(name string) atlas.Map {
+	m := atlas.NewWebMercatorMap(name)
+	m.Layers = []atlas.Layer{
+		{Name: "roads", MinZoom: 0, MaxZoom: 20},
+		{Name: "buildings", MinZoom: 0, MaxZoom: 20},
+		{Name: "pois", MinZoom: 14, MaxZoom: 20},
+	}
+
+	return m
+}
+
+func layerKey(t *testing.T, grid *tms.TileMatrixSet, mapName, layer string, z, x, y uint) *cache.Key {
+	t.Helper()
+
+	k, err := cache.NewKey(grid, mapName, layer, z, x, y)
+	if err != nil {
+		t.Fatalf("cache.NewKey: %v", err)
+	}
+
+	return &k
+}
+
+func TestPurgeOfAWholeMapClearsEveryLayerKey(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	for _, layer := range []string{"", "roads", "buildings"} {
+		tier.Seed(layerKey(t, grid, "osm", layer, 6, 1, 1), []byte("old"))
+	}
+	neighbour := layerKey(t, grid, "osm", "roads", 6, 2, 2)
+	tier.Seed(neighbour, []byte("kept"))
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Purge,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: layeredMap("osm")}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Done != 1 {
+		t.Errorf("Done: got %d, expected 1 map tile", res.Done)
+	}
+	for _, layer := range []string{"", "roads", "buildings"} {
+		if _, ok := tier.Value(layerKey(t, grid, "osm", layer, 6, 1, 1)); ok {
+			t.Errorf("layer %q survived the purge", layer)
+		}
+	}
+	if _, ok := tier.Value(neighbour); !ok {
+		t.Error("a tile outside the list was purged")
+	}
+	// pois starts at z14, so the server never caches it at z6
+	if n := tier.Count(faketier.OpPurge); n != 3 {
+		t.Errorf("purges: got %d, expected the map key and the two layers active at z6", n)
+	}
+}
+
+func TestPurgeOfOneLayerAlsoClearsTheWholeMapTile(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	for _, layer := range []string{"", "roads", "buildings"} {
+		tier.Seed(layerKey(t, grid, "osm", layer, 6, 1, 1), []byte("old"))
+	}
+
+	_, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Purge,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"roads"}}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, layer := range []string{"", "roads"} {
+		if _, ok := tier.Value(layerKey(t, grid, "osm", layer, 6, 1, 1)); ok {
+			t.Errorf("layer %q survived the purge", layer)
+		}
+	}
+	if _, ok := tier.Value(layerKey(t, grid, "osm", "buildings", 6, 1, 1)); !ok {
+		t.Error("the sibling layer was purged")
+	}
+}
+
+func TestRunRejectsLayersItCannotHonour(t *testing.T) {
+	type tcase struct {
+		opts cacheops.Options
+	}
+
+	grid := webMercator(t)
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			tier := faketier.New("solo")
+			a := &atlas.Atlas{}
+			a.SetCache(tier)
+			tc.opts.Atlas, tc.opts.Grid = a, grid
+
+			_, err := cacheops.Run(context.Background(), tc.opts, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+
+			var invalid cacheops.ErrInvalidTarget
+			if !errors.As(err, &invalid) {
+				t.Fatalf("err: got %v, expected an ErrInvalidTarget", err)
+			}
+			if len(tier.Calls()) != 0 {
+				t.Errorf("the cache was touched: %v", tier.Calls())
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"purge naming an unknown layer": {opts: cacheops.Options{
+			Op: cacheops.Purge, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}},
+		}},
+		"seed naming a layer": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"roads"}}},
+		}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }
