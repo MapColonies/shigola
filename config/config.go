@@ -110,13 +110,21 @@ type Config struct {
 
 // Webserver represents the config options for the webserver part of Shigola
 type Webserver struct {
-	HostName      env.URL    `toml:"hostname"`
-	Port          env.String `toml:"port"`
-	URIPrefix     env.String `toml:"uri_prefix"`
-	Headers       env.Dict   `toml:"headers"`
-	SSLCert       env.String `toml:"ssl_cert"`
-	SSLKey        env.String `toml:"ssl_key"`
-	ProxyProtocol env.String `toml:"proxy_protocol"`
+	HostName      env.URL      `toml:"hostname"`
+	Port          env.String   `toml:"port"`
+	URIPrefix     env.String   `toml:"uri_prefix"`
+	Headers       env.Dict     `toml:"headers"`
+	SSLCert       env.String   `toml:"ssl_cert"`
+	SSLKey        env.String   `toml:"ssl_key"`
+	ProxyProtocol env.String   `toml:"proxy_protocol"`
+	CacheControl  CacheControl `toml:"cache_control"`
+}
+
+// CacheControl sets the Cache-Control header per surface. Each overrides a
+// Cache-Control set under headers for its surface.
+type CacheControl struct {
+	Tiles    env.String `toml:"tiles"`
+	Metadata env.String `toml:"metadata"`
 }
 
 // ValidateAndRegisterParams ensures configured params don't conflict with existing

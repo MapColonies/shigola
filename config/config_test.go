@@ -1629,3 +1629,19 @@ name = "osm"
 		}
 	}
 }
+
+func TestParseWebserverCacheControl(t *testing.T) {
+	conf, err := config.Parse(strings.NewReader(`
+[webserver.cache_control]
+tiles = "public, max-age=30"
+metadata = "public, max-age=600"
+`), "")
+	if err != nil {
+		t.Fatalf("Parse() = %v, want nil", err)
+	}
+
+	cc := conf.Webserver.CacheControl
+	if cc.Tiles != "public, max-age=30" || cc.Metadata != "public, max-age=600" {
+		t.Errorf("cache_control: got %+v", cc)
+	}
+}

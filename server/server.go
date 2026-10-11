@@ -114,7 +114,7 @@ func NewRouter(a *atlas.Atlas) *httptreemux.TreeMux {
 		// makes the span cover the whole chain rather than everything except
 		// the instrumentation it sits under.
 		method, path, instrumented := observability.InstrumentAPIHandler(
-			route.Method, route.Path, o, HeadersHandler(handler),
+			route.Method, route.Path, o, HeadersHandler(CacheControlHandler(route.Tile, handler)),
 		)
 
 		group.UsingContext().

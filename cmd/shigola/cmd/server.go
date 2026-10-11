@@ -71,6 +71,12 @@ var serverCmd = &cobra.Command{
 			server.Headers[name] = val
 		}
 
+		server.TileCacheControl = string(conf.Webserver.CacheControl.Tiles)
+		server.MetadataCacheControl = string(conf.Webserver.CacheControl.Metadata)
+		if server.HeadersSetCacheControl() && (server.TileCacheControl != "" || server.MetadataCacheControl != "") {
+			log.Warnf("webserver.headers sets Cache-Control and webserver.cache_control is set too: cache_control wins for the surfaces it names")
+		}
+
 		if conf.Webserver.URIPrefix != "" {
 			server.URIPrefix = string(conf.Webserver.URIPrefix)
 		}
