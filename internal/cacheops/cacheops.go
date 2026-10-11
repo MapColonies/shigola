@@ -91,14 +91,19 @@ type Result struct {
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
 
+// ErrSeedLayers is wrapped by an ErrInvalidTarget for a seed naming layers.
+var ErrSeedLayers = errors.New("cacheops: seed covers whole maps only, not layers")
+
 type ErrInvalidTarget struct {
-	Map    string
-	Reason string
+	Map string
+	Err error
 }
 
 func (e ErrInvalidTarget) Error() string {
-	return fmt.Sprintf("cacheops: map (%v): %v", e.Map, e.Reason)
+	return fmt.Sprintf("cacheops: map (%v): %v", e.Map, e.Err)
 }
+
+func (e ErrInvalidTarget) Unwrap() error { return e.Err }
 
 type ErrTile struct {
 	Op      Op
@@ -222,12 +227,12 @@ func ValidateTargets(op Op, targets []Target) error {
 			continue
 		}
 		if op == Seed {
-			return ErrInvalidTarget{Map: t.Map.Name, Reason: "seed covers whole maps only, not layers"}
+			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrSeedLayers}
 		}
 
 		for _, name := range t.Layers {
 			if !slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool { return l.MVTName() == name }) {
-				return ErrInvalidTarget{Map: t.Map.Name, Reason: fmt.Sprintf("no layer named %q", name)}
+				return ErrInvalidTarget{Map: t.Map.Name, Err: fmt.Errorf("no layer named %q", name)}
 			}
 		}
 	}

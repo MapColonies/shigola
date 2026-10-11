@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Shigola — Cache Admin API",
-    "description": "Purges tiles from Shigola's tile cache. Served on its own port, which must not be reachable by clients of the tile server.",
+    "description": "Purges and seeds tiles in Shigola's tile cache. Served on its own port, which must not be reachable by clients of the tile server.",
     "version": "1.0.0",
     "license": {
       "name": "MIT",
@@ -111,6 +111,76 @@
         }
       }
     },
+    "/cache/seed": {
+      "post": {
+        "summary": "Seed the tiles covering an area",
+        "description": "Renders and caches the whole-map tiles covering the area at every zoom in zoomRange, in every tile matrix set each targeted map serves. Seeding is whole-map only. The request runs to completion before the response is sent, and renders on the pod that handles it.",
+        "operationId": "seed",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeedRequest"
+              },
+              "examples": {
+                "bounds": {
+                  "summary": "Re-seed an area",
+                  "value": {
+                    "bounds": [
+                      34.75,
+                      32.05,
+                      34.8,
+                      32.1
+                    ],
+                    "zoomRange": {
+                      "min": 10,
+                      "max": 14
+                    },
+                    "targets": [
+                      {
+                        "map": "osm"
+                      }
+                    ],
+                    "overwrite": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every tile was seeded or skipped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/SeedUnprocessable"
+          },
+          "429": {
+            "$ref": "#/components/responses/Busy"
+          },
+          "500": {
+            "$ref": "#/components/responses/Failed"
+          },
+          "503": {
+            "$ref": "#/components/responses/TimedOut"
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "summary": "This document",
@@ -155,7 +225,8 @@
         "type": "object",
         "description": "Give the area as exactly one of bounds or tiles.",
         "required": [
-          "zoomRange"
+          "zoomRange",
+          "targets"
         ],
         "additionalProperties": false,
         "properties": {
@@ -201,10 +272,83 @@
           },
           "targets": {
             "type": "array",
-            "description": "The maps to work on. Omitted, every map.",
+            "description": "The maps to work on.",
             "items": {
               "$ref": "#/components/schemas/Target"
+            },
+            "minItems": 1
+          },
+          "tiers": {
+            "type": "string",
+            "description": "For a layered cache, tier names validated as for seed. A purge clears every tier regardless, as the CLI's purge does."
+          }
+        }
+      },
+      "SeedRequest": {
+        "type": "object",
+        "description": "Give the area as exactly one of bounds or tiles.",
+        "required": [
+          "zoomRange",
+          "targets"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "array",
+            "description": "west, south, east, north in lng/lat. West greater than east crosses the antimeridian.",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "tiles": {
+            "type": "array",
+            "description": "z/x/y tile names in sourceTileMatrixSet. Each stands for the ground it covers.",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+/[0-9]+/[0-9]+$"
             }
+          },
+          "sourceTileMatrixSet": {
+            "type": "string",
+            "description": "The tile matrix set the tiles names belong to. Required with tiles.",
+            "example": "WorldCRS84Quad"
+          },
+          "zoomRange": {
+            "type": "object",
+            "required": [
+              "min",
+              "max"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "min": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "description": "The maps to work on.",
+            "items": {
+              "$ref": "#/components/schemas/SeedTarget"
+            },
+            "minItems": 1
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Re-render tiles that are already cached. Without it they are skipped. With a layered cache, also purges the tiers not written."
+          },
+          "tiers": {
+            "type": "string",
+            "description": "For a layered cache, the comma-separated tiers to write, or \"all\". Omitted, the last tier in read order."
           }
         }
       },
@@ -227,17 +371,31 @@
           }
         }
       },
+      "SeedTarget": {
+        "type": "object",
+        "required": [
+          "map"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "map": {
+            "type": "string"
+          }
+        }
+      },
       "CacheResult": {
         "type": "object",
-        "description": "Counts are per map tile: one tile in two maps counts twice.",
+        "description": "Counts are per map tile: one tile in two maps counts twice. A purge reports purged, a seed seeded.",
         "required": [
-          "purged",
           "skipped",
           "failed",
           "durationMs"
         ],
         "properties": {
           "purged": {
+            "type": "integer"
+          },
+          "seeded": {
             "type": "integer"
           },
           "skipped": {
@@ -257,7 +415,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "The request was malformed or named a map, layer, tile or tile matrix set that does not exist. Nothing was touched.",
+        "description": "The request was malformed, named no targets, or named a map, layer, tier, tile or tile matrix set that does not exist. Nothing was touched.",
         "content": {
           "application/json": {
             "schema": {
@@ -316,6 +474,16 @@
       },
       "TimedOut": {
         "description": "The request ran past request_timeout_ms and its remaining work was cancelled. The body holds the counts so far. Repeating a purge is safe.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
+          }
+        }
+      },
+      "SeedUnprocessable": {
+        "description": "The request covers more than max_tiles_per_request, or names layers, which seed does not support. Nothing was touched.",
         "content": {
           "application/json": {
             "schema": {

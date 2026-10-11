@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/MapColonies/shigola/atlas"
-	"github.com/MapColonies/shigola/cache"
-	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/internal/build"
 	"github.com/MapColonies/shigola/internal/cacheops"
 	gdcmd "github.com/MapColonies/shigola/internal/cmd"
@@ -71,7 +68,7 @@ var (
 )
 
 // CacheTiersAll is the --cache-tiers value that lifts the restriction entirely.
-const CacheTiersAll = "all"
+const CacheTiersAll = cacheops.TiersAll
 
 // variables that are not flags but set by the command.
 var (
@@ -95,71 +92,7 @@ var (
 // for one bug.
 var ErrNoGridResolved = errors.New("cache: no tile matrix set has been resolved for this run")
 
-// resolveCacheTiers turns the --cache-tiers flag into the list of tier names
-// this run may write, or nil for "no restriction".
-//
-//	unset      the last tier in read order — the durable one by construction
-//	all        every tier
-//	a,b,c      exactly those, validated against the whole tree
-//
-// The default is the last tier rather than every tier because the alternative
-// floods the hot tier with cold tiles in seed order, evicting the live working
-// set — the exact harm the layered cache exists to avoid. "Durable" resisted
-// definition (a file tier can carry a ttl; an s3 bucket under a lifecycle policy
-// has none yet is not permanent), and position needs no inference: read order
-// runs hot to durable, so the last tier *is* the durable one.
-//
-// It rests on that ordering, and nothing enforces it. A chain of s3 then redis
-// is legal, and makes this write the hot tier and skip the durable one.
-//
-// A single-backend cache is unaffected: one cache is also the last cache, so
-// there is nothing to restrict.
-func resolveCacheTiers(c cache.Interface, flag string) ([]string, error) {
-	known := multi.TierNames(c)
-
-	flag = strings.TrimSpace(flag)
-
-	switch {
-	case len(known) == 0:
-		// not a chain; there is nothing to target
-		if flag != "" && !strings.EqualFold(flag, CacheTiersAll) {
-			return nil, fmt.Errorf("--cache-tiers=%v: the configured cache has no tiers", flag)
-		}
-		return nil, nil
-
-	case strings.EqualFold(flag, CacheTiersAll):
-		return nil, nil
-
-	case flag == "":
-		last, ok := multi.LastTierName(c)
-		if !ok {
-			return nil, nil
-		}
-		log.Infof("cache seed/purge: writing tier (%v) only. pass --cache-tiers=%v to write every tier", last, CacheTiersAll)
-		return []string{last}, nil
-	}
-
-	var names []string
-	for _, name := range strings.Split(flag, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		// Validated at startup rather than silently no-oping at run time: a
-		// typo in a cron job would otherwise look like a successful seed that
-		// wrote nothing.
-		if !slices.Contains(known, name) {
-			return nil, multi.ErrUnknownTier{Name: name, Known: known}
-		}
-		names = append(names, name)
-	}
-
-	if len(names) == 0 {
-		return nil, fmt.Errorf("--cache-tiers was given no tier names. known tiers: %v", known)
-	}
-
-	return names, nil
-}
+var resolveCacheTiers = cacheops.ResolveWriteTiers
 
 var SeedPurgeCmd = &cobra.Command{
 	Use:     "seed",

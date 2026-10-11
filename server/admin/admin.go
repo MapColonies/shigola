@@ -63,6 +63,7 @@ func (cfg Config) routes() map[Route]http.Handler {
 
 	return map[Route]http.Handler{
 		{http.MethodPost, "/cache/purge"}: cfg.authorize(limit(slots, cfg.handle(cacheops.Purge))),
+		{http.MethodPost, "/cache/seed"}:  cfg.authorize(limit(slots, cfg.handle(cacheops.Seed))),
 		{http.MethodGet, "/openapi.json"}: http.HandlerFunc(serveOpenAPI),
 		{http.MethodGet, "/docs"}:         http.HandlerFunc(serveDocs),
 	}
@@ -135,8 +136,10 @@ func limit(slots chan struct{}, next http.Handler) http.Handler {
 	})
 }
 
+// response carries purged or seeded, whichever the route does.
 type response struct {
-	Purged     int64  `json:"purged"`
+	Purged     *int64 `json:"purged,omitempty"`
+	Seeded     *int64 `json:"seeded,omitempty"`
 	Skipped    int64  `json:"skipped"`
 	Failed     int64  `json:"failed"`
 	DurationMs int64  `json:"durationMs"`
@@ -155,13 +158,17 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 			return
 		}
 
-		runs, err := plan(cfg.Atlas, op, req)
+		j, err := plan(cfg.Atlas, op, req)
+		if errors.Is(err, cacheops.ErrSeedLayers) {
+			writeJSON(w, http.StatusUnprocessableEntity, response{Error: err.Error()})
+			return
+		}
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, response{Error: err.Error()})
 			return
 		}
 
-		n, err := count(op, runs, int64(cfg.MaxTilesPerRequest))
+		n, err := count(op, j, int64(cfg.MaxTilesPerRequest))
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, response{Error: err.Error()})
 			return
@@ -176,8 +183,13 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		ctx, cancel := context.WithTimeout(r.Context(), cfg.RequestTimeout)
 		defer cancel()
 
-		res, err := execute(ctx, cfg.Atlas, op, runs)
-		resp := response{Purged: res.Done, Skipped: res.Skipped, Failed: res.Failed, DurationMs: time.Since(start).Milliseconds()}
+		res, err := execute(ctx, cfg.Atlas, op, j)
+		resp := response{Skipped: res.Skipped, Failed: res.Failed, DurationMs: time.Since(start).Milliseconds()}
+		if op == cacheops.Seed {
+			resp.Seeded = &res.Done
+		} else {
+			resp.Purged = &res.Done
+		}
 
 		if r.Context().Err() != nil {
 			log.Infof("cache admin %v: the client went away after %d tiles; the rest was cancelled", op, res.Done)
@@ -200,10 +212,10 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 	})
 }
 
-func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, runs []run) (cacheops.Result, error) {
+func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, j job) (cacheops.Result, error) {
 	var total cacheops.Result
 
-	for _, r := range runs {
+	for _, r := range j.runs {
 		res, err := cacheops.Run(ctx, cacheops.Options{
 			Op:              op,
 			Atlas:           a,
@@ -211,6 +223,8 @@ func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, runs []run) (c
 			Grid:            r.grid,
 			Concurrency:     runtime.NumCPU(),
 			ContinueOnError: true,
+			Overwrite:       j.overwrite,
+			WriteTiers:      j.writeTiers,
 		}, cacheops.BoundsSource(ctx, r.grid, r.boxes, r.zooms))
 
 		total.Done += res.Done

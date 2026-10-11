@@ -31,6 +31,16 @@ type request struct {
 	SourceTileMatrixSet string    `json:"sourceTileMatrixSet"`
 	ZoomRange           zoomRange `json:"zoomRange"`
 	Targets             []target  `json:"targets"`
+	// Overwrite is seed only. Tiers mean what the CLI's --cache-tiers means.
+	Overwrite bool    `json:"overwrite"`
+	Tiers     *string `json:"tiers"`
+}
+
+// job is a request resolved against the atlas.
+type job struct {
+	runs       []run
+	overwrite  bool
+	writeTiers []string
 }
 
 // run is the part of a request one tile matrix set covers.
@@ -41,23 +51,42 @@ type run struct {
 	zooms   []uint
 }
 
-func plan(a *atlas.Atlas, op cacheops.Op, req request) ([]run, error) {
+func plan(a *atlas.Atlas, op cacheops.Op, req request) (job, error) {
+	j := job{overwrite: req.Overwrite}
+
+	if op == cacheops.Purge && req.Overwrite {
+		return j, errors.New("overwrite applies to seed only")
+	}
+
+	spec := ""
+	if req.Tiers != nil {
+		spec = *req.Tiers
+	}
+	// validated for a purge too, as the CLI does, though a purge clears every tier
+	tiers, err := cacheops.ResolveWriteTiers(a.GetCache(), spec)
+	if err != nil {
+		return j, err
+	}
+	if op == cacheops.Seed {
+		j.writeTiers = tiers
+	}
+
 	zooms, err := req.ZoomRange.zooms()
 	if err != nil {
-		return nil, err
+		return j, err
 	}
 
 	boxes, err := req.area()
 	if err != nil {
-		return nil, err
+		return j, err
 	}
 
 	targets, err := resolveTargets(a, req.Targets)
 	if err != nil {
-		return nil, err
+		return j, err
 	}
 	if err := cacheops.ValidateTargets(op, targets); err != nil {
-		return nil, err
+		return j, err
 	}
 
 	var runs []run
@@ -71,8 +100,9 @@ func plan(a *atlas.Atlas, op cacheops.Op, req request) ([]run, error) {
 			runs[i].targets = append(runs[i].targets, t)
 		}
 	}
+	j.runs = runs
 
-	return runs, nil
+	return j, nil
 }
 
 func (zr zoomRange) zooms() ([]uint, error) {
@@ -193,13 +223,13 @@ func resolveTargets(a *atlas.Atlas, ts []target) ([]cacheops.Target, error) {
 	return out, nil
 }
 
-// count is how many cache keys the runs would touch, stopping once it passes
+// count is how many cache keys the job would touch, stopping once it passes
 // limit. A single box is counted without listing its tiles; several boxes, as
 // a tile list gives, are listed so tiles they share count once.
-func count(op cacheops.Op, runs []run, limit int64) (int64, error) {
+func count(op cacheops.Op, j job, limit int64) (int64, error) {
 	var n int64
 
-	for _, r := range runs {
+	for _, r := range j.runs {
 		for _, z := range r.zooms {
 			var keys int64
 			for _, t := range r.targets {
