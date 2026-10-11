@@ -10,12 +10,14 @@ import (
 
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
+	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/internal/build"
 	gdcmd "github.com/MapColonies/shigola/internal/cmd"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/server"
+	"github.com/MapColonies/shigola/server/admin"
 	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/cobra"
 )
@@ -23,7 +25,7 @@ import (
 var (
 	serverPort      string
 	serverNoCache   bool
-	defaultHTTPPort = ":8080"
+	defaultHTTPPort = config.DefaultHTTPPort
 )
 
 var serverCmd = &cobra.Command{
@@ -119,6 +121,17 @@ var serverCmd = &cobra.Command{
 		// start our webserver
 		srv := server.Start(nil, serverPort)
 		shutdown(srv)
+
+		if a := conf.Webserver.Admin; a.Enabled() {
+			if config.SameListener(string(a.Port), serverPort) {
+				log.Errorf("webserver.admin.port (%v) is the tile port (%v); the Cache Admin API needs a port of its own", a.Port, serverPort)
+				os.Exit(1)
+			}
+			if a.Token == "" {
+				log.Warnf("!!! the Cache Admin API on %v has NO admin token: anyone who can reach that port can purge and seed the cache. set webserver.admin.token !!!", a.Port)
+			}
+			shutdown(admin.Start(admin.Config{Token: string(a.Token)}, string(a.Port)))
+		}
 		<-gdcmd.Cancelled()
 		gdcmd.Complete()
 	},

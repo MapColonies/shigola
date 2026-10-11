@@ -74,6 +74,9 @@ type Options struct {
 	WriteTiers []string
 	// LogThreshold logs seeded tiles that took at least this long.
 	LogThreshold time.Duration
+	// ContinueOnError attempts every tile even after one fails, counting the
+	// failures. Run then returns the first failure once it is done.
+	ContinueOnError bool
 	// Draining, if set, is called once the source is exhausted and the run is
 	// waiting on its workers; the func it returns is called when they finish.
 	Draining func() (done func())
@@ -83,6 +86,7 @@ type Options struct {
 type Result struct {
 	Done    int64
 	Skipped int64
+	Failed  int64
 }
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
@@ -129,10 +133,8 @@ func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 	if opts.Grid == nil {
 		return res, atlas.ErrNilGrid
 	}
-	for _, t := range opts.Targets {
-		if err := opts.validate(t); err != nil {
-			return res, err
-		}
+	if err := ValidateTargets(opts.Op, opts.Targets); err != nil {
+		return res, err
 	}
 
 	concurrency := opts.Concurrency
@@ -162,6 +164,10 @@ func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 				}
 				if err := work(ctx, mt); err != nil {
 					errOnce.Do(func() { firstErr = err })
+					if ctx.Err() == nil && opts.ContinueOnError {
+						atomic.AddInt64(&res.Failed, 1)
+						continue
+					}
 					cancel()
 				}
 			}
@@ -208,17 +214,21 @@ feed:
 	return res, err
 }
 
-func (opts Options) validate(t Target) error {
-	if len(t.Layers) == 0 {
-		return nil
-	}
-	if opts.Op == Seed {
-		return ErrInvalidTarget{Map: t.Map.Name, Reason: "seed covers whole maps only, not layers"}
-	}
+// ValidateTargets reports the first target op cannot honour: a layer the map
+// does not have, or any layer on a seed.
+func ValidateTargets(op Op, targets []Target) error {
+	for _, t := range targets {
+		if len(t.Layers) == 0 {
+			continue
+		}
+		if op == Seed {
+			return ErrInvalidTarget{Map: t.Map.Name, Reason: "seed covers whole maps only, not layers"}
+		}
 
-	for _, name := range t.Layers {
-		if !slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool { return l.MVTName() == name }) {
-			return ErrInvalidTarget{Map: t.Map.Name, Reason: fmt.Sprintf("no layer named %q", name)}
+		for _, name := range t.Layers {
+			if !slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool { return l.MVTName() == name }) {
+				return ErrInvalidTarget{Map: t.Map.Name, Reason: fmt.Sprintf("no layer named %q", name)}
+			}
 		}
 	}
 

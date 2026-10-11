@@ -1629,3 +1629,69 @@ name = "osm"
 		}
 	}
 }
+
+func TestParseWebserverAdmin(t *testing.T) {
+	t.Setenv("ENV_TEST_ADMIN_TOKEN", "s3cret")
+
+	conf, err := config.Parse(strings.NewReader(`
+[webserver]
+port = ":8080"
+
+  [webserver.admin]
+  port = ":9090"
+  token = "${ENV_TEST_ADMIN_TOKEN}"
+`), "")
+	if err != nil {
+		t.Fatalf("Parse() = %v, want nil", err)
+	}
+
+	if conf.Webserver.Admin.Port != ":9090" || conf.Webserver.Admin.Token != "s3cret" {
+		t.Errorf("admin: got %+v, expected port :9090 and the token from the environment", conf.Webserver.Admin)
+	}
+	if !conf.Webserver.Admin.Enabled() {
+		t.Error("an admin port was set, but the admin API reports disabled")
+	}
+}
+
+func TestWebserverAdminIsOffByDefault(t *testing.T) {
+	conf, err := config.Parse(strings.NewReader("[webserver]\nport = \":8080\"\n"), "")
+	if err != nil {
+		t.Fatalf("Parse() = %v, want nil", err)
+	}
+
+	if conf.Webserver.Admin.Enabled() {
+		t.Error("the admin API is enabled with no admin port configured")
+	}
+}
+
+func TestValidateRejectsAnAdminPortSharedWithTiles(t *testing.T) {
+	type tcase struct {
+		tiles, admin string
+		clash        bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			conf, err := config.Parse(strings.NewReader(fmt.Sprintf("[webserver]\nport = %q\n[webserver.admin]\nport = %q\n", tc.tiles, tc.admin)), "")
+			if err != nil {
+				t.Fatalf("Parse() = %v, want nil", err)
+			}
+
+			if err := conf.Validate(); (err != nil) != tc.clash {
+				t.Errorf("Validate() = %v, want a clash: %v", err, tc.clash)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"the same address":            {tiles: ":8080", admin: ":8080", clash: true},
+		"all interfaces spelled out":  {tiles: ":8080", admin: "0.0.0.0:8080", clash: true},
+		"one host and all interfaces": {tiles: "127.0.0.1:8080", admin: ":8080", clash: true},
+		"different ports":             {tiles: ":8080", admin: ":9090"},
+		"different hosts":             {tiles: "127.0.0.1:8080", admin: "10.0.0.1:8080"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}

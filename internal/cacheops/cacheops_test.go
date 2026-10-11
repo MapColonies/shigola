@@ -499,3 +499,29 @@ func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 }
+
+func TestContinueOnErrorAttemptsEveryTileAndCountsFailures(t *testing.T) {
+	tier := faketier.New("solo")
+	tier.FailOn(faketier.OpPurge, errors.New("boom"))
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:              cacheops.Purge,
+		Atlas:           a,
+		Targets:         []cacheops.Target{{Map: atlas.NewWebMercatorMap("osm")}},
+		Grid:            webMercator(t),
+		ContinueOnError: true,
+	}, tiles(slippy.Tile{Z: 1, X: 0, Y: 0}, slippy.Tile{Z: 1, X: 1, Y: 0}, slippy.Tile{Z: 1, X: 0, Y: 1}))
+
+	var te cacheops.ErrTile
+	if !errors.As(err, &te) {
+		t.Fatalf("err: got %v, expected the first ErrTile", err)
+	}
+	if res.Failed != 3 || res.Done != 0 {
+		t.Errorf("result: got %+v, expected 3 failed", res)
+	}
+	if n := tier.Count(faketier.OpPurge); n != 3 {
+		t.Errorf("purges: got %d, expected every tile attempted", n)
+	}
+}

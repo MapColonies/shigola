@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -117,6 +118,35 @@ type Webserver struct {
 	SSLCert       env.String `toml:"ssl_cert"`
 	SSLKey        env.String `toml:"ssl_key"`
 	ProxyProtocol env.String `toml:"proxy_protocol"`
+	Admin         Admin      `toml:"admin"`
+}
+
+// DefaultHTTPPort is the tile listener's port when neither the flag nor the
+// config names one.
+const DefaultHTTPPort = ":8080"
+
+// Admin configures the Cache Admin API, served on a listener of its own.
+type Admin struct {
+	// Port turns the API on. Empty leaves it off.
+	Port env.String `toml:"port"`
+	// Token, when set, must be sent as a bearer token on the cache routes.
+	Token env.String `toml:"token"`
+}
+
+func (a Admin) Enabled() bool { return a.Port != "" }
+
+// SameListener reports whether two listen addresses would bind the same port,
+// counting an empty or wildcard host as every interface.
+func SameListener(a, b string) bool {
+	hostA, portA, errA := net.SplitHostPort(a)
+	hostB, portB, errB := net.SplitHostPort(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+
+	wildcard := func(h string) bool { return h == "" || h == "0.0.0.0" || h == "::" }
+
+	return portA == portB && (hostA == hostB || wildcard(hostA) || wildcard(hostB))
 }
 
 // ValidateAndRegisterParams ensures configured params don't conflict with existing
@@ -376,6 +406,16 @@ func (c *Config) Validate() error {
 			if v == strings.ToLower(k) {
 				return ErrInvalidHeader{Header: k}
 			}
+		}
+	}
+
+	if c.Webserver.Admin.Enabled() {
+		tilePort := string(c.Webserver.Port)
+		if tilePort == "" {
+			tilePort = DefaultHTTPPort
+		}
+		if SameListener(string(c.Webserver.Admin.Port), tilePort) {
+			return ErrAdminPortInUse(tilePort)
 		}
 	}
 
