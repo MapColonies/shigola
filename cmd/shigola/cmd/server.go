@@ -130,6 +130,9 @@ var serverCmd = &cobra.Command{
 			if a.Token == "" {
 				log.Warnf("!!! the Cache Admin API on %v has NO admin token: anyone who can reach that port can purge and seed the cache. set webserver.admin.token !!!", a.Port)
 			}
+			for _, tier := range admin.UnexpiringPodTiers(atlas.GetCache()) {
+				log.Warnf("cache tier (%v) is a file cache with no ttl: it lives on this pod, so a purge another pod handles never reaches it and it serves the purged tile indefinitely. give it a short ttl", tier)
+			}
 			shutdown(admin.Start(adminConfig(a), string(a.Port)))
 		}
 		<-gdcmd.Cancelled()

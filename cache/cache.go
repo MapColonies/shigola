@@ -107,6 +107,17 @@ type ChainStatsHolder interface {
 	ChainStats() ChainStats
 }
 
+// Innermost strips every decorator and wrapper from c, returning the backend.
+func Innermost(c Interface) Interface {
+	for {
+		next, ok := unwrap(c)
+		if !ok {
+			return c
+		}
+		c = next
+	}
+}
+
 // unwrap peels one layer off c: an observability wrapper, or one of the
 // decorators For applies.
 //
