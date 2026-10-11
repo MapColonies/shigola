@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
@@ -23,6 +24,32 @@ type Config struct {
 	Atlas *atlas.Atlas
 	// Token, when set, must be presented as a bearer token on /cache/*.
 	Token string
+	// MaxTilesPerRequest caps the cache keys one request may touch, counted
+	// across every tile matrix set, zoom and layer. Zero means 10000.
+	MaxTilesPerRequest int
+	// MaxConcurrentRequests caps the requests worked on at once. Zero means 4.
+	MaxConcurrentRequests int
+	// RequestTimeout cancels a request's remaining work. Zero means 60s.
+	RequestTimeout time.Duration
+}
+
+const (
+	DefaultMaxTilesPerRequest    = 10000
+	DefaultMaxConcurrentRequests = 4
+	DefaultRequestTimeout        = 60 * time.Second
+)
+
+func (cfg Config) withDefaults() Config {
+	if cfg.MaxTilesPerRequest <= 0 {
+		cfg.MaxTilesPerRequest = DefaultMaxTilesPerRequest
+	}
+	if cfg.MaxConcurrentRequests <= 0 {
+		cfg.MaxConcurrentRequests = DefaultMaxConcurrentRequests
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = DefaultRequestTimeout
+	}
+	return cfg
 }
 
 // Route is one documented route of the API.
@@ -32,8 +59,10 @@ type Route struct {
 }
 
 func (cfg Config) routes() map[Route]http.Handler {
+	slots := make(chan struct{}, cfg.MaxConcurrentRequests)
+
 	return map[Route]http.Handler{
-		{http.MethodPost, "/cache/purge"}: cfg.authorize(cfg.handle(cacheops.Purge)),
+		{http.MethodPost, "/cache/purge"}: cfg.authorize(limit(slots, cfg.handle(cacheops.Purge))),
 		{http.MethodGet, "/openapi.json"}: http.HandlerFunc(serveOpenAPI),
 		{http.MethodGet, "/docs"}:         http.HandlerFunc(serveDocs),
 	}
@@ -42,13 +71,14 @@ func (cfg Config) routes() map[Route]http.Handler {
 // Routes lists the routes New serves, apart from the Swagger UI assets.
 func Routes() []Route {
 	var out []Route
-	for r := range (Config{}).routes() {
+	for r := range (Config{}).withDefaults().routes() {
 		out = append(out, r)
 	}
 	return out
 }
 
 func New(cfg Config) http.Handler {
+	cfg = cfg.withDefaults()
 	mux := http.NewServeMux()
 	for r, h := range cfg.routes() {
 		mux.Handle(r.Method+" "+r.Path, h)
@@ -91,6 +121,20 @@ func (cfg Config) authorize(next http.Handler) http.Handler {
 	})
 }
 
+// limit turns a request away with 429 while every slot is taken.
+func limit(slots chan struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeJSON(w, http.StatusTooManyRequests, response{Error: "too many cache requests in progress, retry shortly"})
+		}
+	})
+}
+
 type response struct {
 	Purged     int64  `json:"purged"`
 	Skipped    int64  `json:"skipped"`
@@ -117,7 +161,22 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 			return
 		}
 
-		res, err := execute(r.Context(), cfg.Atlas, op, runs)
+		n, err := count(op, runs, int64(cfg.MaxTilesPerRequest))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, response{Error: err.Error()})
+			return
+		}
+		if n > int64(cfg.MaxTilesPerRequest) {
+			writeJSON(w, http.StatusUnprocessableEntity, response{Error: fmt.Sprintf(
+				"the request covers %d tiles, over the limit of %d per request. narrow it, or use `shigola cache %v` for bulk work",
+				n, cfg.MaxTilesPerRequest, op)})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), cfg.RequestTimeout)
+		defer cancel()
+
+		res, err := execute(ctx, cfg.Atlas, op, runs)
 		resp := response{Purged: res.Done, Skipped: res.Skipped, Failed: res.Failed, DurationMs: time.Since(start).Milliseconds()}
 
 		if r.Context().Err() != nil {
@@ -126,6 +185,11 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		}
 
 		status := http.StatusOK
+		if errors.Is(err, context.DeadlineExceeded) {
+			resp.Error = fmt.Sprintf("the request timed out after %v. repeat it to finish", cfg.RequestTimeout)
+			writeJSON(w, http.StatusServiceUnavailable, resp)
+			return
+		}
 		if err != nil {
 			resp.Error = err.Error()
 			status = http.StatusInternalServerError

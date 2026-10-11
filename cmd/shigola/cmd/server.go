@@ -130,11 +130,25 @@ var serverCmd = &cobra.Command{
 			if a.Token == "" {
 				log.Warnf("!!! the Cache Admin API on %v has NO admin token: anyone who can reach that port can purge and seed the cache. set webserver.admin.token !!!", a.Port)
 			}
-			shutdown(admin.Start(admin.Config{Token: string(a.Token)}, string(a.Port)))
+			shutdown(admin.Start(adminConfig(a), string(a.Port)))
 		}
 		<-gdcmd.Cancelled()
 		gdcmd.Complete()
 	},
+}
+
+func adminConfig(a config.Admin) admin.Config {
+	cfg := admin.Config{Token: string(a.Token)}
+	if a.MaxTilesPerRequest != nil {
+		cfg.MaxTilesPerRequest = int(*a.MaxTilesPerRequest)
+	}
+	if a.MaxConcurrentRequests != nil {
+		cfg.MaxConcurrentRequests = int(*a.MaxConcurrentRequests)
+	}
+	if a.RequestTimeoutMs != nil {
+		cfg.RequestTimeout = time.Duration(*a.RequestTimeoutMs) * time.Millisecond
+	}
+	return cfg
 }
 
 func shutdown(srv *http.Server) {

@@ -244,8 +244,8 @@ func (opts Options) worker(res *Result) func(context.Context, mapTile) error {
 	return func(ctx context.Context, mt mapTile) error {
 		skipped, err := op(opts.intent(ctx), mt)
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return err
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 			return ErrTile{Op: opts.Op, MapName: mt.target.Map.Name, Tile: mt.tile, Err: err}
 		}
@@ -332,7 +332,7 @@ func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err er
 		return false, atlas.ErrMissingCache
 	}
 
-	for _, layer := range purgedLayers(mt.target, z) {
+	for _, layer := range mt.target.Keys(Purge, z) {
 		key, err := cache.NewKey(opts.Grid, m.Name, layer, uint(z), x, y)
 		if err != nil {
 			return false, err
@@ -345,10 +345,14 @@ func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err er
 	return false, nil
 }
 
-// purgedLayers names the cache keys a purge clears: the whole-map tile ("")
-// and the target's layers that are active at zoom z.
-func purgedLayers(t Target, z slippy.Zoom) []string {
+// Keys names the layer segment of every cache key op touches for one tile of
+// t at zoom z: the whole-map tile (""), and for a purge the target's layers
+// active at z.
+func (t Target) Keys(op Op, z slippy.Zoom) []string {
 	keys := []string{""}
+	if op == Seed {
+		return keys
+	}
 
 	for _, l := range t.Map.FilterLayersByZoom(z).Layers {
 		name := l.MVTName()

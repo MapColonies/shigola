@@ -1653,6 +1653,26 @@ port = ":8080"
 	}
 }
 
+func TestParseWebserverAdminLimits(t *testing.T) {
+	conf, err := config.Parse(strings.NewReader(`
+[webserver.admin]
+port = ":9090"
+max_tiles_per_request = 500
+max_concurrent_requests = 2
+request_timeout_ms = 1500
+`), "")
+	if err != nil {
+		t.Fatalf("Parse() = %v, want nil", err)
+	}
+
+	a := conf.Webserver.Admin
+	if a.MaxTilesPerRequest == nil || *a.MaxTilesPerRequest != 500 ||
+		a.MaxConcurrentRequests == nil || *a.MaxConcurrentRequests != 2 ||
+		a.RequestTimeoutMs == nil || *a.RequestTimeoutMs != 1500 {
+		t.Errorf("admin limits: got %+v, expected 500 tiles, 2 requests, 1500ms", a)
+	}
+}
+
 func TestWebserverAdminIsOffByDefault(t *testing.T) {
 	conf, err := config.Parse(strings.NewReader("[webserver]\nport = \":8080\"\n"), "")
 	if err != nil {

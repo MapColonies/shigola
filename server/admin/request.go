@@ -10,6 +10,7 @@ import (
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/internal/cacheops"
 	"github.com/MapColonies/shigola/tms"
+	"github.com/go-spatial/geom/slippy"
 )
 
 type zoomRange struct {
@@ -190,4 +191,55 @@ func resolveTargets(a *atlas.Atlas, ts []target) ([]cacheops.Target, error) {
 	}
 
 	return out, nil
+}
+
+// count is how many cache keys the runs would touch, stopping once it passes
+// limit. A single box is counted without listing its tiles; several boxes, as
+// a tile list gives, are listed so tiles they share count once.
+func count(op cacheops.Op, runs []run, limit int64) (int64, error) {
+	var n int64
+
+	for _, r := range runs {
+		for _, z := range r.zooms {
+			var keys int64
+			for _, t := range r.targets {
+				keys += int64(len(t.Keys(op, slippy.Zoom(z))))
+			}
+
+			tiles, err := uniqueTiles(r.grid, r.boxes, int(z), (limit-n)/max(keys, 1)+1)
+			if err != nil {
+				return 0, err
+			}
+
+			n += tiles * keys
+			if n > limit {
+				return n, nil
+			}
+		}
+	}
+
+	return n, nil
+}
+
+func uniqueTiles(grid *tms.TileMatrixSet, boxes []tms.BoundingBox, z int, stopAfter int64) (int64, error) {
+	if len(boxes) == 1 {
+		b := boxes[0]
+		return grid.TileCount(b.Left, b.Bottom, b.Right, b.Top, []int{z}, true)
+	}
+
+	seen := map[tms.Tile]bool{}
+	for _, b := range boxes {
+		tiles, err := grid.Tiles(b.Left, b.Bottom, b.Right, b.Top, []int{z}, true)
+		if err != nil {
+			return 0, err
+		}
+		for _, t := range tiles {
+			seen[t] = true
+		}
+		if int64(len(seen)) >= stopAfter {
+			break
+		}
+	}
+
+	return int64(len(seen)), nil
 }

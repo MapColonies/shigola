@@ -791,6 +791,60 @@ func (t *TileMatrixSet) TileGeoExtent(tile Tile) (geom.Extent, error) {
 //
 // Ported from morecantile.models.TileMatrixSet.tiles.
 func (t *TileMatrixSet) Tiles(west, south, east, north float64, zooms []int, truncate bool) ([]Tile, error) {
+	ranges, err := t.tileRanges(west, south, east, north, zooms, truncate)
+	if err != nil {
+		return nil, err
+	}
+
+	var tiles []Tile
+	for _, r := range ranges {
+		m, err := t.Matrix(r.z)
+		if err != nil {
+			return nil, err
+		}
+
+		for j := r.minY; j <= r.maxY; j++ {
+			cf, err := m.CoalesceFactor(j)
+			if err != nil {
+				return nil, err
+			}
+
+			for i := r.minX; i <= r.maxX; i++ {
+				if cf != 1 && i%cf != 0 {
+					continue
+				}
+				tiles = append(tiles, Tile{X: i, Y: j, Z: r.z})
+			}
+		}
+	}
+
+	return tiles, nil
+}
+
+// TileCount bounds from above how many tiles Tiles would return, without
+// listing them. It is exact unless the matrix coalesces tiles or the box
+// crosses the antimeridian onto tiles it already counted.
+func (t *TileMatrixSet) TileCount(west, south, east, north float64, zooms []int, truncate bool) (int64, error) {
+	ranges, err := t.tileRanges(west, south, east, north, zooms, truncate)
+	if err != nil {
+		return 0, err
+	}
+
+	var n int64
+	for _, r := range ranges {
+		n += (r.maxX - r.minX + 1) * (r.maxY - r.minY + 1)
+	}
+
+	return n, nil
+}
+
+// tileRange is the inclusive block of tile indices a box covers at zoom z.
+type tileRange struct {
+	z                      int
+	minX, maxX, minY, maxY int64
+}
+
+func (t *TileMatrixSet) tileRanges(west, south, east, north float64, zooms []int, truncate bool) ([]tileRange, error) {
 	for _, c := range []float64{west, south, east, north} {
 		if math.IsNaN(c) {
 			return nil, fmt.Errorf("tms: all coordinates must be finite")
@@ -816,7 +870,7 @@ func (t *TileMatrixSet) Tiles(west, south, east, north float64, zooms []int, tru
 		}
 	}
 
-	var tiles []Tile
+	var ranges []tileRange
 
 	for _, b := range boxes {
 		w, s, e, n := b.Left, b.Bottom, b.Right, b.Top
@@ -860,29 +914,11 @@ func (t *TileMatrixSet) Tiles(west, south, east, north float64, zooms []int, tru
 			miny := min(nwTile.Y, seTile.Y)
 			maxy := max(nwTile.Y, seTile.Y)
 
-			m, err := t.Matrix(z)
-			if err != nil {
-				return nil, err
-			}
-
-			for j := miny; j <= maxy; j++ {
-				cf, err := m.CoalesceFactor(j)
-				if err != nil {
-					return nil, err
-				}
-
-				for i := minx; i <= maxx; i++ {
-					if cf != 1 && i%cf != 0 {
-						continue
-					}
-
-					tiles = append(tiles, Tile{X: i, Y: j, Z: z})
-				}
-			}
+			ranges = append(ranges, tileRange{z: z, minX: minx, maxX: maxx, minY: miny, maxY: maxy})
 		}
 	}
 
-	return tiles, nil
+	return ranges, nil
 }
 
 // Neighbors returns the up-to-eight tiles adjoining a tile, omitting any that

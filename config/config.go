@@ -131,6 +131,10 @@ type Admin struct {
 	Port env.String `toml:"port"`
 	// Token, when set, must be sent as a bearer token on the cache routes.
 	Token env.String `toml:"token"`
+	// The limits below fall back to the Cache Admin API's defaults when unset.
+	MaxTilesPerRequest    *env.Uint `toml:"max_tiles_per_request"`
+	MaxConcurrentRequests *env.Uint `toml:"max_concurrent_requests"`
+	RequestTimeoutMs      *env.Uint `toml:"request_timeout_ms"`
 }
 
 func (a Admin) Enabled() bool { return a.Port != "" }

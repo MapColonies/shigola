@@ -37,18 +37,42 @@
                 "bounds": {
                   "summary": "By lng/lat bounds",
                   "value": {
-                    "bounds": [34.75, 32.05, 34.8, 32.1],
-                    "zoomRange": { "min": 10, "max": 14 },
-                    "targets": [{ "map": "osm" }]
+                    "bounds": [
+                      34.75,
+                      32.05,
+                      34.8,
+                      32.1
+                    ],
+                    "zoomRange": {
+                      "min": 10,
+                      "max": 14
+                    },
+                    "targets": [
+                      {
+                        "map": "osm"
+                      }
+                    ]
                   }
                 },
                 "tiles": {
                   "summary": "By tile names, one layer only",
                   "value": {
-                    "tiles": ["12/2442/1659"],
+                    "tiles": [
+                      "12/2442/1659"
+                    ],
                     "sourceTileMatrixSet": "WorldCRS84Quad",
-                    "zoomRange": { "min": 12, "max": 12 },
-                    "targets": [{ "map": "osm", "layers": ["roads"] }]
+                    "zoomRange": {
+                      "min": 12,
+                      "max": 12
+                    },
+                    "targets": [
+                      {
+                        "map": "osm",
+                        "layers": [
+                          "roads"
+                        ]
+                      }
+                    ]
                   }
                 }
               }
@@ -72,8 +96,17 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "422": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/Busy"
+          },
           "500": {
             "$ref": "#/components/responses/Failed"
+          },
+          "503": {
+            "$ref": "#/components/responses/TimedOut"
           }
         }
       }
@@ -121,20 +154,27 @@
       "CacheRequest": {
         "type": "object",
         "description": "Give the area as exactly one of bounds or tiles.",
-        "required": ["zoomRange"],
+        "required": [
+          "zoomRange"
+        ],
         "additionalProperties": false,
         "properties": {
           "bounds": {
             "type": "array",
             "description": "west, south, east, north in lng/lat. West greater than east crosses the antimeridian.",
-            "items": { "type": "number" },
+            "items": {
+              "type": "number"
+            },
             "minItems": 4,
             "maxItems": 4
           },
           "tiles": {
             "type": "array",
             "description": "z/x/y tile names in sourceTileMatrixSet. Each stands for the ground it covers.",
-            "items": { "type": "string", "pattern": "^[0-9]+/[0-9]+/[0-9]+$" }
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+/[0-9]+/[0-9]+$"
+            }
           },
           "sourceTileMatrixSet": {
             "type": "string",
@@ -143,11 +183,20 @@
           },
           "zoomRange": {
             "type": "object",
-            "required": ["min", "max"],
+            "required": [
+              "min",
+              "max"
+            ],
             "additionalProperties": false,
             "properties": {
-              "min": { "type": "integer", "minimum": 0 },
-              "max": { "type": "integer", "minimum": 0 }
+              "min": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max": {
+                "type": "integer",
+                "minimum": 0
+              }
             }
           },
           "targets": {
@@ -161,27 +210,48 @@
       },
       "Target": {
         "type": "object",
-        "required": ["map"],
+        "required": [
+          "map"
+        ],
         "additionalProperties": false,
         "properties": {
-          "map": { "type": "string" },
+          "map": {
+            "type": "string"
+          },
           "layers": {
             "type": "array",
             "description": "Narrows a purge to these layers and the map's whole-map tile, which contains them. Omitted, the whole-map tile and every layer's tile.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "CacheResult": {
         "type": "object",
         "description": "Counts are per map tile: one tile in two maps counts twice.",
-        "required": ["purged", "skipped", "failed", "durationMs"],
+        "required": [
+          "purged",
+          "skipped",
+          "failed",
+          "durationMs"
+        ],
         "properties": {
-          "purged": { "type": "integer" },
-          "skipped": { "type": "integer" },
-          "failed": { "type": "integer" },
-          "durationMs": { "type": "integer" },
-          "error": { "type": "string" }
+          "purged": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
         }
       }
     },
@@ -190,7 +260,9 @@
         "description": "The request was malformed or named a map, layer, tile or tile matrix set that does not exist. Nothing was touched.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/CacheResult" }
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
           }
         }
       },
@@ -198,7 +270,9 @@
         "description": "A token is configured and the request did not present it. Nothing was touched.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/CacheResult" }
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
           }
         }
       },
@@ -206,7 +280,47 @@
         "description": "A tile could not be processed, usually because a cache backend failed. The body holds the counts so far. Repeating a purge is safe.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/CacheResult" }
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "The request covers more tiles than max_tiles_per_request, counted across every tile matrix set, zoom and layer. Nothing was touched; narrow it, or use the shigola cache CLI.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
+          }
+        }
+      },
+      "Busy": {
+        "description": "max_concurrent_requests are already being worked on. Nothing was touched; retry after the Retry-After header's seconds.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait before retrying."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
+          }
+        }
+      },
+      "TimedOut": {
+        "description": "The request ran past request_timeout_ms and its remaining work was cancelled. The body holds the counts so far. Repeating a purge is safe.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CacheResult"
+            }
           }
         }
       }
