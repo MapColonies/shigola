@@ -25,9 +25,35 @@ type Config struct {
 	Token string
 }
 
+// Route is one documented route of the API.
+type Route struct {
+	Method string
+	Path   string
+}
+
+func (cfg Config) routes() map[Route]http.Handler {
+	return map[Route]http.Handler{
+		{http.MethodPost, "/cache/purge"}: cfg.authorize(cfg.handle(cacheops.Purge)),
+		{http.MethodGet, "/openapi.json"}: http.HandlerFunc(serveOpenAPI),
+		{http.MethodGet, "/docs"}:         http.HandlerFunc(serveDocs),
+	}
+}
+
+// Routes lists the routes New serves, apart from the Swagger UI assets.
+func Routes() []Route {
+	var out []Route
+	for r := range (Config{}).routes() {
+		out = append(out, r)
+	}
+	return out
+}
+
 func New(cfg Config) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /cache/purge", cfg.authorize(cfg.handle(cacheops.Purge)))
+	for r, h := range cfg.routes() {
+		mux.Handle(r.Method+" "+r.Path, h)
+	}
+	mux.Handle("GET /docs/", serveDocsAssets())
 
 	return mux
 }

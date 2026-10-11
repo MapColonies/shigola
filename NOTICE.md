@@ -65,3 +65,14 @@ full list and versions. These include, among others:
 - Conformance is verified with OGC's
   [CITE](https://cite.opengeospatial.org/) `ets-ogcapi-tiles10` executable test
   suite.
+
+---
+
+## Swagger UI
+
+The Cache Admin API serves Swagger UI at `/docs`. Its distribution files are
+embedded unmodified from `swagger-ui-dist` 5.33.1.
+
+- Project: <https://github.com/swagger-api/swagger-ui>
+- License: Apache-2.0, see [server/admin/swaggerui/LICENSE](server/admin/swaggerui/LICENSE)
+- Copyright: 2020-2021 SmartBear Software Inc.

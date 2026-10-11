@@ -1,0 +1,215 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Shigola — Cache Admin API",
+    "description": "Purges tiles from Shigola's tile cache. Served on its own port, which must not be reachable by clients of the tile server.",
+    "version": "1.0.0",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/MapColonies/shigola/blob/master/LICENSE.md"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "this server"
+    }
+  ],
+  "security": [
+    {
+      "adminToken": []
+    }
+  ],
+  "paths": {
+    "/cache/purge": {
+      "post": {
+        "summary": "Purge the tiles covering an area",
+        "description": "Purges the tiles covering the area at every zoom in zoomRange, from every tile matrix set each targeted map serves. The request runs to completion before the response is sent.",
+        "operationId": "purge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheRequest"
+              },
+              "examples": {
+                "bounds": {
+                  "summary": "By lng/lat bounds",
+                  "value": {
+                    "bounds": [34.75, 32.05, 34.8, 32.1],
+                    "zoomRange": { "min": 10, "max": 14 },
+                    "targets": [{ "map": "osm" }]
+                  }
+                },
+                "tiles": {
+                  "summary": "By tile names, one layer only",
+                  "value": {
+                    "tiles": ["12/2442/1659"],
+                    "sourceTileMatrixSet": "WorldCRS84Quad",
+                    "zoomRange": { "min": 12, "max": 12 },
+                    "targets": [{ "map": "osm", "layers": ["roads"] }]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every tile was purged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/Failed"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "operationId": "openapi",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document of the Cache Admin API.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "summary": "Swagger UI for this document",
+        "operationId": "docs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "An HTML page rendering this document.",
+            "content": {
+              "text/html": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "adminToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "webserver.admin.token. Required only when one is configured."
+      }
+    },
+    "schemas": {
+      "CacheRequest": {
+        "type": "object",
+        "description": "Give the area as exactly one of bounds or tiles.",
+        "required": ["zoomRange"],
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "array",
+            "description": "west, south, east, north in lng/lat. West greater than east crosses the antimeridian.",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "tiles": {
+            "type": "array",
+            "description": "z/x/y tile names in sourceTileMatrixSet. Each stands for the ground it covers.",
+            "items": { "type": "string", "pattern": "^[0-9]+/[0-9]+/[0-9]+$" }
+          },
+          "sourceTileMatrixSet": {
+            "type": "string",
+            "description": "The tile matrix set the tiles names belong to. Required with tiles.",
+            "example": "WorldCRS84Quad"
+          },
+          "zoomRange": {
+            "type": "object",
+            "required": ["min", "max"],
+            "additionalProperties": false,
+            "properties": {
+              "min": { "type": "integer", "minimum": 0 },
+              "max": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "description": "The maps to work on. Omitted, every map.",
+            "items": {
+              "$ref": "#/components/schemas/Target"
+            }
+          }
+        }
+      },
+      "Target": {
+        "type": "object",
+        "required": ["map"],
+        "additionalProperties": false,
+        "properties": {
+          "map": { "type": "string" },
+          "layers": {
+            "type": "array",
+            "description": "Narrows a purge to these layers and the map's whole-map tile, which contains them. Omitted, the whole-map tile and every layer's tile.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "CacheResult": {
+        "type": "object",
+        "description": "Counts are per map tile: one tile in two maps counts twice.",
+        "required": ["purged", "skipped", "failed", "durationMs"],
+        "properties": {
+          "purged": { "type": "integer" },
+          "skipped": { "type": "integer" },
+          "failed": { "type": "integer" },
+          "durationMs": { "type": "integer" },
+          "error": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request was malformed or named a map, layer, tile or tile matrix set that does not exist. Nothing was touched.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CacheResult" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "A token is configured and the request did not present it. Nothing was touched.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CacheResult" }
+          }
+        }
+      },
+      "Failed": {
+        "description": "A tile could not be processed, usually because a cache backend failed. The body holds the counts so far. Repeating a purge is safe.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/CacheResult" }
+          }
+        }
+      }
+    }
+  }
+}
