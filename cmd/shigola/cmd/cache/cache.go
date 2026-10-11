@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/config"
+	"github.com/MapColonies/shigola/internal/cacheops"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/go-spatial/cobra" // The config from the main app
 	"github.com/go-spatial/geom/slippy"
@@ -110,127 +109,43 @@ func (tc *TileChannel) Close() {
 	tc.cl.Unlock()
 }
 
-type MapTile struct {
-	MapName string
-	Tile    slippy.Tile
-}
-
-func doWork(ctx context.Context, tileChannel *TileChannel, maps []atlas.Map, concurrency int, worker func(context.Context, MapTile) error) (err error) {
-	var wg sync.WaitGroup
-	// new channel for the workers
-	tiler := make(chan MapTile)
-	var cleanup bool
-	var errLock sync.RWMutex
-	var mapTileErr error
-
-	if len(maps) == 0 {
-		return fmt.Errorf("no maps defined")
-	}
-
-	// set up the workers
-	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go func(i int) {
-			var cleanup bool
-			// range our channel to listen for jobs
-			for mt := range tiler {
-				errLock.RLock()
-				e := mapTileErr
-				errLock.RUnlock()
-				if e != nil {
-					cleanup = true
-					break
-				}
-				if err := worker(ctx, mt); err != nil {
-					cleanup = true
-					errLock.Lock()
-					mapTileErr = err
-					errLock.Unlock()
-					break
-				}
-			}
-			if cleanup {
-				log.Debugf("worker %v waiting on clean up of tiler", i)
-				for range tiler {
-					continue
-				}
-			}
-			log.Debugf("worker %v done", i)
-			wg.Done()
-		}(i)
-	}
-
-	nonParamMaps := make([]atlas.Map, 0)
-
-	for _, m := range maps {
-		// we don't support caching for maps with custom parameters
-		if m.Params != nil || len(m.Params) > 0 {
+// runSeedPurge runs the resolved seed or purge over tiles. If the workers are
+// still busy 60 seconds after the last tile was handed out, the process exits.
+func runSeedPurge(ctx context.Context, tiles *TileChannel) error {
+	for _, m := range seedPurgeMaps {
+		if len(m.Params) > 0 {
 			log.Warnf("caching is disabled for map %s as it has custom parameters configures", m.Name)
 		}
-		nonParamMaps = append(nonParamMaps, m)
 	}
 
-	// run through the incoming tiles, and generate the mapTiles as needed.
-TileChannelLoop:
-	for tile := range tileChannel.Channel() {
-		for _, m := range nonParamMaps {
-			if ctx.Err() != nil {
-				cleanup = true
-				break
-			}
+	res, err := cacheops.Run(ctx, cacheops.Options{
+		Op:           seedPurgeOp,
+		Maps:         seedPurgeMaps,
+		Grid:         seedPurgeGrid,
+		Concurrency:  cacheConcurrency,
+		Overwrite:    cacheOverwrite,
+		WriteTiers:   seedWriteTiers,
+		LogThreshold: time.Duration(cacheLogThreshold) * time.Millisecond,
+		Draining:     exitIfWorkersHang(60 * time.Second),
+	}, tiles)
+	log.Infof("cache %v: %d done, %d skipped", seedPurgeOp, res.Done, res.Skipped)
 
-			{ // worker error occurred.
-				errLock.RLock()
-				e := mapTileErr
-				errLock.RUnlock()
-				if e != nil {
-					cleanup = true
-					break
-				}
-			}
-
-			mapTile := MapTile{
-				MapName: m.Name,
-				Tile:    tile,
-			}
-
-			select {
-			case tiler <- mapTile:
-			case <-ctx.Done():
-				cleanup = true
-				break TileChannelLoop
-			}
-		}
-	}
-
-	close(tiler)
-	if cleanup {
-		// want to soak up any messages
-		for range tileChannel.Channel() {
-			continue
-		}
-	}
-	// let our workers finish up
-	log.Info("waiting for workers to finish up")
-	shouldExit := true
-	go func() {
-		<-time.After(60 * time.Second)
-		if !shouldExit {
-			log.Info("60 seconds passed killing")
-			os.Exit(1)
-		}
-	}()
-	wg.Wait()
-	log.Info("all workers are done")
-	shouldExit = false
-	err = tileChannel.Err()
-	if err == nil {
-		err = mapTileErr
-	}
-	if errors.Is(err, context.Canceled) {
-		return nil
-	}
 	return err
+}
+
+func exitIfWorkersHang(after time.Duration) func() func() {
+	return func() func() {
+		log.Info("waiting for workers to finish up")
+		timer := time.AfterFunc(after, func() {
+			log.Infof("%v passed killing", after)
+			os.Exit(1)
+		})
+
+		return func() {
+			timer.Stop()
+			log.Info("all workers are done")
+		}
+	}
 }
 
 func IsValidLat(f64 float64) bool { return -90.0 <= f64 && f64 <= 90.0 }

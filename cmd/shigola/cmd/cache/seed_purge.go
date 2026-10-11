@@ -13,6 +13,7 @@ import (
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/internal/build"
+	"github.com/MapColonies/shigola/internal/cacheops"
 	gdcmd "github.com/MapColonies/shigola/internal/cmd"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
@@ -73,7 +74,7 @@ const CacheTiersAll = "all"
 
 // variables that are not flags but set by the command.
 var (
-	seedPurgeWorker func(context.Context, MapTile) error
+	seedPurgeOp     cacheops.Op
 	seedPurgeBounds [4]float64
 	seedPurgeMaps   []atlas.Map
 	// seedPurgeGrid is the TileMatrixSet this run enumerates tiles in and keys
@@ -342,9 +343,9 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 	//cmdName := strings.ToLower(strings.TrimSpace(cmd.CalledAs()))
 	switch cmdName {
 	case "purge":
-		seedPurgeWorker = withCacheIntent(purgeWorker)
+		seedPurgeOp = cacheops.Purge
 	case "seed":
-		seedPurgeWorker = withCacheIntent(seedWorker(cacheOverwrite, cacheLogThreshold))
+		seedPurgeOp = cacheops.Seed
 	default:
 
 		return fmt.Errorf("expected purge/seed got (%v) for command name", cmdName)
@@ -442,7 +443,7 @@ func seedPurgeCommand(_ *cobra.Command, _ []string) (err error) {
 	log.Info("tile matrix set:", seedPurgeGrid.ID())
 	tileChannel := generateTilesForBounds(ctx, seedPurgeBounds, zooms, seedPurgeGrid)
 
-	return doWork(ctx, tileChannel, seedPurgeMaps, cacheConcurrency, seedPurgeWorker)
+	return runSeedPurge(ctx, tileChannel)
 }
 
 // generateTilesForBounds streams every tile of grid, at each of zooms, covering

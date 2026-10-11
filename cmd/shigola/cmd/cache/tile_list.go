@@ -93,7 +93,7 @@ func tileListCommand(cmd *cobra.Command, args []string) (err error) {
 	tilechannel := generateTilesForTileList(ctx, in, explicit, zooms, format)
 
 	// start up workers here
-	return doWork(ctx, tilechannel, seedPurgeMaps, cacheConcurrency, seedPurgeWorker)
+	return runSeedPurge(ctx, tilechannel)
 }
 
 // generateTilesForTileList will return a channel where all the tiles in the list will be published
