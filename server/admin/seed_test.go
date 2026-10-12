@@ -3,6 +3,8 @@ package admin_test
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/MapColonies/shigola/atlas"
@@ -54,6 +56,81 @@ func TestSeedByBoundsWritesWholeMapTilesInEverySet(t *testing.T) {
 		if _, ok := f.tier.Value(k); !ok {
 			t.Errorf("%v was not seeded", k)
 		}
+	}
+}
+
+func TestTileMatrixSetsNarrowTheRun(t *testing.T) {
+	type tcase struct {
+		path, sets  string
+		expectCount int64
+		expectSets  []string
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			f := newFixture(t, "", renderable(t, "osm"))
+			if tc.path == "/cache/purge" {
+				for _, k := range []*cache.Key{
+					f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0),
+					f.key(tms.WorldCRS84Quad, "osm", "", 1, 0, 0),
+				} {
+					f.tier.Seed(k, []byte("old"))
+				}
+			}
+
+			rec := f.do(tc.path, `{
+				"bounds": [-100, 10, -80, 20],
+				"zoomRange": {"min": 1, "max": 1},
+				"targets": [{"map": "osm"}],
+				"tileMatrixSets": `+tc.sets+`
+			}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status: got %d, expected 200. body: %s", rec.Code, rec.Body)
+			}
+
+			var r struct {
+				Seeded, Purged int64
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
+				t.Fatalf("decoding %s: %v", rec.Body, err)
+			}
+			if n := r.Seeded + r.Purged; n != tc.expectCount {
+				t.Errorf("tiles: got %d, expected %d", n, tc.expectCount)
+			}
+
+			touched := map[string]bool{}
+			for _, c := range f.tier.Calls() {
+				touched[strings.SplitN(c.Key, "/", 2)[0]] = true
+			}
+			for _, id := range []string{tms.WebMercatorQuad, tms.WorldCRS84Quad} {
+				if touched[id] != slices.Contains(tc.expectSets, id) {
+					t.Errorf("%s touched = %v", id, touched[id])
+				}
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"seed one set": {
+			path: "/cache/seed", sets: `["WorldCRS84Quad"]`,
+			expectCount: 2, expectSets: []string{tms.WorldCRS84Quad},
+		},
+		"seed both sets": {
+			path: "/cache/seed", sets: `["WorldCRS84Quad", "WebMercatorQuad"]`,
+			expectCount: 3, expectSets: []string{tms.WebMercatorQuad, tms.WorldCRS84Quad},
+		},
+		"seed every set when omitted": {
+			path: "/cache/seed", sets: `null`,
+			expectCount: 3, expectSets: []string{tms.WebMercatorQuad, tms.WorldCRS84Quad},
+		},
+		"purge one set": {
+			path: "/cache/purge", sets: `["WebMercatorQuad"]`,
+			expectCount: 1, expectSets: []string{tms.WebMercatorQuad},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }
 

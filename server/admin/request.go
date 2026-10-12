@@ -31,6 +31,9 @@ type request struct {
 	SourceTileMatrixSet string    `json:"sourceTileMatrixSet"`
 	ZoomRange           zoomRange `json:"zoomRange"`
 	Targets             []target  `json:"targets"`
+	// TileMatrixSets narrows the run to these sets, as the CLI's
+	// --tile-matrix-set does. Omitted, every set each map serves.
+	TileMatrixSets []string `json:"tileMatrixSets"`
 	// Overwrite is seed only. Tiers mean what the CLI's --cache-tiers means.
 	Overwrite bool    `json:"overwrite"`
 	Tiers     *string `json:"tiers"`
@@ -88,10 +91,16 @@ func plan(a *atlas.Atlas, op cacheops.Op, req request) (job, error) {
 	if err := cacheops.ValidateTargets(op, targets); err != nil {
 		return j, err
 	}
+	if err := checkTileMatrixSets(targets, req.TileMatrixSets); err != nil {
+		return j, err
+	}
 
 	var runs []run
 	for _, t := range targets {
 		for _, grid := range t.Map.TileGrids() {
+			if len(req.TileMatrixSets) > 0 && !slices.Contains(req.TileMatrixSets, grid.ID()) {
+				continue
+			}
 			i := slices.IndexFunc(runs, func(r run) bool { return r.grid.ID() == grid.ID() })
 			if i < 0 {
 				runs = append(runs, run{grid: grid, boxes: boxes, zooms: zooms})
@@ -103,6 +112,23 @@ func plan(a *atlas.Atlas, op cacheops.Op, req request) (job, error) {
 	j.runs = runs
 
 	return j, nil
+}
+
+// checkTileMatrixSets requires every targeted map to serve every named set,
+// as the CLI does, so a set is never skipped silently for one map.
+func checkTileMatrixSets(targets []cacheops.Target, ids []string) error {
+	for _, id := range ids {
+		if _, err := tms.Get(id); err != nil {
+			return fmt.Errorf("tileMatrixSets: %w", err)
+		}
+		for i, t := range targets {
+			if !slices.ContainsFunc(t.Map.TileGrids(), func(g *tms.TileMatrixSet) bool { return g.ID() == id }) {
+				return fmt.Errorf("targets[%d]: map %q does not serve tile matrix set %q", i, t.Map.Name, id)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (zr zoomRange) zooms() ([]uint, error) {

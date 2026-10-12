@@ -344,6 +344,8 @@ func TestPurgeRejectsRequestsItCannotHonour(t *testing.T) {
 		"unknown map":                    {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "nope"}]}`},
 		"unknown layer":                  {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["nope"]}]}`},
 		"unknown tile matrix set":        {body: `{"tiles": ["1/0/0"], "sourceTileMatrixSet": "Nope", "zoomRange": {"min": 1, "max": 1}}`},
+		"unknown tileMatrixSets entry":   {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm"}], "tileMatrixSets": ["Nope"]}`},
+		"a set the map does not serve":   {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm"}], "tileMatrixSets": ["WorldCRS84Quad"]}`},
 		"a stray brace after the object": {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm"}]}}`},
 		"data after the object":          {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm"}]} {"x": 1}`},
 		"body over the size limit":       {body: `{"tiles": ["` + strings.Repeat(`1/0/0", "`, 200000) + `1/0/0"]}`},
