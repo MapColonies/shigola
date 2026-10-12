@@ -131,14 +131,15 @@ func runSeedPurge(ctx context.Context, tiles *TileChannel) error {
 	}
 
 	res, err := cacheops.Run(ctx, cacheops.Options{
-		Op:           seedPurgeOp,
-		Targets:      targets,
-		Grid:         seedPurgeGrid,
-		Concurrency:  cacheConcurrency,
-		Overwrite:    cacheOverwrite,
-		WriteTiers:   seedWriteTiers,
-		LogThreshold: time.Duration(cacheLogThreshold) * time.Millisecond,
-		Draining:     exitIfWorkersHang(60 * time.Second),
+		Op:             seedPurgeOp,
+		Targets:        targets,
+		Grid:           seedPurgeGrid,
+		Concurrency:    cacheConcurrency,
+		Overwrite:      cacheOverwrite,
+		WriteTiers:     seedWriteTiers,
+		LogThreshold:   time.Duration(cacheLogThreshold) * time.Millisecond,
+		CollectGarbage: true,
+		Draining:       exitIfWorkersHang(60 * time.Second),
 	}, tiles)
 	log.Infof("cache %v: %d done, %d skipped", seedPurgeOp, res.Done, res.Skipped)
 

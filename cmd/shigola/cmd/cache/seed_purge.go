@@ -294,6 +294,9 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 	if seedWriteTiers, err = resolveCacheTiers(atlas.GetCache(), cacheTiers); err != nil {
 		return err
 	}
+	if strings.TrimSpace(cacheTiers) == "" && len(seedWriteTiers) == 1 {
+		log.Infof("cache seed/purge: writing tier (%v) only. pass --cache-tiers=%v to write every tier", seedWriteTiers[0], cacheops.TiersAll)
+	}
 
 	build.Commands = append(build.Commands, "cache", cmdName)
 

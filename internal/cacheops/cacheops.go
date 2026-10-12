@@ -72,6 +72,9 @@ type Options struct {
 	Overwrite bool
 	// WriteTiers restricts the tiers of a layered cache the run writes. Nil means all.
 	WriteTiers []string
+	// CollectGarbage runs the GC after each seeded tile. For a dedicated
+	// process only: on a serving pod it stalls tile requests.
+	CollectGarbage bool
 	// LogThreshold logs seeded tiles that took at least this long.
 	LogThreshold time.Duration
 	// ContinueOnError attempts every tile even after one fails, counting the
@@ -321,8 +324,10 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 		return false, err
 	}
 
-	// large tile buffers are not reclaimed promptly otherwise (golang/go#14045)
-	runtime.GC()
+	if opts.CollectGarbage {
+		// large tile buffers are not reclaimed promptly otherwise (golang/go#14045)
+		runtime.GC()
+	}
 
 	if took := time.Since(start); took >= opts.LogThreshold {
 		log.Infof("seeding map (%v) tile (%v/%v/%v) took: %dms", m.Name, z, x, y, took.Milliseconds())
