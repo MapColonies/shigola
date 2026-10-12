@@ -328,6 +328,18 @@ The pool and the chain publish their own counters:
 > `shigola_cache_tier_errors_total` per tier). Dashboards and alerts referring to
 > `errors` need updating.
 
+### Purging across replicas
+
+With several replicas, a **shared tier** (redis, s3, azblob, gcs) is one store for all of them, so a
+purge on any replica clears it everywhere. A **pod tier** (file) lives on one replica's disk, so a
+purge clears it only there and the others serve the old tile until it expires. Give every file tier
+in front of a shared one a short `ttl`, such as 60 seconds; with the Cache Admin API on, Shigola
+warns at startup about each file tier with no `ttl`.
+
+The longest a client can be served a tile older than the database is the time from the update to
+the purge, plus the pod tier's `ttl`, plus how long browsers may reuse a tile: its `max-age`, and
+any `stale-while-revalidate` on top.
+
 ### Operating a layered cache
 
 This design degrades silently by construction, so these are part of the feature
