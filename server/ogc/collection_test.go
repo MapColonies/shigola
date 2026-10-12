@@ -188,6 +188,13 @@ func TestCollection(t *testing.T) {
 			t.Errorf("status = %d, want 404", w.Code)
 		}
 	})
+
+	// would be cached under a key no purge names (MAPCO-11616)
+	t.Run("a layer id that only contains a layer's name", func(t *testing.T) {
+		if w := get(t, r, "/collections/osm:xroadsx", nil); w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", w.Code)
+		}
+	})
 }
 
 // TestWholeMapOnly covers a map with serve_layer_collections off: it publishes a
