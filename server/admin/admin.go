@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MapColonies/shigola/atlas"
@@ -58,11 +58,14 @@ func New(cfg Config) http.Handler {
 	return mux
 }
 
+// maxBodyBytes bounds a request body; a long tile list is still far below it.
+const maxBodyBytes = 1 << 20
+
 // Start serves the Cache Admin API on port until the returned server is shut down.
 func Start(cfg Config, port string) *http.Server {
 	log.Infof("starting the Cache Admin API on port %v", port)
 
-	srv := &http.Server{Addr: port, Handler: New(cfg)}
+	srv := &http.Server{Addr: port, Handler: New(cfg), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error(err)
@@ -104,7 +107,7 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		start := time.Now()
 
 		var req request
-		dec := json.NewDecoder(r.Body)
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, response{Error: "invalid request body: " + err.Error()})
@@ -137,7 +140,10 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 }
 
 func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, runs []run) (cacheops.Result, error) {
-	var total cacheops.Result
+	var (
+		total    cacheops.Result
+		firstErr error
+	)
 
 	for _, r := range runs {
 		res, err := cacheops.Run(ctx, cacheops.Options{
@@ -153,22 +159,23 @@ func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, runs []run) (c
 		total.Skipped += res.Skipped
 		total.Failed += res.Failed
 
-		if err != nil {
-			return total, err
+		// a failed grid does not stop the others: every tile is still attempted
+		if err != nil && firstErr == nil {
+			firstErr = err
 		}
 		if ctx.Err() != nil {
 			return total, ctx.Err()
 		}
 	}
 
-	return total, nil
+	return total, firstErr
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	if err := json.NewEncoder(w).Encode(body); err != nil && !strings.Contains(err.Error(), "broken pipe") {
+	if err := json.NewEncoder(w).Encode(body); err != nil && !errors.Is(err, syscall.EPIPE) {
 		log.Errorf("cache admin: writing response: %v", err)
 	}
 }

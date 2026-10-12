@@ -328,22 +328,23 @@ func TestPurgeRejectsRequestsItCannotHonour(t *testing.T) {
 	}
 
 	tests := map[string]tcase{
-		"malformed json":          {body: `{"bounds": [`},
-		"unknown field":           {body: `{"bound": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}}`},
-		"no area":                 {body: `{"zoomRange": {"min": 1, "max": 1}}`},
-		"bounds and tiles":        {body: `{"bounds": [-100, 10, -80, 20], "tiles": ["1/0/0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
-		"bounds off the globe":    {body: `{"bounds": [-100, 10, -80, 95], "zoomRange": {"min": 1, "max": 1}}`},
-		"south above north":       {body: `{"bounds": [-100, 20, -80, 10], "zoomRange": {"min": 1, "max": 1}}`},
-		"no zoom range":           {body: `{"bounds": [-100, 10, -80, 20]}`},
-		"inverted zoom range":     {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 3, "max": 1}}`},
-		"tiles without a set":     {body: `{"tiles": ["1/0/0"], "zoomRange": {"min": 1, "max": 1}}`},
-		"tile off its set":        {body: `{"tiles": ["1/2/0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
-		"tile not z/x/y":          {body: `{"tiles": ["1-0-0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
-		"no targets":              {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}}`},
-		"empty targets":           {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": []}`},
-		"unknown map":             {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "nope"}]}`},
-		"unknown layer":           {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["nope"]}]}`},
-		"unknown tile matrix set": {body: `{"tiles": ["1/0/0"], "sourceTileMatrixSet": "Nope", "zoomRange": {"min": 1, "max": 1}}`},
+		"malformed json":           {body: `{"bounds": [`},
+		"unknown field":            {body: `{"bound": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}}`},
+		"no area":                  {body: `{"zoomRange": {"min": 1, "max": 1}}`},
+		"bounds and tiles":         {body: `{"bounds": [-100, 10, -80, 20], "tiles": ["1/0/0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
+		"bounds off the globe":     {body: `{"bounds": [-100, 10, -80, 95], "zoomRange": {"min": 1, "max": 1}}`},
+		"south above north":        {body: `{"bounds": [-100, 20, -80, 10], "zoomRange": {"min": 1, "max": 1}}`},
+		"no zoom range":            {body: `{"bounds": [-100, 10, -80, 20]}`},
+		"inverted zoom range":      {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 3, "max": 1}}`},
+		"tiles without a set":      {body: `{"tiles": ["1/0/0"], "zoomRange": {"min": 1, "max": 1}}`},
+		"tile off its set":         {body: `{"tiles": ["1/2/0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
+		"tile not z/x/y":           {body: `{"tiles": ["1-0-0"], "sourceTileMatrixSet": "WebMercatorQuad", "zoomRange": {"min": 1, "max": 1}}`},
+		"no targets":               {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}}`},
+		"empty targets":            {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": []}`},
+		"unknown map":              {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "nope"}]}`},
+		"unknown layer":            {body: `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["nope"]}]}`},
+		"unknown tile matrix set":  {body: `{"tiles": ["1/0/0"], "sourceTileMatrixSet": "Nope", "zoomRange": {"min": 1, "max": 1}}`},
+		"body over the size limit": {body: `{"tiles": ["` + strings.Repeat(`1/0/0", "`, 200000) + `1/0/0"]}`},
 	}
 
 	for name, tc := range tests {
@@ -363,6 +364,19 @@ func TestPurgeReportsAFailingTier(t *testing.T) {
 	r := decode(t, rec)
 	if r.Failed != 3 || !strings.Contains(r.Error, "tier unavailable") {
 		t.Errorf("result: got %+v, expected all 3 tiles attempted and failed, naming the tier's error", r)
+	}
+}
+
+func TestPurgeAttemptsEveryTileMatrixSetAfterOneFails(t *testing.T) {
+	f := newFixture(t, "", twoGridMap(t, "osm"))
+	f.tier.FailOn(faketier.OpPurge, errors.New("tier unavailable"))
+
+	rec := f.do("/cache/purge", purgeBBox)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, expected 500. body: %s", rec.Code, rec.Body)
+	}
+	if r := decode(t, rec); r.Failed != 7 {
+		t.Errorf("result: got %+v, expected the 7 tiles of both sets attempted", r)
 	}
 }
 
