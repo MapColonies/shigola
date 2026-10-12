@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -39,7 +40,8 @@ const maxBodyBytes = 1 << 20
 func Start(cfg Config, port string) *http.Server {
 	log.Infof("starting the Cache Admin API on port %v", port)
 
-	srv := &http.Server{Addr: port, Handler: New(cfg), ReadHeaderTimeout: 10 * time.Second}
+	// a body trickled in slowly would otherwise hold a request slot
+	srv := &http.Server{Addr: port, Handler: New(cfg), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error(err)
@@ -85,6 +87,10 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, response{Error: "invalid request body: " + err.Error()})
+			return
+		}
+		if err := dec.Decode(&struct{}{}); err != io.EOF {
+			writeJSON(w, http.StatusBadRequest, response{Error: "invalid request body: unexpected data after the JSON object"})
 			return
 		}
 
