@@ -65,7 +65,7 @@ func plan(a *atlas.Atlas, op cacheops.Op, req request) (job, error) {
 	// validated for a purge too, as the CLI does, though a purge clears every tier
 	tiers, err := cacheops.ResolveWriteTiers(a.GetCache(), spec)
 	if err != nil {
-		return j, err
+		return j, fmt.Errorf("tiers %q: %w", spec, err)
 	}
 	if op == cacheops.Seed {
 		j.writeTiers = tiers

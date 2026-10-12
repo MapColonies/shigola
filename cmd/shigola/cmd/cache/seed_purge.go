@@ -292,7 +292,7 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 	// After the parent's PersistentPreRunE above, so the cache is configured
 	// and its tier names are resolvable.
 	if seedWriteTiers, err = resolveCacheTiers(atlas.GetCache(), cacheTiers); err != nil {
-		return err
+		return fmt.Errorf("--cache-tiers=%v: %w", cacheTiers, err)
 	}
 	if strings.TrimSpace(cacheTiers) == "" && len(seedWriteTiers) == 1 {
 		log.Infof("cache seed/purge: writing tier (%v) only. pass --cache-tiers=%v to write every tier", seedWriteTiers[0], cacheops.TiersAll)
