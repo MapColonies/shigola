@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"strings"
+	"slices"
 
 	"github.com/MapColonies/shigola"
 	"github.com/MapColonies/shigola/observability"
@@ -206,19 +206,15 @@ func (m Map) FilterLayersByZoom(zoom slippy.Zoom) Map {
 	return m
 }
 
-// FilterLayersByName returns a copy of a Map with a subset of layers that match the supplied list of layer names
+// FilterLayersByName returns a copy of a Map with the layers whose MVTName is
+// one of names. The match is exact: a layer collection's tiles are cached under
+// the requested name, so any other spelling would be a key a purge cannot name.
 func (m Map) FilterLayersByName(names ...string) Map {
 	var layers []Layer
 
-	nameStr := strings.Join(names, ",")
 	for i := range m.Layers {
-		// if we have a name set, use it for the lookup
-		if m.Layers[i].Name != "" && nameStr == m.Layers[i].Name {
+		if slices.Contains(names, m.Layers[i].MVTName()) {
 			layers = append(layers, m.Layers[i])
-			continue
-		} else if m.Layers[i].ProviderLayerName != "" && strings.Contains(nameStr, m.Layers[i].ProviderLayerName) { // default to using the ProviderLayerName for the lookup
-			layers = append(layers, m.Layers[i])
-			continue
 		}
 	}
 
