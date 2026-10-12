@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/MapColonies/shigola/cache/memory"
 	"github.com/MapColonies/shigola/server"
@@ -39,10 +40,20 @@ func cacheControlRouter(t *testing.T, tiles, metadata string, headers map[string
 func TestCacheControlIsSetPerSurface(t *testing.T) {
 	router := cacheControlRouter(t, "public, max-age=60", "public, max-age=300", map[string]string{})
 
-	for _, pass := range []string{"miss", "hit"} {
-		if code, cc := cacheControlOf(t, router, tileURI); code != http.StatusOK || cc != "public, max-age=60" {
-			t.Errorf("tile (%v): got %d %q, expected 200 with the tile value", pass, code, cc)
+	// the cache write is detached, so keep asking until the tile is a HIT
+	seen := map[string]bool{}
+	for deadline := time.Now().Add(2 * time.Second); !seen["HIT"] && time.Now().Before(deadline); {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tileURI, nil))
+
+		pass := w.Header().Get("Shigola-Cache")
+		seen[pass] = true
+		if cc := w.Header().Get("Cache-Control"); w.Code != http.StatusOK || cc != "public, max-age=60" {
+			t.Fatalf("tile (%v): got %d %q, expected 200 with the tile value", pass, w.Code, cc)
 		}
+	}
+	if !seen["MISS"] || !seen["HIT"] {
+		t.Errorf("tile: saw %v, expected both a MISS and a HIT", seen)
 	}
 	for _, uri := range []string{"/", "/collections", "/collections/test-map", "/tileMatrixSets", "/api"} {
 		if code, cc := cacheControlOf(t, router, uri); code != http.StatusOK || cc != "public, max-age=300" {
