@@ -75,4 +75,6 @@ embedded unmodified from `swagger-ui-dist` 5.33.1.
 
 - Project: <https://github.com/swagger-api/swagger-ui>
 - License: Apache-2.0, see [server/admin/swaggerui/LICENSE](server/admin/swaggerui/LICENSE)
+- Bundled third-party notices (React, DOMPurify and others): see
+  [server/admin/swaggerui/swagger-ui-bundle.js.LICENSE.txt](server/admin/swaggerui/swagger-ui-bundle.js.LICENSE.txt)
 - Copyright: 2020-2021 SmartBear Software Inc.
