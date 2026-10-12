@@ -193,6 +193,39 @@ func TestMapFilterLayersByName(t *testing.T) {
 				},
 			},
 		},
+		{
+			// the provider layer name of a named layer, or text containing it, is not its name
+			grid: atlas.Map{
+				Layers: []atlas.Layer{
+					{Name: "roads", ProviderLayerName: "osm.roads"},
+				},
+			},
+			name:     "xosm.roadsx",
+			expected: atlas.Map{},
+		},
+		{
+			grid: atlas.Map{
+				Layers: []atlas.Layer{
+					{Name: "roads", ProviderLayerName: "osm.roads"},
+				},
+			},
+			name:     "osm.roads",
+			expected: atlas.Map{},
+		},
+		{
+			// an unnamed layer goes by its provider layer name
+			grid: atlas.Map{
+				Layers: []atlas.Layer{
+					{ProviderLayerName: "roads"},
+				},
+			},
+			name: "roads",
+			expected: atlas.Map{
+				Layers: []atlas.Layer{
+					{ProviderLayerName: "roads"},
+				},
+			},
+		},
 	}
 
 	for i, tc := range testcases {
