@@ -127,13 +127,11 @@ type mapTile struct {
 func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 	var res Result
 
-	if len(opts.Targets) == 0 {
-		return res, ErrNoMaps
-	}
-	if opts.Grid == nil {
-		return res, atlas.ErrNilGrid
-	}
-	if err := ValidateTargets(opts.Op, opts.Targets); err != nil {
+	if err := opts.validate(); err != nil {
+		// release a source that is already producing
+		if s, ok := src.(Stopper); ok {
+			s.Stop()
+		}
 		return res, err
 	}
 
@@ -212,6 +210,16 @@ feed:
 	}
 
 	return res, err
+}
+
+func (opts Options) validate() error {
+	if len(opts.Targets) == 0 {
+		return ErrNoMaps
+	}
+	if opts.Grid == nil {
+		return atlas.ErrNilGrid
+	}
+	return ValidateTargets(opts.Op, opts.Targets)
 }
 
 // ValidateTargets reports the first target op cannot honour: a layer the map
