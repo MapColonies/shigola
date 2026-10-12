@@ -229,6 +229,15 @@ func uniqueTiles(grid *tms.TileMatrixSet, boxes []tms.BoundingBox, z int, stopAf
 
 	seen := map[tms.Tile]bool{}
 	for _, b := range boxes {
+		// counted first so a huge box is never listed: it alone passes the limit
+		n, err := grid.TileCount(b.Left, b.Bottom, b.Right, b.Top, []int{z}, true)
+		if err != nil {
+			return 0, err
+		}
+		if n >= stopAfter {
+			return n, nil
+		}
+
 		tiles, err := grid.Tiles(b.Left, b.Bottom, b.Right, b.Top, []int{z}, true)
 		if err != nil {
 			return 0, err
