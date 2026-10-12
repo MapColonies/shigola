@@ -249,8 +249,19 @@
           },
           "sourceTileMatrixSet": {
             "type": "string",
-            "description": "The tile matrix set the tiles names belong to. Required with tiles.",
+            "description": "The tile matrix set the tiles names belong to. Required with tiles. It does not choose which sets are worked on; tileMatrixSets does.",
             "example": "WorldCRS84Quad"
+          },
+          "tileMatrixSets": {
+            "type": "array",
+            "description": "Work on only these tile matrix sets. Every targeted map must serve each one. Omitted, every set each targeted map serves.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "example": [
+              "WorldCRS84Quad"
+            ]
           },
           "zoomRange": {
             "type": "object",
@@ -312,8 +323,19 @@
           },
           "sourceTileMatrixSet": {
             "type": "string",
-            "description": "The tile matrix set the tiles names belong to. Required with tiles.",
+            "description": "The tile matrix set the tiles names belong to. Required with tiles. It does not choose which sets are worked on; tileMatrixSets does.",
             "example": "WorldCRS84Quad"
+          },
+          "tileMatrixSets": {
+            "type": "array",
+            "description": "Work on only these tile matrix sets. Every targeted map must serve each one. Omitted, every set each targeted map serves.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "example": [
+              "WorldCRS84Quad"
+            ]
           },
           "zoomRange": {
             "type": "object",
