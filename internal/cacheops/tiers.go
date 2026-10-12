@@ -1,6 +1,7 @@
 package cacheops
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -40,7 +41,7 @@ func ResolveWriteTiers(c cache.Interface, flag string) ([]string, error) {
 	case len(known) == 0:
 		// not a chain; there is nothing to target
 		if flag != "" && !strings.EqualFold(flag, TiersAll) {
-			return nil, fmt.Errorf("tiers %q: the configured cache has no tiers", flag)
+			return nil, errors.New("the configured cache has no tiers")
 		}
 		return nil, nil
 
@@ -71,7 +72,7 @@ func ResolveWriteTiers(c cache.Interface, flag string) ([]string, error) {
 	}
 
 	if len(names) == 0 {
-		return nil, fmt.Errorf("tiers %q names no tier. known tiers: %v", flag, known)
+		return nil, fmt.Errorf("no tier names given. known tiers: %v", known)
 	}
 
 	return names, nil

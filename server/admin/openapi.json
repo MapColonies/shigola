@@ -415,7 +415,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "The request was malformed, named no targets, or named a map, layer, tier, tile or tile matrix set that does not exist. Nothing was touched.",
+        "description": "The request was malformed, its body was over 1 MiB, named no targets, or named a map, layer, tier, tile or tile matrix set that does not exist. Nothing was touched.",
         "content": {
           "application/json": {
             "schema": {
@@ -426,6 +426,12 @@
       },
       "Unauthorized": {
         "description": "A token is configured and the request did not present it. Nothing was touched.",
+        "headers": {
+          "WWW-Authenticate": {
+            "description": "Always `Bearer realm=\"shigola-admin\"`.",
+            "schema": { "type": "string" }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {

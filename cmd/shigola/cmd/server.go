@@ -133,7 +133,13 @@ var serverCmd = &cobra.Command{
 			for _, tier := range admin.UnexpiringPodTiers(atlas.GetCache()) {
 				log.Warnf("cache tier (%v) is a file cache with no ttl: it lives on this pod, so a purge another pod handles never reaches it and it serves the purged tile indefinitely. give it a short ttl", tier)
 			}
-			shutdown(admin.Start(adminConfig(a), string(a.Port)))
+			cfg := adminConfig(a)
+			wait := cfg.RequestTimeout
+			if wait <= 0 {
+				wait = admin.DefaultRequestTimeout
+			}
+			// let a running purge or seed finish before the cache and providers close
+			shutdownWithin(admin.Start(cfg, string(a.Port)), wait)
 		}
 		<-gdcmd.Cancelled()
 		gdcmd.Complete()
@@ -154,9 +160,11 @@ func adminConfig(a config.Admin) admin.Config {
 	return cfg
 }
 
-func shutdown(srv *http.Server) {
+func shutdown(srv *http.Server) { shutdownWithin(srv, 100*time.Millisecond) }
+
+func shutdownWithin(srv *http.Server, wait time.Duration) {
 	gdcmd.OnComplete(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
 		defer cancel() // releases resources if slowOperation completes before timeout elapses
 		srv.Shutdown(ctx)
 	})
