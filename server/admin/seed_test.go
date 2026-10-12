@@ -58,57 +58,89 @@ func TestSeedByBoundsWritesWholeMapTilesInEverySet(t *testing.T) {
 }
 
 func TestSeedOverwriteDecidesWhetherCachedTilesAreReplaced(t *testing.T) {
-	for overwrite, expectOld := range map[string]bool{"false": true, "true": false} {
-		f := newFixture(t, "", renderable(t, "osm"))
-		cached := f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0)
-		f.tier.Seed(cached, []byte("old"))
+	type tcase struct {
+		overwrite string
+		expectOld bool
+	}
 
-		rec := f.do("/cache/seed", `{
-			"bounds": [-100, 10, -80, 20],
-			"zoomRange": {"min": 1, "max": 1},
-			"targets": [{"map": "osm"}],
-			"overwrite": `+overwrite+`
-		}`)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("overwrite %v: got %d. body: %s", overwrite, rec.Code, rec.Body)
-		}
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			f := newFixture(t, "", renderable(t, "osm"))
+			cached := f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0)
+			f.tier.Seed(cached, []byte("old"))
 
-		if v, _ := f.tier.Value(cached); (string(v) == "old") != expectOld {
-			t.Errorf("overwrite %v: cached tile is %q", overwrite, v)
+			rec := f.do("/cache/seed", `{
+				"bounds": [-100, 10, -80, 20],
+				"zoomRange": {"min": 1, "max": 1},
+				"targets": [{"map": "osm"}],
+				"overwrite": `+tc.overwrite+`
+			}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("got %d. body: %s", rec.Code, rec.Body)
+			}
+
+			if v, _ := f.tier.Value(cached); (string(v) == "old") != tc.expectOld {
+				t.Errorf("cached tile is %q", v)
+			}
 		}
+	}
+
+	tests := map[string]tcase{
+		"without overwrite": {overwrite: "false", expectOld: true},
+		"with overwrite":    {overwrite: "true", expectOld: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }
 
 func TestSeedWritesTheLastTierUnlessToldOtherwise(t *testing.T) {
-	for tiers, expectHot := range map[string]bool{`""`: false, `"all"`: true} {
-		hot, durable := faketier.New("hot"), faketier.New("durable")
-		chain, err := multi.NewChain([]cache.NamedTier{{Name: "hot", Cache: hot}, {Name: "durable", Cache: durable}}, true, nil)
-		if err != nil {
-			t.Fatalf("NewChain: %v", err)
-		}
+	type tcase struct {
+		tiers     string
+		expectHot bool
+	}
 
-		a := &atlas.Atlas{}
-		a.SetCache(chain)
-		a.AddMap(renderable(t, "osm"))
-		f := &fixture{t: t, tier: durable, handler: admin.New(admin.Config{Atlas: a})}
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			hot, durable := faketier.New("hot"), faketier.New("durable")
+			chain, err := multi.NewChain([]cache.NamedTier{{Name: "hot", Cache: hot}, {Name: "durable", Cache: durable}}, true, nil)
+			if err != nil {
+				t.Fatalf("NewChain: %v", err)
+			}
 
-		rec := f.do("/cache/seed", `{
-			"bounds": [-100, 10, -80, 20],
-			"zoomRange": {"min": 1, "max": 1},
-			"targets": [{"map": "osm"}],
-			"tiers": `+tiers+`
-		}`)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("tiers %v: got %d. body: %s", tiers, rec.Code, rec.Body)
-		}
+			a := &atlas.Atlas{}
+			a.SetCache(chain)
+			a.AddMap(renderable(t, "osm"))
+			f := &fixture{t: t, tier: durable, handler: admin.New(admin.Config{Atlas: a})}
 
-		k := f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0)
-		if _, ok := durable.Value(k); !ok {
-			t.Errorf("tiers %v: the durable tier was not written", tiers)
+			rec := f.do("/cache/seed", `{
+				"bounds": [-100, 10, -80, 20],
+				"zoomRange": {"min": 1, "max": 1},
+				"targets": [{"map": "osm"}],
+				"tiers": `+tc.tiers+`
+			}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("got %d. body: %s", rec.Code, rec.Body)
+			}
+
+			k := f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0)
+			if _, ok := durable.Value(k); !ok {
+				t.Error("the durable tier was not written")
+			}
+			if _, ok := hot.Value(k); ok != tc.expectHot {
+				t.Errorf("hot tier written = %v, expected %v", ok, tc.expectHot)
+			}
 		}
-		if _, ok := hot.Value(k); ok != expectHot {
-			t.Errorf("tiers %v: hot tier written = %v, expected %v", tiers, ok, expectHot)
-		}
+	}
+
+	tests := map[string]tcase{
+		"default":   {tiers: `""`, expectHot: false},
+		"all tiers": {tiers: `"all"`, expectHot: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
 	}
 }
 
