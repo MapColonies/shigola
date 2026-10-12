@@ -72,6 +72,9 @@ type Options struct {
 	Overwrite bool
 	// WriteTiers restricts the tiers of a layered cache the run writes. Nil means all.
 	WriteTiers []string
+	// CollectGarbage runs the GC after each seeded tile. For a dedicated
+	// process only: on a serving pod it stalls tile requests.
+	CollectGarbage bool
 	// LogThreshold logs seeded tiles that took at least this long.
 	LogThreshold time.Duration
 	// ContinueOnError attempts every tile even after one fails, counting the
@@ -132,13 +135,11 @@ type mapTile struct {
 func Run(ctx context.Context, opts Options, src TileSource) (Result, error) {
 	var res Result
 
-	if len(opts.Targets) == 0 {
-		return res, ErrNoMaps
-	}
-	if opts.Grid == nil {
-		return res, atlas.ErrNilGrid
-	}
-	if err := ValidateTargets(opts.Op, opts.Targets); err != nil {
+	if err := opts.validate(); err != nil {
+		// release a source that is already producing
+		if s, ok := src.(Stopper); ok {
+			s.Stop()
+		}
 		return res, err
 	}
 
@@ -217,6 +218,16 @@ feed:
 	}
 
 	return res, err
+}
+
+func (opts Options) validate() error {
+	if len(opts.Targets) == 0 {
+		return ErrNoMaps
+	}
+	if opts.Grid == nil {
+		return atlas.ErrNilGrid
+	}
+	return ValidateTargets(opts.Op, opts.Targets)
 }
 
 // ValidateTargets reports the first target op cannot honour: a layer the map
@@ -313,8 +324,10 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 		return false, err
 	}
 
-	// large tile buffers are not reclaimed promptly otherwise (golang/go#14045)
-	runtime.GC()
+	if opts.CollectGarbage {
+		// large tile buffers are not reclaimed promptly otherwise (golang/go#14045)
+		runtime.GC()
+	}
 
 	if took := time.Since(start); took >= opts.LogThreshold {
 		log.Infof("seeding map (%v) tile (%v/%v/%v) took: %dms", m.Name, z, x, y, took.Milliseconds())

@@ -7,7 +7,6 @@ import (
 
 	"github.com/MapColonies/shigola/cache"
 	"github.com/MapColonies/shigola/cache/multi"
-	"github.com/MapColonies/shigola/internal/log"
 )
 
 // TiersAll lifts the write-tier restriction entirely.
@@ -53,7 +52,6 @@ func ResolveWriteTiers(c cache.Interface, flag string) ([]string, error) {
 		if !ok {
 			return nil, nil
 		}
-		log.Infof("cache seed/purge: writing tier (%v) only. pass tiers=%v to write every tier", last, TiersAll)
 		return []string{last}, nil
 	}
 

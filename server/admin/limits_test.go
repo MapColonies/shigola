@@ -46,13 +46,48 @@ func TestTileLimitCountsEveryTileMatrixSetAndLayerKey(t *testing.T) {
 	m := twoGridMap(t, "osm")
 	m.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}}
 
-	// 3 WebMercatorQuad tiles plus 4 WorldCRS84Quad tiles, each a whole-map and a roads key
-	for limit, expected := range map[int]int{13: http.StatusUnprocessableEntity, 14: http.StatusOK} {
-		f := newLimitedFixture(t, admin.Config{MaxTilesPerRequest: limit}, m)
+	type tcase struct {
+		limit    int
+		expected int
+	}
 
-		if rec := f.do("/cache/purge", purgeBBox); rec.Code != expected {
-			t.Errorf("limit %d: got %d, expected %d. body: %s", limit, rec.Code, expected, rec.Body)
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			f := newLimitedFixture(t, admin.Config{MaxTilesPerRequest: tc.limit}, m)
+
+			if rec := f.do("/cache/purge", purgeBBox); rec.Code != tc.expected {
+				t.Errorf("got %d, expected %d. body: %s", rec.Code, tc.expected, rec.Body)
+			}
 		}
+	}
+
+	// 3 WebMercatorQuad tiles plus 4 WorldCRS84Quad tiles, each a whole-map and a roads key
+	tests := map[string]tcase{
+		"one under": {limit: 13, expected: http.StatusUnprocessableEntity},
+		"exact":     {limit: 14, expected: http.StatusOK},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+func TestTileLimitRejectsAHugeTileListWithoutListingIt(t *testing.T) {
+	f := newLimitedFixture(t, admin.Config{}, atlas.NewWebMercatorMap("osm"))
+
+	// two boxes take the deduplicating path; at z20 each covers 4^20 tiles
+	start := time.Now()
+	rec := f.do("/cache/purge", `{
+		"tiles": ["0/0/0", "1/0/0"],
+		"sourceTileMatrixSet": "WebMercatorQuad",
+		"zoomRange": {"min": 20, "max": 20},
+		"targets": [{"map": "osm"}]
+	}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status: got %d, expected 422. body: %s", rec.Code, rec.Body)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("took %v, expected the count to stop without listing the tiles", took)
 	}
 }
 
