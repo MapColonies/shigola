@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"github.com/MapColonies/shigola/internal/log"
 )
 
 // DefaultTileCacheControl is what tiles carry when neither TileCacheControl
@@ -15,6 +17,15 @@ var (
 	// MetadataCacheControl is the Cache-Control of every other response.
 	MetadataCacheControl string
 )
+
+// SetCacheControl sets both surfaces' values, warning when they override a
+// Cache-Control in Headers. Call it after Headers is populated.
+func SetCacheControl(tiles, metadata string) {
+	TileCacheControl, MetadataCacheControl = tiles, metadata
+	if HeadersSetCacheControl() && (tiles != "" || metadata != "") {
+		log.Warnf("webserver.headers sets Cache-Control and webserver.cache_control is set too: cache_control wins for the surfaces it names")
+	}
+}
 
 // CacheControlHandler sets the Cache-Control of next's response by surface,
 // overriding a generic Cache-Control header, and marks errors no-store.
