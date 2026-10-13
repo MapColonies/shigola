@@ -433,6 +433,18 @@
             "type": "string"
           }
         }
+      },
+      "Error": {
+        "type": "object",
+        "description": "A request refused before any tile was touched.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
       }
     },
     "responses": {
@@ -441,7 +453,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/CacheResult"
+              "$ref": "#/components/schemas/Error"
             }
           }
         }
@@ -457,7 +469,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/CacheResult"
+              "$ref": "#/components/schemas/Error"
             }
           }
         }
@@ -477,7 +489,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/CacheResult"
+              "$ref": "#/components/schemas/Error"
             }
           }
         }
@@ -495,7 +507,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/CacheResult"
+              "$ref": "#/components/schemas/Error"
             }
           }
         }
@@ -515,7 +527,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/CacheResult"
+              "$ref": "#/components/schemas/Error"
             }
           }
         }

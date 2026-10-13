@@ -262,6 +262,24 @@ func TestPurgeByTheWholeWorldTileCoversEveryColumn(t *testing.T) {
 	}
 }
 
+// refusal checks a refused request's body is its error alone: no counts, as
+// nothing was attempted.
+func refusal(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding %q: %v", rec.Body, err)
+	}
+	msg, _ := body["error"].(string)
+	if msg == "" || len(body) != 1 {
+		t.Errorf("body: got %s, expected only an error", rec.Body)
+	}
+	if strings.Count(msg, "cacheops:") > 1 {
+		t.Errorf("error repeats its prefix: %q", msg)
+	}
+}
+
 func purgedKeys(calls []faketier.Call) map[string]bool {
 	out := map[string]bool{}
 	for _, c := range calls {
@@ -335,9 +353,7 @@ func TestPurgeRejectsRequestsItCannotHonour(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status: got %d, expected 400. body: %s", rec.Code, rec.Body)
 			}
-			if decode(t, rec).Error == "" {
-				t.Error("the 400 does not say what was wrong")
-			}
+			refusal(t, rec)
 			if len(f.tier.Calls()) != 0 {
 				t.Error("a rejected request touched the cache")
 			}

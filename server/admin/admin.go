@@ -119,7 +119,7 @@ func (cfg Config) authorize(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="shigola-admin"`)
-			writeJSON(w, http.StatusUnauthorized, response{Error: "a valid bearer token is required"})
+			writeError(w, http.StatusUnauthorized, "a valid bearer token is required")
 			return
 		}
 
@@ -136,7 +136,7 @@ func limit(slots chan struct{}, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Retry-After", "1")
-			writeJSON(w, http.StatusTooManyRequests, response{Error: "too many cache requests in progress, retry shortly"})
+			writeError(w, http.StatusTooManyRequests, "too many cache requests in progress, retry shortly")
 		}
 	})
 }
@@ -159,33 +159,33 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, response{Error: "invalid request body: " + err.Error()})
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
 		if err := dec.Decode(&struct{}{}); err != io.EOF {
-			writeJSON(w, http.StatusBadRequest, response{Error: "invalid request body: unexpected data after the JSON object"})
+			writeError(w, http.StatusBadRequest, "invalid request body: unexpected data after the JSON object")
 			return
 		}
 
 		j, err := plan(cfg.Atlas, op, req)
 		if errors.Is(err, cacheops.ErrSeedLayers) {
-			writeJSON(w, http.StatusUnprocessableEntity, response{Error: err.Error()})
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, response{Error: err.Error()})
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		n, err := count(op, j, int64(cfg.MaxTilesPerRequest))
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, response{Error: err.Error()})
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if n > int64(cfg.MaxTilesPerRequest) {
-			writeJSON(w, http.StatusUnprocessableEntity, response{Error: fmt.Sprintf(
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf(
 				"the request covers %d tiles, over the limit of %d per request. narrow it, or use `shigola cache %v` for bulk work",
-				n, cfg.MaxTilesPerRequest, op)})
+				n, cfg.MaxTilesPerRequest, op))
 			return
 		}
 
@@ -253,6 +253,15 @@ func execute(ctx context.Context, a *atlas.Atlas, op cacheops.Op, j job) (cacheo
 	}
 
 	return total, firstErr
+}
+
+// errorResponse is the body of a request refused before any tile was touched.
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, errorResponse{Error: msg})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
