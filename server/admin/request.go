@@ -140,11 +140,14 @@ func (req request) tileBoxes() ([]tms.BoundingBox, error) {
 			return nil, fmt.Errorf("tile %q: %w", name, err)
 		}
 		// a tile never crosses the antimeridian, but its edge on it can come
-		// back as +180 for -180 or the reverse
+		// back as +180 for -180 or the reverse, both edges for a world-wide tile
 		if b.Left > b.Right {
-			if b.Left == 180 {
+			switch {
+			case b.Left == 180 && b.Right == -180:
+				b.Left, b.Right = -180, 180
+			case b.Left == 180:
 				b.Left = -180
-			} else {
+			default:
 				b.Right = 180
 			}
 		}
