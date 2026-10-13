@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -103,7 +104,8 @@ type ErrInvalidTarget struct {
 }
 
 func (e ErrInvalidTarget) Error() string {
-	return fmt.Sprintf("cacheops: map (%v): %v", e.Map, e.Err)
+	// the wrapped error may be one of this package's, prefixed already
+	return fmt.Sprintf("cacheops: map (%v): %v", e.Map, strings.TrimPrefix(e.Err.Error(), "cacheops: "))
 }
 
 func (e ErrInvalidTarget) Unwrap() error { return e.Err }

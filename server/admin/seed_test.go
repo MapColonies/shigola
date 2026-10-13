@@ -239,6 +239,7 @@ func TestRefusesWhatTheOperationCannotDo(t *testing.T) {
 			if rec.Code != tc.expected {
 				t.Fatalf("status: got %d, expected %d. body: %s", rec.Code, tc.expected, rec.Body)
 			}
+			refusal(t, rec)
 			if len(f.tier.Calls()) != 0 {
 				t.Error("a refused request touched the cache")
 			}
