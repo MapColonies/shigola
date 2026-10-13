@@ -245,6 +245,23 @@ func TestPurgeByTileListAtTheWestEdgeStaysOnItsSide(t *testing.T) {
 	}
 }
 
+func TestPurgeByTheWholeWorldTileCoversEveryColumn(t *testing.T) {
+	f := newFixture(t, "", atlas.NewWebMercatorMap("osm"))
+
+	rec := f.do("/cache/purge", `{
+		"tiles": ["0/0/0"],
+		"sourceTileMatrixSet": "WebMercatorQuad",
+		"zoomRange": {"min": 1, "max": 1},
+		"targets": [{"map": "osm"}]
+	}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, expected 200. body: %s", rec.Code, rec.Body)
+	}
+	if r := decode(t, rec); r.Purged != 4 {
+		t.Errorf("purged: got %d, expected all 4 tiles at zoom 1", r.Purged)
+	}
+}
+
 func purgedKeys(calls []faketier.Call) map[string]bool {
 	out := map[string]bool{}
 	for _, c := range calls {
