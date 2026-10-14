@@ -111,14 +111,22 @@ type Config struct {
 
 // Webserver represents the config options for the webserver part of Shigola
 type Webserver struct {
-	HostName      env.URL    `toml:"hostname"`
-	Port          env.String `toml:"port"`
-	URIPrefix     env.String `toml:"uri_prefix"`
-	Headers       env.Dict   `toml:"headers"`
-	SSLCert       env.String `toml:"ssl_cert"`
-	SSLKey        env.String `toml:"ssl_key"`
-	ProxyProtocol env.String `toml:"proxy_protocol"`
-	Admin         Admin      `toml:"admin"`
+	HostName      env.URL      `toml:"hostname"`
+	Port          env.String   `toml:"port"`
+	URIPrefix     env.String   `toml:"uri_prefix"`
+	Headers       env.Dict     `toml:"headers"`
+	SSLCert       env.String   `toml:"ssl_cert"`
+	SSLKey        env.String   `toml:"ssl_key"`
+	ProxyProtocol env.String   `toml:"proxy_protocol"`
+	Admin         Admin        `toml:"admin"`
+	CacheControl  CacheControl `toml:"cache_control"`
+}
+
+// CacheControl sets the Cache-Control header per surface. Each overrides a
+// Cache-Control set under headers for its surface.
+type CacheControl struct {
+	Tiles    env.String `toml:"tiles"`
+	Metadata env.String `toml:"metadata"`
 }
 
 // DefaultHTTPPort is the tile listener's port when neither the flag nor the
