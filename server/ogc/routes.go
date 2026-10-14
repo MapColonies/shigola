@@ -16,6 +16,8 @@ type Route struct {
 	// wrap it in the middleware that either declares the encoding or
 	// decompresses for a client that cannot accept it.
 	Gzipped bool
+	// Tile marks the route that serves tiles, as opposed to metadata.
+	Tile bool
 }
 
 // Routes returns every route this surface serves, in the order they should be
@@ -38,6 +40,7 @@ func (s *Service) Routes() []Route {
 			Path:    "/collections/:collection_id/tiles/:tile_matrix_set_id/:tile_matrix/:tile_row/:tile_col",
 			Handler: s.HandleTile,
 			Gzipped: true,
+			Tile:    true,
 		},
 	}
 }

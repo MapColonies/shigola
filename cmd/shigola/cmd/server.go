@@ -10,12 +10,14 @@ import (
 
 	"github.com/MapColonies/shigola/atlas"
 	"github.com/MapColonies/shigola/cache"
+	"github.com/MapColonies/shigola/config"
 	"github.com/MapColonies/shigola/internal/build"
 	gdcmd "github.com/MapColonies/shigola/internal/cmd"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
 	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/server"
+	"github.com/MapColonies/shigola/server/admin"
 	"github.com/MapColonies/shigola/tracing"
 	"github.com/go-spatial/cobra"
 )
@@ -23,7 +25,7 @@ import (
 var (
 	serverPort      string
 	serverNoCache   bool
-	defaultHTTPPort = ":8080"
+	defaultHTTPPort = config.DefaultHTTPPort
 )
 
 var serverCmd = &cobra.Command{
@@ -70,6 +72,8 @@ var serverCmd = &cobra.Command{
 
 			server.Headers[name] = val
 		}
+
+		server.SetCacheControl(string(conf.Webserver.CacheControl.Tiles), string(conf.Webserver.CacheControl.Metadata))
 
 		if conf.Webserver.URIPrefix != "" {
 			server.URIPrefix = string(conf.Webserver.URIPrefix)
@@ -119,14 +123,50 @@ var serverCmd = &cobra.Command{
 		// start our webserver
 		srv := server.Start(nil, serverPort)
 		shutdown(srv)
+
+		if a := conf.Webserver.Admin; a.Enabled() {
+			if config.SameListener(string(a.Port), serverPort) {
+				log.Errorf("webserver.admin.port (%v) is the tile port (%v); the Cache Admin API needs a port of its own", a.Port, serverPort)
+				os.Exit(1)
+			}
+			if a.Token == "" {
+				log.Warnf("!!! the Cache Admin API on %v has NO admin token: anyone who can reach that port can purge and seed the cache. set webserver.admin.token !!!", a.Port)
+			}
+			for _, tier := range admin.UnexpiringPodTiers(atlas.GetCache()) {
+				log.Warnf("cache tier (%v) is a file cache with no ttl: it lives on this pod, so a purge another pod handles never reaches it and it serves the purged tile indefinitely. give it a short ttl", tier)
+			}
+			cfg := adminConfig(a)
+			wait := cfg.RequestTimeout
+			if wait <= 0 {
+				wait = admin.DefaultRequestTimeout
+			}
+			// let a running purge or seed finish before the cache and providers close
+			shutdownWithin(admin.Start(cfg, string(a.Port)), wait)
+		}
 		<-gdcmd.Cancelled()
 		gdcmd.Complete()
 	},
 }
 
-func shutdown(srv *http.Server) {
+func adminConfig(a config.Admin) admin.Config {
+	cfg := admin.Config{Token: string(a.Token)}
+	if a.MaxTilesPerRequest != nil {
+		cfg.MaxTilesPerRequest = int(*a.MaxTilesPerRequest)
+	}
+	if a.MaxConcurrentRequests != nil {
+		cfg.MaxConcurrentRequests = int(*a.MaxConcurrentRequests)
+	}
+	if a.RequestTimeoutMs != nil {
+		cfg.RequestTimeout = time.Duration(*a.RequestTimeoutMs) * time.Millisecond
+	}
+	return cfg
+}
+
+func shutdown(srv *http.Server) { shutdownWithin(srv, 100*time.Millisecond) }
+
+func shutdownWithin(srv *http.Server, wait time.Duration) {
 	gdcmd.OnComplete(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
 		defer cancel() // releases resources if slowOperation completes before timeout elapses
 		srv.Shutdown(ctx)
 	})

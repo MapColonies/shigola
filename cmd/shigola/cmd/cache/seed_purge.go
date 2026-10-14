@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/MapColonies/shigola/atlas"
-	"github.com/MapColonies/shigola/cache"
-	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/internal/build"
+	"github.com/MapColonies/shigola/internal/cacheops"
 	gdcmd "github.com/MapColonies/shigola/internal/cmd"
 	"github.com/MapColonies/shigola/internal/log"
 	"github.com/MapColonies/shigola/observability"
@@ -66,14 +64,15 @@ var (
 	// cacheTileMatrixSet names the tiling scheme this run enumerates and
 	// writes. Empty means the default described by resolveSeedPurgeGrid.
 	cacheTileMatrixSet string
+	cacheLayers        string
 )
 
 // CacheTiersAll is the --cache-tiers value that lifts the restriction entirely.
-const CacheTiersAll = "all"
+const CacheTiersAll = cacheops.TiersAll
 
 // variables that are not flags but set by the command.
 var (
-	seedPurgeWorker func(context.Context, MapTile) error
+	seedPurgeOp     cacheops.Op
 	seedPurgeBounds [4]float64
 	seedPurgeMaps   []atlas.Map
 	// seedPurgeGrid is the TileMatrixSet this run enumerates tiles in and keys
@@ -93,71 +92,7 @@ var (
 // for one bug.
 var ErrNoGridResolved = errors.New("cache: no tile matrix set has been resolved for this run")
 
-// resolveCacheTiers turns the --cache-tiers flag into the list of tier names
-// this run may write, or nil for "no restriction".
-//
-//	unset      the last tier in read order — the durable one by construction
-//	all        every tier
-//	a,b,c      exactly those, validated against the whole tree
-//
-// The default is the last tier rather than every tier because the alternative
-// floods the hot tier with cold tiles in seed order, evicting the live working
-// set — the exact harm the layered cache exists to avoid. "Durable" resisted
-// definition (a file tier can carry a ttl; an s3 bucket under a lifecycle policy
-// has none yet is not permanent), and position needs no inference: read order
-// runs hot to durable, so the last tier *is* the durable one.
-//
-// It rests on that ordering, and nothing enforces it. A chain of s3 then redis
-// is legal, and makes this write the hot tier and skip the durable one.
-//
-// A single-backend cache is unaffected: one cache is also the last cache, so
-// there is nothing to restrict.
-func resolveCacheTiers(c cache.Interface, flag string) ([]string, error) {
-	known := multi.TierNames(c)
-
-	flag = strings.TrimSpace(flag)
-
-	switch {
-	case len(known) == 0:
-		// not a chain; there is nothing to target
-		if flag != "" && !strings.EqualFold(flag, CacheTiersAll) {
-			return nil, fmt.Errorf("--cache-tiers=%v: the configured cache has no tiers", flag)
-		}
-		return nil, nil
-
-	case strings.EqualFold(flag, CacheTiersAll):
-		return nil, nil
-
-	case flag == "":
-		last, ok := multi.LastTierName(c)
-		if !ok {
-			return nil, nil
-		}
-		log.Infof("cache seed/purge: writing tier (%v) only. pass --cache-tiers=%v to write every tier", last, CacheTiersAll)
-		return []string{last}, nil
-	}
-
-	var names []string
-	for _, name := range strings.Split(flag, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		// Validated at startup rather than silently no-oping at run time: a
-		// typo in a cron job would otherwise look like a successful seed that
-		// wrote nothing.
-		if !slices.Contains(known, name) {
-			return nil, multi.ErrUnknownTier{Name: name, Known: known}
-		}
-		names = append(names, name)
-	}
-
-	if len(names) == 0 {
-		return nil, fmt.Errorf("--cache-tiers was given no tier names. known tiers: %v", known)
-	}
-
-	return names, nil
-}
+var resolveCacheTiers = cacheops.ResolveWriteTiers
 
 var SeedPurgeCmd = &cobra.Command{
 	Use:     "seed",
@@ -175,6 +110,7 @@ func init() {
 	SeedPurgeCmd.PersistentFlags().Int64VarP(&cacheLogThreshold, "log-threshold", "", 0, "during seeding, only log tiles that take this number of milliseconds or longer to render (default all tiles)")
 	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheTiers, "cache-tiers", "", "", `for a layered cache (type = "multi"), the comma-separated tier names this run may write. defaults to the last tier in read order — the durable one; use "all" to write every tier, which is what you want to pre-warm. with --overwrite, the tiers NOT named here are purged after the write, so the hot tier stops serving pre-update tiles. no effect on a single-backend cache`)
 
+	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheLayers, "layers", "", "", "purge only: comma-separated layers of --map to purge, together with the map's whole-map tile. omitted, a purge clears the whole-map tile and every layer's tile. seed covers whole maps only")
 	SeedPurgeCmd.PersistentFlags().StringVarP(&cacheTileMatrixSet, "tile-matrix-set", "", "", "the tiling scheme to seed or purge, by tileMatrixSetId. one run covers one scheme. omitted, a run with --map takes the first scheme that map lists and any other run takes WebMercatorQuad, with a warning naming it. every targeted map must support it")
 
 	SeedPurgeCmd.Flags().StringVarP(&cacheBounds, "bounds", "", "-180,-85.0511,180,85.0511", "lng/lat bounds to seed the cache with in the format: minx, miny, maxx, maxy")
@@ -324,6 +260,10 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 		}
 	}
 
+	if cacheLayers != "" && cacheMap == "" {
+		return errors.New("--layers needs --map: layer names belong to one map")
+	}
+
 	if seedPurgeGrid, err = resolveSeedPurgeGrid(); err != nil {
 		return err
 	}
@@ -342,9 +282,9 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 	//cmdName := strings.ToLower(strings.TrimSpace(cmd.CalledAs()))
 	switch cmdName {
 	case "purge":
-		seedPurgeWorker = withCacheIntent(purgeWorker)
+		seedPurgeOp = cacheops.Purge
 	case "seed":
-		seedPurgeWorker = withCacheIntent(seedWorker(cacheOverwrite, cacheLogThreshold))
+		seedPurgeOp = cacheops.Seed
 	default:
 
 		return fmt.Errorf("expected purge/seed got (%v) for command name", cmdName)
@@ -352,7 +292,10 @@ func seedPurgeCmdValidatePersistent(cmd *cobra.Command, args []string) (err erro
 	// After the parent's PersistentPreRunE above, so the cache is configured
 	// and its tier names are resolvable.
 	if seedWriteTiers, err = resolveCacheTiers(atlas.GetCache(), cacheTiers); err != nil {
-		return err
+		return fmt.Errorf("--cache-tiers=%v: %w", cacheTiers, err)
+	}
+	if strings.TrimSpace(cacheTiers) == "" && len(seedWriteTiers) == 1 {
+		log.Infof("cache seed/purge: writing tier (%v) only. pass --cache-tiers=%v to write every tier", seedWriteTiers[0], cacheops.TiersAll)
 	}
 
 	build.Commands = append(build.Commands, "cache", cmdName)
@@ -442,7 +385,7 @@ func seedPurgeCommand(_ *cobra.Command, _ []string) (err error) {
 	log.Info("tile matrix set:", seedPurgeGrid.ID())
 	tileChannel := generateTilesForBounds(ctx, seedPurgeBounds, zooms, seedPurgeGrid)
 
-	return doWork(ctx, tileChannel, seedPurgeMaps, cacheConcurrency, seedPurgeWorker)
+	return runSeedPurge(ctx, tileChannel)
 }
 
 // generateTilesForBounds streams every tile of grid, at each of zooms, covering

@@ -117,6 +117,7 @@ func init() {
 
 		server.Headers[name] = val
 	}
+	server.SetCacheControl(string(conf.Webserver.CacheControl.Tiles), string(conf.Webserver.CacheControl.Metadata))
 
 	if conf.Webserver.URIPrefix != "" {
 		server.URIPrefix = string(conf.Webserver.URIPrefix)

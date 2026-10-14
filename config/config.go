@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -110,13 +111,54 @@ type Config struct {
 
 // Webserver represents the config options for the webserver part of Shigola
 type Webserver struct {
-	HostName      env.URL    `toml:"hostname"`
-	Port          env.String `toml:"port"`
-	URIPrefix     env.String `toml:"uri_prefix"`
-	Headers       env.Dict   `toml:"headers"`
-	SSLCert       env.String `toml:"ssl_cert"`
-	SSLKey        env.String `toml:"ssl_key"`
-	ProxyProtocol env.String `toml:"proxy_protocol"`
+	HostName      env.URL      `toml:"hostname"`
+	Port          env.String   `toml:"port"`
+	URIPrefix     env.String   `toml:"uri_prefix"`
+	Headers       env.Dict     `toml:"headers"`
+	SSLCert       env.String   `toml:"ssl_cert"`
+	SSLKey        env.String   `toml:"ssl_key"`
+	ProxyProtocol env.String   `toml:"proxy_protocol"`
+	Admin         Admin        `toml:"admin"`
+	CacheControl  CacheControl `toml:"cache_control"`
+}
+
+// CacheControl sets the Cache-Control header per surface. Each overrides a
+// Cache-Control set under headers for its surface.
+type CacheControl struct {
+	Tiles    env.String `toml:"tiles"`
+	Metadata env.String `toml:"metadata"`
+}
+
+// DefaultHTTPPort is the tile listener's port when neither the flag nor the
+// config names one.
+const DefaultHTTPPort = ":8080"
+
+// Admin configures the Cache Admin API, served on a listener of its own.
+type Admin struct {
+	// Port turns the API on. Empty leaves it off.
+	Port env.String `toml:"port"`
+	// Token, when set, must be sent as a bearer token on the cache routes.
+	Token env.String `toml:"token"`
+	// The limits below fall back to the Cache Admin API's defaults when unset.
+	MaxTilesPerRequest    *env.Uint `toml:"max_tiles_per_request"`
+	MaxConcurrentRequests *env.Uint `toml:"max_concurrent_requests"`
+	RequestTimeoutMs      *env.Uint `toml:"request_timeout_ms"`
+}
+
+func (a Admin) Enabled() bool { return a.Port != "" }
+
+// SameListener reports whether two listen addresses would bind the same port,
+// counting an empty or wildcard host as every interface.
+func SameListener(a, b string) bool {
+	hostA, portA, errA := net.SplitHostPort(a)
+	hostB, portB, errB := net.SplitHostPort(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+
+	wildcard := func(h string) bool { return h == "" || h == "0.0.0.0" || h == "::" }
+
+	return portA == portB && (hostA == hostB || wildcard(hostA) || wildcard(hostB))
 }
 
 // ValidateAndRegisterParams ensures configured params don't conflict with existing
@@ -376,6 +418,16 @@ func (c *Config) Validate() error {
 			if v == strings.ToLower(k) {
 				return ErrInvalidHeader{Header: k}
 			}
+		}
+	}
+
+	if c.Webserver.Admin.Enabled() {
+		tilePort := string(c.Webserver.Port)
+		if tilePort == "" {
+			tilePort = DefaultHTTPPort
+		}
+		if SameListener(string(c.Webserver.Admin.Port), tilePort) {
+			return ErrAdminPortInUse(tilePort)
 		}
 	}
 

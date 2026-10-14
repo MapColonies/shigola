@@ -265,3 +265,10 @@ type ErrProviderTypeRequired struct {
 func (e ErrProviderTypeRequired) Error() string {
 	return fmt.Sprintf("config: type field required for provider at position %d", e.Pos)
 }
+
+// ErrAdminPortInUse reports webserver.admin.port set to the tile listener's port.
+type ErrAdminPortInUse string
+
+func (e ErrAdminPortInUse) Error() string {
+	return fmt.Sprintf("config: webserver.admin.port (%v) is the tile port; the Cache Admin API needs a port of its own", string(e))
+}
