@@ -110,10 +110,24 @@ jobs:
 
       # Saved before the push so the tarball is the amd64 image asserted above,
       # not whatever the multi-arch push leaves tagged locally.
+      #
+      # Saved as plain shigola:<tag>: the release asset is public, and the
+      # name docker save records would otherwise carry the ACR hostname.
       - name: Save the image as a tarball
+        env:
+          ACR_URL: ${{ secrets.ACR_URL }}
         run: |
           archive="shigola_docker_${VERSION}_linux_amd64.tar.gz"
-          docker save "${IMAGE}:${VERSION}" | gzip > "${archive}"
+          docker tag "${IMAGE}:${VERSION}" "shigola:${VERSION}"
+          docker save "shigola:${VERSION}" | gzip > "${archive}"
+
+          # Fail rather than publish the registry name. manifest.json and
+          # index.json both record image names.
+          if gunzip -c "${archive}" | tar -xO --wildcards '*.json' | grep -qiF "${ACR_URL}"; then
+            echo "::error::${archive} names the registry image"
+            exit 1
+          fi
+
           echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
           ls -lh "${archive}"
 
