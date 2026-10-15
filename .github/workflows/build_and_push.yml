@@ -18,6 +18,9 @@ on:
   push:
     tags:
       - 'v*'
+      # Pre-releases (vX.Y.Z-rc.1, ...) are on_prerelease.yml's, which does
+      # not move latest.
+      - '!v*-*'
 
 # Only what this needs. The template asked for `contents: write` and
 # `packages: write`; nothing here creates a release or touches GitHub Packages,

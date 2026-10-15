@@ -1,0 +1,167 @@
+name: On pre-release
+# Publishes the image for a pre-release and attaches it to the release as a
+# `docker save` tarball, for loading where the registry cannot be reached.
+#
+# Pushes the versioned tag only: `latest` and artifacts.json belong to stable
+# releases, which build_and_push.yml publishes. That workflow ignores `v*-*`
+# tags so a pre-release does not also move `latest`.
+on:
+  release:
+    types: [prereleased]
+
+# contents: write to upload the tarball to the release.
+permissions:
+  contents: write
+
+env:
+  DOMAIN: vector
+
+jobs:
+  push-docker-image:
+    name: Build, publish and attach the pre-release image
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set the version this pre-release publishes
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          echo "${TAG}" > version.txt
+          go run ci/cat_version_envs.go -version_file version.txt | tee -a "$GITHUB_ENV"
+
+      - name: Assemble image reference and build args
+        env:
+          ACR_URL: ${{ secrets.ACR_URL }}
+        run: |
+          image="${ACR_URL:-local}/${DOMAIN}/${GITHUB_REPOSITORY##*/}"
+          echo "IMAGE=${image,,}" >> "$GITHUB_ENV"
+
+          {
+            echo 'BUILD_ARGS<<BUILD_ARGS_EOF'
+            echo "BUILDPKG=${BUILD_PKG}"
+            echo "VER=${VERSION}"
+            echo "BRANCH=${GIT_BRANCH}"
+            echo "REVISION=${GIT_REVISION}"
+            echo 'BUILD_ARGS_EOF'
+          } >> "$GITHUB_ENV"
+
+      # Same reason as build_and_push.yml: fail in seconds, not after the build.
+      - name: Require registry credentials
+        env:
+          ACR_URL: ${{ secrets.ACR_URL }}
+          ACR_PUSH_USER: ${{ secrets.ACR_PUSH_USER }}
+          ACR_PUSH_TOKEN: ${{ secrets.ACR_PUSH_TOKEN }}
+        run: |
+          status=0
+
+          for secret in ACR_URL ACR_PUSH_USER ACR_PUSH_TOKEN; do
+            if [[ -z "${!secret}" ]]; then
+              echo "::error::secret ${secret} is not set; a pre-release cannot publish without it"
+              status=1
+            fi
+          done
+
+          exit $status
+
+      # amd64 only: buildx can load one platform into docker. This is also the
+      # image saved to the release below.
+      - name: Build docker image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          build-args: ${{ env.BUILD_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
+
+      - name: Assert the built image reports its version, branch and revision
+        run: |
+          reported=$(docker run --rm "${IMAGE}:${VERSION}" version)
+          echo "$reported"
+
+          want_version="   version: ${VERSION}"
+          want_git="       git: ${GIT_BRANCH} @ ${GIT_REVISION}"
+
+          status=0
+          grep -qxF "$want_version" <<< "$reported" || {
+            echo "::error::image does not report its version; expected: ${want_version}"
+            status=1
+          }
+          grep -qxF "$want_git" <<< "$reported" || {
+            echo "::error::image does not report its branch and revision; expected: ${want_git}"
+            status=1
+          }
+          exit $status
+
+      # Saved before the push so the tarball is the amd64 image asserted above,
+      # not whatever the multi-arch push leaves tagged locally.
+      - name: Save the image as a tarball
+        run: |
+          archive="shigola_docker_${VERSION}_linux_amd64.tar.gz"
+          docker save "${IMAGE}:${VERSION}" | gzip > "${archive}"
+          echo "ARCHIVE=${archive}" >> "$GITHUB_ENV"
+          ls -lh "${archive}"
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_URL }}
+          username: ${{ secrets.ACR_PUSH_USER }}
+          password: ${{ secrets.ACR_PUSH_TOKEN }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: ${{ env.BUILD_ARGS }}
+          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
+
+      - name: Assert the published images report the pre-release version
+        run: |
+          status=0
+          ref="${IMAGE}:${VERSION}"
+
+          for platform in linux/amd64 linux/arm64; do
+            echo "--- ${ref} (${platform})"
+
+            # --pull always, or docker answers from the local build.
+            if ! reported=$(docker run --rm --pull always --platform "${platform}" "${ref}" version); then
+              echo "::error::${ref} does not run on ${platform}"
+              status=1
+
+              continue
+            fi
+
+            echo "$reported"
+
+            if ! grep -qxF "   version: ${VERSION}" <<< "$reported"; then
+              echo "::error::${ref} on ${platform} reports something other than ${VERSION}"
+              status=1
+            fi
+          done
+
+          exit $status
+
+      # Last, so a tarball is only attached for an image that published.
+      - name: Upload the tarball to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "${TAG}" "${ARCHIVE}" --clobber
