@@ -191,6 +191,14 @@ That second workflow is the org's standard publisher, extended rather than adopt
 the shape it ships in builds with no checkout, no `--build-arg`, one architecture and no assertion,
 which would republish both bugs this repository has already been bitten by.
 
+**Pre-releases** are [`on_prerelease.yml`](.github/workflows/on_prerelease.yml)'s instead. Publishing
+a GitHub release marked as a pre-release builds the image, pushes it under its own tag only — never
+`latest` — and attaches a `docker save` tarball of the amd64 image to the release as
+`shigola_docker_<tag>_linux_amd64.tar.gz`, for environments that cannot reach the registry
+(`gunzip -c <file> | docker load`). It does not register the image in `artifacts.json`.
+`build_and_push.yml` ignores `v*-*` tags so a pre-release cannot move `latest`; give pre-releases a
+SemVer pre-release tag (`v1.2.0-rc.1`), since a plain `vX.Y.Z` tag would fire both workflows.
+
 It triggers on the `vX.Y.Z` tag rather than on the release event, which is why nothing in it carries
 an `if:` — it is release-only by trigger. Image builds on the way in are
 [`on_pr_push.yml`](.github/workflows/on_pr_push.yml)'s job: it builds and asserts on every push and
