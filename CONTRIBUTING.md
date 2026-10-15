@@ -195,7 +195,8 @@ which would republish both bugs this repository has already been bitten by.
 a GitHub release marked as a pre-release builds the image, pushes it under its own tag only — never
 `latest` — and attaches a `docker save` tarball of the amd64 image to the release as
 `shigola_docker_<tag>_linux_amd64.tar.gz`, for environments that cannot reach the registry
-(`gunzip -c <file> | docker load`). It does not register the image in `artifacts.json`.
+(`gunzip -c <file> | docker load`). The image inside is named `shigola:<tag>`, with no registry
+host, because the asset is public. It does not register the image in `artifacts.json`.
 `build_and_push.yml` ignores `v*-*` tags so a pre-release cannot move `latest`; give pre-releases a
 SemVer pre-release tag (`v1.2.0-rc.1`), since a plain `vX.Y.Z` tag would fire both workflows.
 
