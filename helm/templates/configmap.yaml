@@ -1,0 +1,26 @@
+{{- if .Values.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shigola.fullname" . }}
+  labels:
+    {{- include "shigola.labels" . | nindent 4 }}
+data:
+  {{- if .Values.database.enabled }}
+  DATABASE_PGHOST: {{ .Values.database.postgres.host | quote }}
+  DATABASE_PGPORT: {{ .Values.database.postgres.port | quote }}
+  DATABASE_PGDATABASE: {{ .Values.database.postgres.database | quote }}
+  DATABASE_PGUSER: {{ .Values.database.postgres.user | quote }}
+  {{- end }}
+  {{- if .Values.osm.enabled }}
+  OSM_PGHOST: {{ .Values.osm.postgres.host | quote }}
+  OSM_PGPORT: {{ .Values.osm.postgres.port | quote }}
+  OSM_PGDATABASE: {{ .Values.osm.postgres.database | quote }}
+  OSM_PGUSER: {{ .Values.osm.postgres.user | quote }}
+  {{- end }}
+  {{- if .Values.caSecretName }}
+  SSL_CERT_DIR: {{ .Values.caPath | quote }}
+  {{- end }}
+  {{ .Values.config.key }}: |
+{{ tpl (.Files.Get "files/config.toml") . | nindent 4 }}
+{{- end }}
