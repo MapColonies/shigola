@@ -302,6 +302,13 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		// Both keys are tri-state and omitted means true, so only two explicit
+		// falses publish nothing.
+		if m.ServeMapCollection != nil && !bool(*m.ServeMapCollection) &&
+			m.ServeLayerCollections != nil && !bool(*m.ServeLayerCollections) {
+			return ErrMapServesNoCollections{MapName: string(m.Name)}
+		}
+
 		// validate any declared query parameters
 		if err := ValidateAndRegisterParams(string(m.Name), m.Parameters); err != nil {
 			return err

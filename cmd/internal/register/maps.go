@@ -41,6 +41,10 @@ func webMercatorMapFromConfigMap(cfg provider.Map) (newMap atlas.Map, err error)
 		serve := bool(*cfg.ServeLayerCollections)
 		newMap.ServeLayerCollections = &serve
 	}
+	if cfg.ServeMapCollection != nil {
+		serve := bool(*cfg.ServeMapCollection)
+		newMap.ServeMapCollection = &serve
+	}
 
 	// A map that names no tiling schemes may be requested in any this build can
 	// serve. Filling the list here rather than leaving it empty is what keeps

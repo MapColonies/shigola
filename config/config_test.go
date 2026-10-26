@@ -1630,6 +1630,118 @@ name = "osm"
 	}
 }
 
+// TestParseServeMapCollection covers the same omitted-versus-false distinction
+// as TestParseServeLayerCollections, for the whole-map tier.
+func TestParseServeMapCollection(t *testing.T) {
+	type tcase struct {
+		key      string
+		expected *env.Bool
+	}
+
+	const template = `
+[[maps]]
+name = "osm"
+%v
+
+  [[maps.layers]]
+  provider_layer = "provider1.water"
+`
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			conf, err := config.Parse(strings.NewReader(fmt.Sprintf(template, tc.key)), "")
+			if err != nil {
+				t.Fatalf("Parse() = %v, want nil", err)
+			}
+
+			if len(conf.Maps) != 1 {
+				t.Fatalf("maps = %d, want 1", len(conf.Maps))
+			}
+
+			if diff := deep.Equal(conf.Maps[0].ServeMapCollection, tc.expected); diff != nil {
+				t.Fatalf("serve_map_collection: %v", diff)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"omitted":        {key: "", expected: nil},
+		"explicit true":  {key: "serve_map_collection = true", expected: env.BoolPtr(true)},
+		"explicit false": {key: "serve_map_collection = false", expected: env.BoolPtr(false)},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+// TestValidateServedCollections covers the one combination of the two
+// collection flags that is rejected: both explicitly false, which would leave
+// the map publishing nothing.
+func TestValidateServedCollections(t *testing.T) {
+	type tcase struct {
+		serveMap    *env.Bool
+		serveLayers *env.Bool
+		expectedErr error
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			cfg := config.Config{
+				Webserver: config.Webserver{Port: ":8080"},
+				Providers: []env.Dict{
+					{
+						"name": "provider1",
+						"type": "mvt_test",
+						"layers": []map[string]any{
+							{"name": "water"},
+						},
+					},
+				},
+				Maps: []provider.Map{
+					{
+						Name:                  "osm",
+						ServeMapCollection:    tc.serveMap,
+						ServeLayerCollections: tc.serveLayers,
+						Layers: []provider.MapLayer{
+							{ProviderLayer: "provider1.water"},
+						},
+					},
+				},
+			}
+
+			err := cfg.Validate()
+			if tc.expectedErr == nil {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+
+			if !errors.Is(err, tc.expectedErr) {
+				t.Fatalf("Validate() = %v, want %v", err, tc.expectedErr)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"both omitted":             {},
+		"layers only":              {serveMap: env.BoolPtr(false)},
+		"whole map only":           {serveLayers: env.BoolPtr(false)},
+		"layers only, explicit":    {serveMap: env.BoolPtr(false), serveLayers: env.BoolPtr(true)},
+		"whole map only, explicit": {serveMap: env.BoolPtr(true), serveLayers: env.BoolPtr(false)},
+		"neither": {
+			serveMap:    env.BoolPtr(false),
+			serveLayers: env.BoolPtr(false),
+			expectedErr: config.ErrMapServesNoCollections{MapName: "osm"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
 func TestParseWebserverAdmin(t *testing.T) {
 	t.Setenv("ENV_TEST_ADMIN_TOKEN", "s3cret")
 

@@ -96,6 +96,14 @@ type Map struct {
 	//
 	// Read it through ServesLayerCollections rather than directly.
 	ServeLayerCollections *bool
+	// ServeMapCollection decides whether this map publishes a collection of its
+	// own: nil or true publishes it, false leaves the layer collections only.
+	//
+	// A pointer for the reason ServeLayerCollections documents above: a zero
+	// bool would hide the whole-map collection of every Map built as a literal.
+	//
+	// Read it through ServesMapCollection rather than directly.
+	ServeMapCollection *bool
 	// MVT output values
 	TileExtent uint64
 	TileBuffer uint64
@@ -146,6 +154,15 @@ func (m Map) TileGrids() []*tms.TileMatrixSet {
 // always did.
 func (m Map) ServesLayerCollections() bool {
 	return m.ServeLayerCollections == nil || *m.ServeLayerCollections
+}
+
+// ServesMapCollection reports whether this map publishes a collection of its
+// own, under its name.
+//
+// The default is yes, so a Map that says nothing about the flag serves what it
+// always did.
+func (m Map) ServesMapCollection() bool {
+	return m.ServeMapCollection == nil || *m.ServeMapCollection
 }
 
 // SupportsTileGrid reports whether this map may be requested in the named grid.

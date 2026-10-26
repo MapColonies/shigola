@@ -293,3 +293,46 @@ func TestMapsServeLayerCollectionsCoexist(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 }
+
+// TestMapsServeMapCollection covers the config-to-atlas hop for the whole-map
+// flag: an omitted key and an explicit true both leave the map's own
+// collection published, and only an explicit false takes it away.
+func TestMapsServeMapCollection(t *testing.T) {
+	type tcase struct {
+		configured *env.Bool
+		expected   bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			a := registerMaps(t, []provider.Map{
+				{
+					Name:               "osm",
+					ServeMapCollection: tc.configured,
+					Layers: []provider.MapLayer{
+						{ProviderLayer: "test.test-layer"},
+					},
+				},
+			})
+
+			m, err := a.Map("osm")
+			if err != nil {
+				t.Fatalf("Map(%q) = %v, want nil", "osm", err)
+			}
+
+			if got := m.ServesMapCollection(); got != tc.expected {
+				t.Errorf("ServesMapCollection() = %v, want %v", got, tc.expected)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"omitted":        {configured: nil, expected: true},
+		"explicit true":  {configured: env.BoolPtr(true), expected: true},
+		"explicit false": {configured: env.BoolPtr(false), expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}

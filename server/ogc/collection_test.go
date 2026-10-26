@@ -268,6 +268,71 @@ func TestWholeMapOnly(t *testing.T) {
 	})
 }
 
+// TestLayersOnly covers a map with serve_map_collection off: it publishes a
+// collection for each of its layers and none for itself, alongside a map that
+// leaves the flag unset and is unaffected.
+func TestLayersOnly(t *testing.T) {
+	decline := false
+	layers := newMap(t, "layers")
+	layers.ServeMapCollection = &decline
+
+	a := &atlas.Atlas{}
+	a.AddMap(layers)
+	a.AddMap(newMap(t, "osm"))
+
+	r := newRouterFor(t, a)
+
+	t.Run("the listing omits its whole-map collection", func(t *testing.T) {
+		var doc ogc.Collections
+		if w := get(t, r, "/collections", &doc); w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+
+		ids := make([]string, 0, len(doc.Collections))
+		for _, c := range doc.Collections {
+			ids = append(ids, c.ID)
+		}
+
+		for _, want := range []string{"layers:water", "layers:roads", "osm", "osm:water", "osm:roads"} {
+			if !slices.Contains(ids, want) {
+				t.Errorf("collections is missing %q, got %v", want, ids)
+			}
+		}
+
+		if slices.Contains(ids, "layers") {
+			t.Errorf("collections still lists %q, got %v", "layers", ids)
+		}
+	})
+
+	// The id resolves in one place for every route, so hiding it from the
+	// listing hides it from the tilesets and the tile route too.
+	t.Run("its whole-map collection is not found", func(t *testing.T) {
+		for _, uri := range []string{
+			"/collections/layers",
+			"/collections/layers/tiles",
+			"/collections/layers/tiles/" + tms.WebMercatorQuad,
+			"/collections/layers/tiles/" + tms.WebMercatorQuad + "/1/0/0",
+		} {
+			if w := get(t, r, uri, nil); w.Code != http.StatusNotFound {
+				t.Errorf("GET %v status = %d, want 404", uri, w.Code)
+			}
+		}
+	})
+
+	t.Run("its layer collections are unaffected", func(t *testing.T) {
+		for _, uri := range []string{
+			"/collections/layers:water",
+			"/collections/layers:water/tiles",
+			"/collections/layers:water/tiles/" + tms.WebMercatorQuad,
+			"/collections/layers:water/tiles/" + tms.WebMercatorQuad + "/1/0/0",
+		} {
+			if w := get(t, r, uri, nil); w.Code != http.StatusOK {
+				t.Errorf("GET %v status = %d, want 200", uri, w.Code)
+			}
+		}
+	})
+}
+
 // TestTileSets covers a collection offering more than one tiling scheme.
 func TestTileSets(t *testing.T) {
 	a := newAtlas(t, tms.WebMercatorQuad, tms.WorldCRS84Quad)
