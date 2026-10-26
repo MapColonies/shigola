@@ -69,15 +69,19 @@ func (e ErrTileSetNotFound) Error() string {
 // collections enumerates every collection this service publishes: one
 // Map-collection per map, plus one Layer-collection per layer of it.
 //
-// The map-collection is always emitted, even for a single-layer map, so that a
-// map's id is always a valid collection id. The layer tier is what a map can
-// decline, with serve_layer_collections (MAPCO-11493).
+// Either tier can be declined per map: the layer tier with
+// serve_layer_collections (MAPCO-11493), the map's own collection with
+// serve_map_collection. The map-collection is emitted by default even for a
+// single-layer map, so that a map's id is a valid collection id unless the map
+// says otherwise. config.Validate keeps a map from declining both.
 func (s *Service) collections() []Collection {
 	maps := s.cfg.Atlas.AllMaps()
 
 	out := make([]Collection, 0, len(maps))
 	for _, m := range maps {
-		out = append(out, Collection{ID: m.Name, Map: m})
+		if m.ServesMapCollection() {
+			out = append(out, Collection{ID: m.Name, Map: m})
+		}
 
 		if !m.ServesLayerCollections() {
 			continue
@@ -102,7 +106,7 @@ func (s *Service) collections() []Collection {
 // one, and the map name comes first.
 //
 // Every route that takes a collection id resolves it here, so a map that
-// declines the layer tier declines it for the tilesets and the tile route too,
+// declines either tier declines it for the tilesets and the tile route too,
 // not just for the listing.
 func (s *Service) collection(id string) (Collection, error) {
 	mapName, layerName, hasLayer := strings.Cut(id, LayerSeparator)
@@ -112,14 +116,18 @@ func (s *Service) collection(id string) (Collection, error) {
 		return Collection{}, ErrCollectionNotFound{ID: id}
 	}
 
+	// Not-found rather than an error of its own: "no such layer" and "that
+	// layer is not published" are a difference a client cannot act on, so both
+	// are one 404. Not concealment -- /api says a map may publish either tier
+	// only -- just the absence of a distinction worth drawing. The same holds
+	// for a map that does not publish itself.
 	if !hasLayer {
+		if !m.ServesMapCollection() {
+			return Collection{}, ErrCollectionNotFound{ID: id}
+		}
 		return Collection{ID: id, Map: m}, nil
 	}
 
-	// Not-found rather than an error of its own: "no such layer" and "that
-	// layer is not published" are a difference a client cannot act on, so both
-	// are one 404. Not concealment -- /api says a map may publish itself only
-	// -- just the absence of a distinction worth drawing.
 	if !m.ServesLayerCollections() {
 		return Collection{}, ErrCollectionNotFound{ID: id}
 	}

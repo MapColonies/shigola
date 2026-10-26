@@ -335,3 +335,33 @@ func TestMapServesLayerCollections(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 }
+
+// TestMapServesMapCollection pins the same default for the whole-map tier: a
+// Map that says nothing about the flag still publishes a collection of its own.
+func TestMapServesMapCollection(t *testing.T) {
+	type tcase struct {
+		atlasMap atlas.Map
+		expected bool
+	}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			if got := tc.atlasMap.ServesMapCollection(); got != tc.expected {
+				t.Errorf("ServesMapCollection() = %v, want %v", got, tc.expected)
+			}
+		}
+	}
+
+	serve, decline := true, false
+
+	tests := map[string]tcase{
+		"a zero map":             {atlasMap: atlas.Map{}, expected: true},
+		"the constructor's map":  {atlasMap: atlas.NewWebMercatorMap("osm"), expected: true},
+		"explicitly serving":     {atlasMap: atlas.Map{ServeMapCollection: &serve}, expected: true},
+		"explicitly layers only": {atlasMap: atlas.Map{ServeMapCollection: &decline}, expected: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}

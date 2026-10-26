@@ -29,4 +29,11 @@ type Map struct {
 	// every config that has never heard of the key. atlas.Map's field is a
 	// pointer for a related but separate reason, which it documents.
 	ServeLayerCollections *env.Bool `toml:"serve_layer_collections"`
+	// ServeMapCollection decides whether this map publishes a collection of its
+	// own, whose tiles carry every layer: false leaves only its layer
+	// collections. Omitted means true.
+	//
+	// A pointer for the same reason as ServeLayerCollections. Turning both off
+	// would leave the map publishing nothing, which config.Validate rejects.
+	ServeMapCollection *env.Bool `toml:"serve_map_collection"`
 }

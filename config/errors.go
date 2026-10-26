@@ -119,6 +119,24 @@ func (e ErrUnsupportedTileMatrixSet) Error() string {
 	)
 }
 
+// ErrMapServesNoCollections reports a map that declines both of its collection
+// tiers, serve_map_collection and serve_layer_collections, and so would
+// publish nothing.
+//
+// A startup error rather than a map that silently 404s: a map nobody can
+// request is never what the config meant, and the likelier intent -- one tier
+// of the two -- is a single key away.
+type ErrMapServesNoCollections struct {
+	MapName string
+}
+
+func (e ErrMapServesNoCollections) Error() string {
+	return fmt.Sprintf(
+		"config: map %s sets both serve_map_collection and serve_layer_collections to false, so it would publish no collection; set one of them to true",
+		e.MapName,
+	)
+}
+
 type ErrInvalidProviderLayerName struct {
 	ProviderLayerName string
 }

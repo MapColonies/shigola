@@ -271,7 +271,7 @@
       "collectionId": {
         "name": "collectionId",
         "in": "path",
-        "description": "A collection id: a map name, or {map}:{layer} for a single layer of one. Layer ids exist only for maps that publish layer collections.",
+        "description": "A collection id: a map name, or {map}:{layer} for a single layer of one. Layer ids exist only for maps that publish layer collections, and a map name only for maps that publish a collection of their own.",
         "required": true,
         "schema": { "type": "string" }
       },
