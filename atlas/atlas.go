@@ -91,11 +91,21 @@ func (a *Atlas) AllMaps() []Map {
 // grid is required: one argument feeds both the encode and the key, so the
 // bytes and the name they are filed under cannot come apart.
 func (a *Atlas) SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet, z, x, y uint) error {
+	return a.SeedLayerTile(ctx, m, "", grid, z, x, y)
+}
+
+// SeedLayerTile is SeedMapTile for one layer of m: the tile a layer collection
+// serves, encoded with that layer only and filed under its layer key. An empty
+// layer is the whole-map tile.
+//
+// The layer feeds both the encode and the key, as grid does, so a layer's
+// bytes are never filed under another layer's name.
+func (a *Atlas) SeedLayerTile(ctx context.Context, m Map, layer string, grid *tms.TileMatrixSet, z, x, y uint) error {
 
 	if a == nil {
 		// Use the default Atlas if a, is nil. This way the empty value is
 		// still useful.
-		return defaultAtlas.SeedMapTile(ctx, m, grid, z, x, y)
+		return defaultAtlas.SeedLayerTile(ctx, m, layer, grid, z, x, y)
 	}
 
 	if grid == nil {
@@ -114,6 +124,10 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet,
 
 	tile := slippy.Tile{Z: slippy.Zoom(z), X: x, Y: y}
 
+	if layer != "" {
+		m = m.FilterLayersByName(layer)
+	}
+
 	// encode the tile
 	b, err := m.Encode(ctx, grid, tile, nil)
 	if err != nil {
@@ -121,7 +135,7 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet,
 	}
 
 	// cache key
-	key, err := cache.NewKey(grid, m.Name, "", z, x, y)
+	key, err := cache.NewKey(grid, m.Name, layer, z, x, y)
 	if err != nil {
 		return err
 	}

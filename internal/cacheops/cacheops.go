@@ -55,8 +55,9 @@ func (tileChan) Err() error                    { return nil }
 func TileChan(c <-chan slippy.Tile) TileSource { return tileChan(c) }
 
 // Target is a map, optionally narrowed to some of its layers. With no layers a
-// purge clears the whole-map tile and every layer tile; with layers it clears
-// those and the whole-map tile, which contains them too.
+// purge clears the whole-map tile and every layer tile, and a seed writes the
+// whole-map tile; with layers either works on those and the whole-map tile,
+// which contains them too.
 type Target struct {
 	Map    atlas.Map
 	Layers []string
@@ -95,8 +96,9 @@ type Result struct {
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
 
-// ErrSeedLayers is wrapped by an ErrInvalidTarget for a seed naming layers.
-var ErrSeedLayers = errors.New("cacheops: seed covers whole maps only, not layers")
+// ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a seed naming
+// layers of a map that does not serve them, so the tiles would never be read.
+var ErrNoLayerCollections = errors.New("cacheops: the map does not serve layer collections, so its layer tiles are never read")
 
 type ErrInvalidTarget struct {
 	Map string
@@ -233,14 +235,14 @@ func (opts Options) validate() error {
 }
 
 // ValidateTargets reports the first target op cannot honour: a layer the map
-// does not have, or any layer on a seed.
+// does not have, or a seed of layers the map does not serve.
 func ValidateTargets(op Op, targets []Target) error {
 	for _, t := range targets {
 		if len(t.Layers) == 0 {
 			continue
 		}
-		if op == Seed {
-			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrSeedLayers}
+		if op == Seed && !t.Map.ServesLayerCollections() {
+			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrNoLayerCollections}
 		}
 
 		for _, name := range t.Layers {
@@ -296,34 +298,33 @@ func (opts Options) intent(ctx context.Context) context.Context {
 	return ctx
 }
 
+// seed writes every key of the tile; it is skipped only when, without
+// Overwrite, all of them are cached already.
 func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err error) {
 	start := time.Now()
 	z, x, y := mt.tile.ZXY()
 	m := mt.target.Map
 
-	if !opts.Overwrite {
-		c := opts.Atlas.GetCache()
-		if c == nil {
-			return false, atlas.ErrMissingCache
+	skipped = true
+	for _, layer := range mt.target.Keys(Seed, z) {
+		if !opts.Overwrite {
+			hit, err := opts.cached(ctx, m.Name, layer, mt.tile)
+			if err != nil {
+				return false, err
+			}
+			if hit {
+				log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) layer (%v) tile (%v/%v/%v)", m.Name, layer, z, x, y)
+				continue
+			}
 		}
 
-		key, err := cache.NewKey(opts.Grid, m.Name, "", uint(z), x, y)
-		if err != nil {
+		skipped = false
+		if err := opts.Atlas.SeedLayerTile(ctx, m.FilterLayersByZoom(z), layer, opts.Grid, uint(z), x, y); err != nil {
 			return false, err
 		}
-
-		_, hit, err := c.Get(ctx, &key)
-		if err != nil {
-			return false, fmt.Errorf("error reading from cache: %w", err)
-		}
-		if hit {
-			log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) tile (%v/%v/%v)", m.Name, z, x, y)
-			return true, nil
-		}
 	}
-
-	if err := opts.Atlas.SeedMapTile(ctx, m.FilterLayersByZoom(z), opts.Grid, uint(z), x, y); err != nil {
-		return false, err
+	if skipped {
+		return true, nil
 	}
 
 	if opts.CollectGarbage {
@@ -336,6 +337,26 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 	}
 
 	return false, nil
+}
+
+func (opts Options) cached(ctx context.Context, mapName, layer string, tile slippy.Tile) (bool, error) {
+	c := opts.Atlas.GetCache()
+	if c == nil {
+		return false, atlas.ErrMissingCache
+	}
+
+	z, x, y := tile.ZXY()
+	key, err := cache.NewKey(opts.Grid, mapName, layer, uint(z), x, y)
+	if err != nil {
+		return false, err
+	}
+
+	_, hit, err := c.Get(ctx, &key)
+	if err != nil {
+		return false, fmt.Errorf("error reading from cache: %w", err)
+	}
+
+	return hit, nil
 }
 
 func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err error) {
@@ -366,11 +387,11 @@ func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err er
 }
 
 // Keys names the layer segment of every cache key op touches for one tile of
-// t at zoom z: the whole-map tile (""), and for a purge the target's layers
-// active at z.
+// t at zoom z: the whole-map tile (""), and the target's layers active at z. A
+// target naming no layers is every layer for a purge, none for a seed.
 func (t Target) Keys(op Op, z slippy.Zoom) []string {
 	keys := []string{""}
-	if op == Seed {
+	if op == Seed && len(t.Layers) == 0 {
 		return keys
 	}
 

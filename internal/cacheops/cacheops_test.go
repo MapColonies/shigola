@@ -1,9 +1,13 @@
 package cacheops_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -12,6 +16,7 @@ import (
 	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/internal/cacheops"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom/slippy"
@@ -460,6 +465,122 @@ func TestPurgeOfOneLayerAlsoClearsTheWholeMapTile(t *testing.T) {
 	}
 }
 
+// layerEcho encodes a tile as the names of the layers it was asked for, so a
+// test can tell which layers went into a cached tile.
+type layerEcho struct{ test.TileProvider }
+
+func (layerEcho) MVTForLayers(_ context.Context, _ provider.Tile, _ provider.Params, layers []provider.Layer) ([]byte, error) {
+	names := make([]string, len(layers))
+	for i, l := range layers {
+		names[i] = l.MVTName
+	}
+
+	return []byte(strings.Join(names, ",")), nil
+}
+
+func echoingMap(name string) atlas.Map {
+	m := layeredMap(name)
+	m.SetMVTProvider("echo", &layerEcho{})
+
+	return m
+}
+
+func noLayerCollections(m atlas.Map) atlas.Map {
+	off := false
+	m.ServeLayerCollections = &off
+
+	return m
+}
+
+// layersIn is the layer names a cached tile was encoded with.
+func layersIn(t *testing.T, tier *faketier.Tier, k *cache.Key) (string, bool) {
+	t.Helper()
+
+	v, ok := tier.Value(k)
+	if !ok {
+		return "", false
+	}
+	r, err := gzip.NewReader(bytes.NewReader(v))
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+
+	return string(b), true
+}
+
+func TestSeedOfOneLayerWritesItAndTheWholeMapTile(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: echoingMap("osm"), Layers: []string{"roads", "pois"}}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Done != 1 {
+		t.Errorf("Done: got %d, expected 1 map tile", res.Done)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "", 6, 1, 1)); got != "roads,buildings" {
+		t.Errorf("whole-map tile: got layers %q, expected every layer active at z6", got)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "roads", 6, 1, 1)); got != "roads" {
+		t.Errorf("roads tile: got layers %q, expected roads alone", got)
+	}
+	if _, ok := tier.Value(layerKey(t, grid, "osm", "buildings", 6, 1, 1)); ok {
+		t.Error("a layer that was not named was seeded")
+	}
+	// pois starts at z14, so the server never caches it at z6
+	if n := tier.Count(faketier.OpSet); n != 2 {
+		t.Errorf("writes: got %d, expected the map key and roads", n)
+	}
+}
+
+func TestSeedOfALayerWithoutOverwriteFillsOnlyItsMissingKeys(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	whole := layerKey(t, grid, "osm", "", 6, 1, 1)
+	tier.Seed(whole, []byte("old"))
+	for _, layer := range []string{"", "roads"} {
+		tier.Seed(layerKey(t, grid, "osm", layer, 6, 2, 2), []byte("old"))
+	}
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: echoingMap("osm"), Layers: []string{"roads"}}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}, slippy.Tile{Z: 6, X: 2, Y: 2}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Done != 1 || res.Skipped != 1 {
+		t.Errorf("result: got %+v, expected the fully cached tile skipped and the other done", res)
+	}
+	if v, _ := tier.Value(whole); string(v) != "old" {
+		t.Errorf("whole-map tile: got %q, expected it left as old", v)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "roads", 6, 1, 1)); got != "roads" {
+		t.Errorf("roads tile: got layers %q, expected it seeded", got)
+	}
+}
+
 func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 	type tcase struct {
 		opts cacheops.Options
@@ -490,8 +611,11 @@ func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 		"purge naming an unknown layer": {opts: cacheops.Options{
 			Op: cacheops.Purge, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}},
 		}},
-		"seed naming a layer": {opts: cacheops.Options{
-			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"roads"}}},
+		"seed naming an unknown layer": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}},
+		}},
+		"seed naming a layer of a map serving no layer collections": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
 		}},
 	}
 

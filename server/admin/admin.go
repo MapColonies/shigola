@@ -168,7 +168,7 @@ func (cfg Config) handle(op cacheops.Op) http.Handler {
 		}
 
 		j, err := plan(cfg.Atlas, op, req)
-		if errors.Is(err, cacheops.ErrSeedLayers) {
+		if errors.Is(err, cacheops.ErrNoLayerCollections) {
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
