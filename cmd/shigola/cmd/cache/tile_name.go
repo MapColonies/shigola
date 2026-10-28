@@ -75,7 +75,7 @@ func tileNameCommand(cmd *cobra.Command, args []string) (err error) {
 	tilechannel := generateTilesForTileName(ctx, tileNameTile, explicit, zooms)
 
 	// start up workers
-	return runSeedPurge(ctx, tilechannel)
+	return runSeedPurge(ctx, tilechannel, nil)
 
 }
 

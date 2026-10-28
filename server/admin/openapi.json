@@ -523,7 +523,7 @@
         }
       },
       "SeedUnprocessable": {
-        "description": "The request covers more than max_tiles_per_request, or names layers of a map that does not serve layer collections, so its layer tiles would never be read. Nothing was touched.",
+        "description": "The request covers more than max_tiles_per_request; names layers of a map that does not serve layer collections, so its layer tiles would never be read; or, for a seed, names layers of a map with query parameters, whose tiles are not cached, or a layer active at none of the requested zooms. Nothing was touched.",
         "content": {
           "application/json": {
             "schema": {

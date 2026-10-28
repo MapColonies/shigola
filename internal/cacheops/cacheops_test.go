@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -617,6 +618,12 @@ func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 		"seed naming a layer of a map serving no layer collections": {opts: cacheops.Options{
 			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
 		}},
+		"purge naming a layer of a map serving no layer collections": {opts: cacheops.Options{
+			Op: cacheops.Purge, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
+		}},
+		"seed naming a layer of a map with query parameters": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}},
+		}},
 	}
 
 	for name, tc := range tests {
@@ -647,5 +654,117 @@ func TestContinueOnErrorAttemptsEveryTileAndCountsFailures(t *testing.T) {
 	}
 	if n := tier.Count(faketier.OpPurge); n != 3 {
 		t.Errorf("purges: got %d, expected every tile attempted", n)
+	}
+}
+
+func withParams(m atlas.Map) atlas.Map {
+	m.Params = []provider.QueryParameter{{Name: "lang", Token: "!LANG!", Type: "string"}}
+
+	return m
+}
+
+func TestValidateTargetsReportsAnUnknownLayerFirst(t *testing.T) {
+	err := cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{
+		{Map: noLayerCollections(layeredMap("flat")), Layers: []string{"rivers"}},
+	})
+
+	if errors.Is(err, cacheops.ErrNoLayerCollections) || !strings.Contains(fmt.Sprint(err), `no layer named "rivers"`) {
+		t.Errorf("err: got %v, expected the unknown layer reported", err)
+	}
+}
+
+func TestValidateZooms(t *testing.T) {
+	type tcase struct {
+		op    cacheops.Op
+		zooms []uint
+		ok    bool
+	}
+
+	targets := []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			err := cacheops.ValidateZooms(tc.op, targets, tc.zooms)
+			if tc.ok && err != nil {
+				t.Errorf("err: got %v, expected none", err)
+			}
+			if !tc.ok && !errors.Is(err, cacheops.ErrLayerZooms) {
+				t.Errorf("err: got %v, expected ErrLayerZooms", err)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"seed below the layer's zooms":   {op: cacheops.Seed, zooms: []uint{1, 2, 3}},
+		"seed reaching the layer's zoom": {op: cacheops.Seed, zooms: []uint{13, 14}, ok: true},
+		"purge is not checked":           {op: cacheops.Purge, zooms: []uint{1}, ok: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+func TestKeysNameALayerSharedByZoomBandsOnce(t *testing.T) {
+	m := layeredMap("osm")
+	m.Layers = append(m.Layers, atlas.Layer{Name: "roads", MinZoom: 0, MaxZoom: 20})
+
+	for name, tgt := range map[string]cacheops.Target{
+		"named":     {Map: m, Layers: []string{"roads"}},
+		"every one": {Map: m},
+	} {
+		keys := tgt.Keys(cacheops.Purge, 6)
+		if n := strings.Count(strings.Join(keys, ","), "roads"); n != 1 {
+			t.Errorf("%v: got keys %q, expected roads once", name, keys)
+		}
+	}
+}
+
+// failingLayer echoes like layerEcho, but fails a tile of the named layer alone.
+type failingLayer struct {
+	layerEcho
+	layer string
+}
+
+func (p failingLayer) MVTForLayers(ctx context.Context, tile provider.Tile, params provider.Params, layers []provider.Layer) ([]byte, error) {
+	if len(layers) == 1 && layers[0].MVTName == p.layer {
+		return nil, errors.New("boom")
+	}
+
+	return p.layerEcho.MVTForLayers(ctx, tile, params, layers)
+}
+
+func TestSeedOfLayersTriesEveryKeyAndNamesWhatItWrote(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	m := layeredMap("osm")
+	m.SetMVTProvider("echo", &failingLayer{layer: "roads"})
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:              cacheops.Seed,
+		Atlas:           a,
+		Targets:         []cacheops.Target{{Map: m, Layers: []string{"roads", "buildings"}}},
+		Grid:            grid,
+		ContinueOnError: true,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+
+	var te cacheops.ErrTile
+	if !errors.As(err, &te) {
+		t.Fatalf("err: got %v, expected an ErrTile", err)
+	}
+	for _, want := range []string{"the whole-map tile", "layer (buildings)", "layer (roads): "} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err: got %q, expected it to mention %q", err, want)
+		}
+	}
+	if res.Failed != 1 || res.Done != 0 {
+		t.Errorf("result: got %+v, expected the tile failed", res)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "buildings", 6, 1, 1)); got != "buildings" {
+		t.Errorf("buildings tile: got layers %q, expected it seeded after roads failed", got)
 	}
 }

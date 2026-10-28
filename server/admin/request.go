@@ -91,6 +91,9 @@ func plan(a *atlas.Atlas, op cacheops.Op, req request) (job, error) {
 	if err := cacheops.ValidateTargets(op, targets); err != nil {
 		return j, err
 	}
+	if err := cacheops.ValidateZooms(op, targets, zooms); err != nil {
+		return j, err
+	}
 	if err := checkTileMatrixSets(targets, req.TileMatrixSets); err != nil {
 		return j, err
 	}

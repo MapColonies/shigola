@@ -140,3 +140,30 @@ func TestSeedAndPurgeKeys(t *testing.T) {
 		t.Run(name, fn(tc))
 	}
 }
+
+// TestSeedLayerTileRefusesALayerTheMapLacks pins that a layer filtered away, as
+// by a zoom it is not active at, is not cached as an empty tile under its key.
+func TestSeedLayerTileRefusesALayerTheMapLacks(t *testing.T) {
+	grid, err := tms.Get(tms.WebMercatorQuad)
+	if err != nil {
+		t.Fatalf("tms.Get: %v", err)
+	}
+
+	m := atlas.NewWebMercatorMap("osm")
+	m.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}, {Name: "pois", MinZoom: 14, MaxZoom: 20}}
+	m.SetMVTProvider("mvt_test", &test.TileProvider{})
+
+	rec := &keyRecorder{}
+	a := &atlas.Atlas{}
+	a.SetCache(rec)
+
+	ctx := context.Background()
+	for _, layer := range []string{"Roads", "pois"} {
+		if err := a.SeedLayerTile(ctx, m.FilterLayersByZoom(3), layer, grid, 3, 5, 2); err == nil {
+			t.Errorf("SeedLayerTile(%q): got no error", layer)
+		}
+	}
+	if len(rec.set) != 0 {
+		t.Errorf("seeded keys = %q, want none", rec.set)
+	}
+}

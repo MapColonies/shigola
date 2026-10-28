@@ -96,9 +96,18 @@ type Result struct {
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
 
-// ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a seed naming
-// layers of a map that does not serve them, so the tiles would never be read.
+// ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a target naming
+// layers of a map that does not serve them, so the tiles are never read.
 var ErrNoLayerCollections = errors.New("cacheops: the map does not serve layer collections, so its layer tiles are never read")
+
+// ErrParamsMap is wrapped by an ErrInvalidTarget for a seed naming layers of a
+// map with query parameters, whose tiles are never cached.
+var ErrParamsMap = errors.New("cacheops: the map has query parameters, so its tiles are not cached")
+
+// ErrLayerZooms is wrapped by an ErrInvalidTarget for a seed naming a layer
+// that is active at none of the zooms requested, so nothing would be written
+// for it.
+var ErrLayerZooms = errors.New("cacheops: a layer named is active at none of the requested zooms")
 
 type ErrInvalidTarget struct {
 	Map string
@@ -235,19 +244,47 @@ func (opts Options) validate() error {
 }
 
 // ValidateTargets reports the first target op cannot honour: a layer the map
-// does not have, or a seed of layers the map does not serve.
+// does not have, layers of a map that does not serve them, or a seed of layers
+// of a map with query parameters.
 func ValidateTargets(op Op, targets []Target) error {
 	for _, t := range targets {
 		if len(t.Layers) == 0 {
 			continue
 		}
-		if op == Seed && !t.Map.ServesLayerCollections() {
-			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrNoLayerCollections}
-		}
 
+		// a misspelt layer is reported as such, whatever else is wrong with the map
 		for _, name := range t.Layers {
 			if !slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool { return l.MVTName() == name }) {
 				return ErrInvalidTarget{Map: t.Map.Name, Err: fmt.Errorf("no layer named %q", name)}
+			}
+		}
+
+		if !t.Map.ServesLayerCollections() {
+			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrNoLayerCollections}
+		}
+		if op == Seed && len(t.Map.Params) > 0 {
+			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrParamsMap}
+		}
+	}
+
+	return nil
+}
+
+// ValidateZooms reports the first layer a seed names that is active at none of
+// zooms. A purge is not checked: one that clears nothing is harmless. Run cannot
+// check this itself, as its tile source does not say which zooms it covers.
+func ValidateZooms(op Op, targets []Target, zooms []uint) error {
+	if op != Seed {
+		return nil
+	}
+
+	for _, t := range targets {
+		for _, name := range t.Layers {
+			active := slices.ContainsFunc(zooms, func(z uint) bool {
+				return slices.ContainsFunc(t.Map.FilterLayersByZoom(slippy.Zoom(z)).Layers, func(l atlas.Layer) bool { return l.MVTName() == name })
+			})
+			if !active {
+				return ErrInvalidTarget{Map: t.Map.Name, Err: fmt.Errorf("%w: %q", ErrLayerZooms, name)}
 			}
 		}
 	}
@@ -299,18 +336,23 @@ func (opts Options) intent(ctx context.Context) context.Context {
 }
 
 // seed writes every key of the tile; it is skipped only when, without
-// Overwrite, all of them are cached already.
+// Overwrite, all of them are cached already. A key that fails does not stop the
+// others, and the error names the keys that were written all the same.
 func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err error) {
 	start := time.Now()
 	z, x, y := mt.tile.ZXY()
-	m := mt.target.Map
+	m := mt.target.Map.FilterLayersByZoom(z)
 
+	var written []string
+	var errs []error
 	skipped = true
 	for _, layer := range mt.target.Keys(Seed, z) {
 		if !opts.Overwrite {
 			hit, err := opts.cached(ctx, m.Name, layer, mt.tile)
 			if err != nil {
-				return false, err
+				errs = append(errs, fmt.Errorf("%v: %w", keyName(layer), err))
+				skipped = false
+				continue
 			}
 			if hit {
 				log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) layer (%v) tile (%v/%v/%v)", m.Name, layer, z, x, y)
@@ -319,9 +361,23 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 		}
 
 		skipped = false
-		if err := opts.Atlas.SeedLayerTile(ctx, m.FilterLayersByZoom(z), layer, opts.Grid, uint(z), x, y); err != nil {
-			return false, err
+		if err := opts.Atlas.SeedLayerTile(ctx, m, layer, opts.Grid, uint(z), x, y); err != nil {
+			if ctx.Err() != nil {
+				return false, err
+			}
+			errs = append(errs, fmt.Errorf("%v: %w", keyName(layer), err))
+			continue
 		}
+		written = append(written, keyName(layer))
+	}
+	if len(errs) > 0 {
+		err := errors.Join(errs...)
+		if len(written) > 0 {
+			// the cache changed all the same, and under Overwrite the other tiers
+			// were purged for these keys
+			err = fmt.Errorf("wrote %v, but: %w", strings.Join(written, ", "), err)
+		}
+		return false, err
 	}
 	if skipped {
 		return true, nil
@@ -337,6 +393,14 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 	}
 
 	return false, nil
+}
+
+// keyName names a key's layer segment for an error: "" is the whole-map tile.
+func keyName(layer string) string {
+	if layer == "" {
+		return "the whole-map tile"
+	}
+	return fmt.Sprintf("layer (%v)", layer)
 }
 
 func (opts Options) cached(ctx context.Context, mapName, layer string, tile slippy.Tile) (bool, error) {
@@ -387,8 +451,9 @@ func (opts Options) purge(ctx context.Context, mt mapTile) (skipped bool, err er
 }
 
 // Keys names the layer segment of every cache key op touches for one tile of
-// t at zoom z: the whole-map tile (""), and the target's layers active at z. A
-// target naming no layers is every layer for a purge, none for a seed.
+// t at zoom z: the whole-map tile (""), and the target's layers active at z,
+// each once. A target naming no layers is every layer for a purge, none for a
+// seed.
 func (t Target) Keys(op Op, z slippy.Zoom) []string {
 	keys := []string{""}
 	if op == Seed && len(t.Layers) == 0 {
@@ -397,6 +462,10 @@ func (t Target) Keys(op Op, z slippy.Zoom) []string {
 
 	for _, l := range t.Map.FilterLayersByZoom(z).Layers {
 		name := l.MVTName()
+		// several layers may share a name, one per zoom band, and share its key
+		if slices.Contains(keys, name) {
+			continue
+		}
 		if len(t.Layers) == 0 || slices.Contains(t.Layers, name) {
 			keys = append(keys, name)
 		}

@@ -3,6 +3,7 @@ package atlas
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/MapColonies/shigola"
@@ -96,7 +97,8 @@ func (a *Atlas) SeedMapTile(ctx context.Context, m Map, grid *tms.TileMatrixSet,
 
 // SeedLayerTile is SeedMapTile for one layer of m: the tile a layer collection
 // serves, encoded with that layer only and filed under its layer key. An empty
-// layer is the whole-map tile.
+// layer is the whole-map tile. A layer m does not have, as when m is filtered to
+// a zoom it is not active at, is an error.
 //
 // The layer feeds both the encode and the key, as grid does, so a layer's
 // bytes are never filed under another layer's name.
@@ -126,6 +128,11 @@ func (a *Atlas) SeedLayerTile(ctx context.Context, m Map, layer string, grid *tm
 
 	if layer != "" {
 		m = m.FilterLayersByName(layer)
+		// an empty tile filed under the layer's key would be served in place of
+		// the one the layer collection encodes
+		if len(m.Layers) == 0 {
+			return fmt.Errorf("atlas: map (%v) has no layer (%v) among those passed", m.Name, layer)
+		}
 	}
 
 	// encode the tile

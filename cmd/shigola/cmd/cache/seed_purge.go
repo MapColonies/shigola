@@ -385,7 +385,7 @@ func seedPurgeCommand(_ *cobra.Command, _ []string) (err error) {
 	log.Info("tile matrix set:", seedPurgeGrid.ID())
 	tileChannel := generateTilesForBounds(ctx, seedPurgeBounds, zooms, seedPurgeGrid)
 
-	return runSeedPurge(ctx, tileChannel)
+	return runSeedPurge(ctx, tileChannel, zooms)
 }
 
 // generateTilesForBounds streams every tile of grid, at each of zooms, covering
