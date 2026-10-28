@@ -618,8 +618,8 @@ func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 		"seed naming a layer of a map serving no layer collections": {opts: cacheops.Options{
 			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
 		}},
-		"purge naming a layer of a map serving no layer collections": {opts: cacheops.Options{
-			Op: cacheops.Purge, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
+		"seed naming a layer active at none of the zooms": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}, Zooms: []uint{6},
 		}},
 		"seed naming a layer of a map with query parameters": {opts: cacheops.Options{
 			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}},
@@ -794,7 +794,7 @@ func TestSeedOfAMapWithQueryParametersSkipsIt(t *testing.T) {
 
 func TestUnprocessableTargetsMatchOneSentinel(t *testing.T) {
 	errs := map[string]error{
-		"no layer collections": cacheops.ValidateTargets(cacheops.Purge, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}}),
+		"no layer collections": cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}}),
 		"query parameters":     cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}}),
 		"zooms":                cacheops.ValidateZooms(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}, []uint{1}),
 	}
@@ -807,5 +807,12 @@ func TestUnprocessableTargetsMatchOneSentinel(t *testing.T) {
 	unknown := cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}})
 	if unknown == nil || errors.Is(unknown, cacheops.ErrUnprocessable) {
 		t.Errorf("unknown layer: got %v, expected a plain invalid target", unknown)
+	}
+}
+
+func TestPurgeOfLayersOfAMapServingNoLayerCollectionsIsAllowed(t *testing.T) {
+	err := cacheops.ValidateTargets(cacheops.Purge, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}})
+	if err != nil {
+		t.Errorf("err: got %v, expected the stale layer keys purgeable", err)
 	}
 }

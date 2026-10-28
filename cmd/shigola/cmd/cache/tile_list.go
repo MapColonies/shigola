@@ -92,8 +92,8 @@ func tileListCommand(cmd *cobra.Command, args []string) (err error) {
 
 	tilechannel := generateTilesForTileList(ctx, in, explicit, zooms, format)
 
-	// start up workers here. Without the zoom flags each tile keeps its own
-	// zoom, which are not known up front
+	// start up workers here. explicit means no zoom flags were given, and then
+	// each tile keeps its own zoom, which is not known up front
 	var known []uint
 	if !explicit {
 		known = zooms

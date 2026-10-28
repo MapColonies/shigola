@@ -112,7 +112,7 @@ func (tc *TileChannel) Close() {
 // runSeedPurge runs the resolved seed or purge over tiles. If the workers are
 // still busy 60 seconds after the last tile was handed out, the process exits.
 // zooms, when the source covers a known set of them, lets a seed of a layer
-// active at none be refused up front; nil skips that check.
+// active at none be refused; nil skips that check.
 func runSeedPurge(ctx context.Context, tiles *TileChannel, zooms []uint) error {
 	for _, m := range seedPurgeMaps {
 		if len(m.Params) > 0 {
@@ -131,15 +131,8 @@ func runSeedPurge(ctx context.Context, tiles *TileChannel, zooms []uint) error {
 	for i, m := range seedPurgeMaps {
 		targets[i] = cacheops.Target{Map: m, Layers: layers}
 	}
-	// Run validates the targets too, but they must pass before the zooms are
-	// checked, so a misspelt layer is reported as such
-	if err := cacheops.ValidateTargets(seedPurgeOp, targets); err != nil {
-		return err
-	}
-	if zooms != nil {
-		if err := cacheops.ValidateZooms(seedPurgeOp, targets, zooms); err != nil {
-			return err
-		}
+	if zooms == nil && seedPurgeOp == cacheops.Seed && len(layers) > 0 {
+		log.Warnf("cache seed: the zooms are not known up front, so a layer is seeded only at the tiles whose zoom it is active at, and a layer active at none is not seeded at all")
 	}
 
 	res, err := cacheops.Run(ctx, cacheops.Options{
@@ -149,6 +142,7 @@ func runSeedPurge(ctx context.Context, tiles *TileChannel, zooms []uint) error {
 		Concurrency:    cacheConcurrency,
 		Overwrite:      cacheOverwrite,
 		WriteTiers:     seedWriteTiers,
+		Zooms:          zooms,
 		LogThreshold:   time.Duration(cacheLogThreshold) * time.Millisecond,
 		CollectGarbage: true,
 		Draining:       exitIfWorkersHang(60 * time.Second),

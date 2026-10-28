@@ -297,11 +297,6 @@ func TestRefusesWhatTheOperationCannotDo(t *testing.T) {
 			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "flat", "layers": ["nope"]}]}`,
 			expected: http.StatusBadRequest,
 		},
-		"purge naming a layer of a map serving no layer collections": {
-			path:     "/cache/purge",
-			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "flat", "layers": ["roads"]}]}`,
-			expected: http.StatusUnprocessableEntity,
-		},
 		"seed naming a layer active at none of the zooms": {
 			path:     "/cache/seed",
 			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["pois"]}]}`,

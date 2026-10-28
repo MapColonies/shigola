@@ -82,6 +82,9 @@ type Options struct {
 	// ContinueOnError attempts every tile even after one fails, counting the
 	// failures. Run then returns the first failure once it is done.
 	ContinueOnError bool
+	// Zooms, if set, are the zooms the source covers, so a seed naming a layer
+	// active at none of them is refused. Nil skips that check.
+	Zooms []uint
 	// Draining, if set, is called once the source is exhausted and the run is
 	// waiting on its workers; the func it returns is called when they finish.
 	Draining func() (done func())
@@ -106,8 +109,8 @@ type unprocessable string
 func (e unprocessable) Error() string      { return string(e) }
 func (unprocessable) Is(target error) bool { return target == ErrUnprocessable }
 
-// ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a target naming
-// layers of a map that does not serve them, so the tiles are never read.
+// ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a seed naming
+// layers of a map that does not serve them, so the tiles would never be read.
 var ErrNoLayerCollections error = unprocessable("cacheops: the map does not serve layer collections, so its layer tiles are never read")
 
 // ErrParamsMap is wrapped by an ErrInvalidTarget for a seed naming layers of a
@@ -250,12 +253,18 @@ func (opts Options) validate() error {
 	if opts.Grid == nil {
 		return atlas.ErrNilGrid
 	}
-	return ValidateTargets(opts.Op, opts.Targets)
+	if err := ValidateTargets(opts.Op, opts.Targets); err != nil {
+		return err
+	}
+	if opts.Zooms != nil {
+		return ValidateZooms(opts.Op, opts.Targets, opts.Zooms)
+	}
+	return nil
 }
 
 // ValidateTargets reports the first target op cannot honour: a layer the map
-// does not have, layers of a map that does not serve them, or a seed of layers
-// of a map with query parameters.
+// does not have, or a seed of layers of a map that does not serve them or has
+// query parameters.
 func ValidateTargets(op Op, targets []Target) error {
 	for _, t := range targets {
 		if len(t.Layers) == 0 {
@@ -269,10 +278,13 @@ func ValidateTargets(op Op, targets []Target) error {
 			}
 		}
 
+		if op != Seed {
+			continue
+		}
 		if !t.Map.ServesLayerCollections() {
 			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrNoLayerCollections}
 		}
-		if op == Seed && len(t.Map.Params) > 0 {
+		if len(t.Map.Params) > 0 {
 			return ErrInvalidTarget{Map: t.Map.Name, Err: ErrParamsMap}
 		}
 	}
@@ -281,8 +293,8 @@ func ValidateTargets(op Op, targets []Target) error {
 }
 
 // ValidateZooms reports the first layer a seed names that is active at none of
-// zooms. A purge is not checked: one that clears nothing is harmless. Run cannot
-// check this itself, as its tile source does not say which zooms it covers.
+// zooms. A purge is not checked: one that clears nothing is harmless. Run checks
+// it against Options.Zooms; a caller refusing a request before Run calls it.
 func ValidateZooms(op Op, targets []Target, zooms []uint) error {
 	if op != Seed {
 		return nil
@@ -290,8 +302,8 @@ func ValidateZooms(op Op, targets []Target, zooms []uint) error {
 
 	for _, t := range targets {
 		for _, name := range t.Layers {
-			active := slices.ContainsFunc(zooms, func(z uint) bool {
-				return slices.ContainsFunc(t.Map.FilterLayersByZoom(slippy.Zoom(z)).Layers, func(l atlas.Layer) bool { return l.MVTName() == name })
+			active := slices.ContainsFunc(t.Map.Layers, func(l atlas.Layer) bool {
+				return l.MVTName() == name && slices.ContainsFunc(zooms, func(z uint) bool { return l.MinZoom <= z && z <= l.MaxZoom })
 			})
 			if !active {
 				return ErrInvalidTarget{Map: t.Map.Name, Err: fmt.Errorf("%w: %q", ErrLayerZooms, name)}
@@ -373,6 +385,9 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 		if !opts.Overwrite {
 			hit, err := opts.cached(ctx, c, m.Name, layer, mt.tile)
 			if err != nil {
+				if ctx.Err() != nil {
+					return false, err
+				}
 				errs = append(errs, fmt.Errorf("%v: %w", keyName(layer), err))
 				skipped = false
 				continue
