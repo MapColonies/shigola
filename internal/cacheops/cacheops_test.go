@@ -768,3 +768,44 @@ func TestSeedOfLayersTriesEveryKeyAndNamesWhatItWrote(t *testing.T) {
 		t.Errorf("buildings tile: got layers %q, expected it seeded after roads failed", got)
 	}
 }
+
+func TestSeedOfAMapWithQueryParametersSkipsIt(t *testing.T) {
+	tier := faketier.New("solo")
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: withParams(echoingMap("osm"))}},
+		Grid:    webMercator(t),
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Skipped != 1 || res.Done != 0 {
+		t.Errorf("result: got %+v, expected the tile skipped", res)
+	}
+	if len(tier.Calls()) != 0 {
+		t.Errorf("the cache was touched: %v", tier.Calls())
+	}
+}
+
+func TestUnprocessableTargetsMatchOneSentinel(t *testing.T) {
+	errs := map[string]error{
+		"no layer collections": cacheops.ValidateTargets(cacheops.Purge, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}}),
+		"query parameters":     cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}}),
+		"zooms":                cacheops.ValidateZooms(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}, []uint{1}),
+	}
+	for name, err := range errs {
+		if !errors.Is(err, cacheops.ErrUnprocessable) {
+			t.Errorf("%v: got %v, expected it to match ErrUnprocessable", name, err)
+		}
+	}
+
+	unknown := cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}})
+	if unknown == nil || errors.Is(unknown, cacheops.ErrUnprocessable) {
+		t.Errorf("unknown layer: got %v, expected a plain invalid target", unknown)
+	}
+}

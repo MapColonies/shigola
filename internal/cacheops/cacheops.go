@@ -96,18 +96,28 @@ type Result struct {
 
 var ErrNoMaps = errors.New("cacheops: no maps to work on")
 
+// ErrUnprocessable matches, through errors.Is, every target error that names
+// maps and layers that exist but asks for work that cannot be done, as against
+// a target that is simply wrong.
+var ErrUnprocessable = errors.New("cacheops: the target cannot be honoured")
+
+type unprocessable string
+
+func (e unprocessable) Error() string      { return string(e) }
+func (unprocessable) Is(target error) bool { return target == ErrUnprocessable }
+
 // ErrNoLayerCollections is wrapped by an ErrInvalidTarget for a target naming
 // layers of a map that does not serve them, so the tiles are never read.
-var ErrNoLayerCollections = errors.New("cacheops: the map does not serve layer collections, so its layer tiles are never read")
+var ErrNoLayerCollections error = unprocessable("cacheops: the map does not serve layer collections, so its layer tiles are never read")
 
 // ErrParamsMap is wrapped by an ErrInvalidTarget for a seed naming layers of a
 // map with query parameters, whose tiles are never cached.
-var ErrParamsMap = errors.New("cacheops: the map has query parameters, so its tiles are not cached")
+var ErrParamsMap error = unprocessable("cacheops: the map has query parameters, so its tiles are not cached")
 
 // ErrLayerZooms is wrapped by an ErrInvalidTarget for a seed naming a layer
 // that is active at none of the zooms requested, so nothing would be written
 // for it.
-var ErrLayerZooms = errors.New("cacheops: a layer named is active at none of the requested zooms")
+var ErrLayerZooms error = unprocessable("cacheops: a layer named is active at none of the requested zooms")
 
 type ErrInvalidTarget struct {
 	Map string
@@ -343,12 +353,25 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 	z, x, y := mt.tile.ZXY()
 	m := mt.target.Map.FilterLayersByZoom(z)
 
+	// the atlas never caches a map with query parameters, so there is nothing
+	// to write
+	if len(m.Params) > 0 {
+		return true, nil
+	}
+
+	var c cache.Interface
+	if !opts.Overwrite {
+		if c = opts.Atlas.GetCache(); c == nil {
+			return false, atlas.ErrMissingCache
+		}
+	}
+
 	var written []string
 	var errs []error
 	skipped = true
 	for _, layer := range mt.target.Keys(Seed, z) {
 		if !opts.Overwrite {
-			hit, err := opts.cached(ctx, m.Name, layer, mt.tile)
+			hit, err := opts.cached(ctx, c, m.Name, layer, mt.tile)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%v: %w", keyName(layer), err))
 				skipped = false
@@ -403,12 +426,7 @@ func keyName(layer string) string {
 	return fmt.Sprintf("layer (%v)", layer)
 }
 
-func (opts Options) cached(ctx context.Context, mapName, layer string, tile slippy.Tile) (bool, error) {
-	c := opts.Atlas.GetCache()
-	if c == nil {
-		return false, atlas.ErrMissingCache
-	}
-
+func (opts Options) cached(ctx context.Context, c cache.Interface, mapName, layer string, tile slippy.Tile) (bool, error) {
 	z, x, y := tile.ZXY()
 	key, err := cache.NewKey(opts.Grid, mapName, layer, uint(z), x, y)
 	if err != nil {

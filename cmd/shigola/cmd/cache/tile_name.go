@@ -74,8 +74,12 @@ func tileNameCommand(cmd *cobra.Command, args []string) (err error) {
 	log.Info("zoom list:", zooms)
 	tilechannel := generateTilesForTileName(ctx, tileNameTile, explicit, zooms)
 
-	// start up workers
-	return runSeedPurge(ctx, tilechannel, nil)
+	// start up workers. Without the zoom flags the tile alone is worked on
+	known := []uint{uint(tileNameTile.Z)}
+	if !explicit && len(zooms) > 0 {
+		known = zooms
+	}
+	return runSeedPurge(ctx, tilechannel, known)
 
 }
 

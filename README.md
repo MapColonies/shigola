@@ -404,7 +404,7 @@ $ SHIGOLA_SQL_DEBUG=LAYER_SQL shigola serve --config=/path/to/conf.toml
 
 ## Building from source
 
-Shigola is written in [Go](https://golang.org/) and requires [Go 1.26.2](https://go.dev/dl/) or higher to compile from the source.
+Shigola is written in [Go](https://golang.org/) and requires [Go 1.26.10](https://go.dev/dl/) or higher to compile from the source.
 (We support the two newest versions of Go.)
 To build shigola from the source, make sure you have Go installed and have cloned the repository.
 Navigate to the repository then run the following command:

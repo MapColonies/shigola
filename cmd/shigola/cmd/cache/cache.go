@@ -131,6 +131,11 @@ func runSeedPurge(ctx context.Context, tiles *TileChannel, zooms []uint) error {
 	for i, m := range seedPurgeMaps {
 		targets[i] = cacheops.Target{Map: m, Layers: layers}
 	}
+	// Run validates the targets too, but they must pass before the zooms are
+	// checked, so a misspelt layer is reported as such
+	if err := cacheops.ValidateTargets(seedPurgeOp, targets); err != nil {
+		return err
+	}
 	if zooms != nil {
 		if err := cacheops.ValidateZooms(seedPurgeOp, targets, zooms); err != nil {
 			return err
