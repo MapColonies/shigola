@@ -59,6 +59,37 @@ func TestSeedByBoundsWritesWholeMapTilesInEverySet(t *testing.T) {
 	}
 }
 
+func TestSeedOfOneLayerWritesItAndTheWholeMapTile(t *testing.T) {
+	m := renderable(t, "osm")
+	m.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}, {Name: "buildings", MaxZoom: 20}}
+	f := newFixture(t, "", m)
+
+	rec := f.do("/cache/seed", `{
+		"bounds": [-100, 10, -80, 20],
+		"zoomRange": {"min": 1, "max": 1},
+		"targets": [{"map": "osm", "layers": ["roads"]}],
+		"tileMatrixSets": ["WebMercatorQuad"]
+	}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, expected 200. body: %s", rec.Code, rec.Body)
+	}
+	if n := seeded(t, rec.Body.Bytes()); n != 1 {
+		t.Errorf("seeded: got %d, expected 1 map tile", n)
+	}
+
+	for _, k := range []*cache.Key{
+		f.key(tms.WebMercatorQuad, "osm", "", 1, 0, 0),
+		f.key(tms.WebMercatorQuad, "osm", "roads", 1, 0, 0),
+	} {
+		if _, ok := f.tier.Value(k); !ok {
+			t.Errorf("%v was not seeded", k)
+		}
+	}
+	if _, ok := f.tier.Value(f.key(tms.WebMercatorQuad, "osm", "buildings", 1, 0, 0)); ok {
+		t.Error("the sibling layer was seeded")
+	}
+}
+
 func TestTileMatrixSetsNarrowTheRun(t *testing.T) {
 	type tcase struct {
 		path, sets  string
@@ -229,11 +260,15 @@ func TestRefusesWhatTheOperationCannotDo(t *testing.T) {
 	}
 
 	m := renderable(t, "osm")
-	m.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}}
+	m.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}, {Name: "pois", MinZoom: 14, MaxZoom: 20}}
+	flat := renderable(t, "flat")
+	flat.Layers = []atlas.Layer{{Name: "roads", MaxZoom: 20}}
+	off := false
+	flat.ServeLayerCollections = &off
 
 	fn := func(tc tcase) func(*testing.T) {
 		return func(t *testing.T) {
-			f := newLimitedFixture(t, tc.cfg, m)
+			f := newLimitedFixture(t, tc.cfg, m, flat)
 
 			rec := f.do(tc.path, tc.body)
 			if rec.Code != tc.expected {
@@ -247,9 +282,24 @@ func TestRefusesWhatTheOperationCannotDo(t *testing.T) {
 	}
 
 	tests := map[string]tcase{
-		"seed naming a layer": {
+		"seed naming an unknown layer": {
 			path:     "/cache/seed",
-			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["roads"]}]}`,
+			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["nope"]}]}`,
+			expected: http.StatusBadRequest,
+		},
+		"seed naming a layer of a map serving no layer collections": {
+			path:     "/cache/seed",
+			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "flat", "layers": ["roads"]}]}`,
+			expected: http.StatusUnprocessableEntity,
+		},
+		"seed naming an unknown layer of a map serving no layer collections": {
+			path:     "/cache/seed",
+			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "flat", "layers": ["nope"]}]}`,
+			expected: http.StatusBadRequest,
+		},
+		"seed naming a layer active at none of the zooms": {
+			path:     "/cache/seed",
+			body:     `{"bounds": [-100, 10, -80, 20], "zoomRange": {"min": 1, "max": 1}, "targets": [{"map": "osm", "layers": ["pois"]}]}`,
 			expected: http.StatusUnprocessableEntity,
 		},
 		"seed over the tile limit": {

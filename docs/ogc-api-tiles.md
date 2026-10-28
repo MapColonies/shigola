@@ -187,10 +187,13 @@ the query string, so every spelling of `?f=` shares one entry rather than storin
 twice.
 
 A whole-map collection's tiles use the same keys `shigola cache seed` writes, so a seeded tile is
-served rather than generated a second time. A layer collection's tiles carry the layer in the key,
-and `cache seed` and `cache purge` pass an empty layer — they address a map's own key only — so
-layer tiles are cached as they are served and cannot be seeded ahead of a request or purged by the
-CLI.
+served rather than generated a second time. A layer collection's tiles carry the layer in the key.
+`cache seed --map m --layers roads` (or `layers` on an admin seed target) writes each named layer's
+tile, encoded with that layer alone, as well as the whole-map tile, so layer collections can be
+warmed ahead of a request. A layer is seeded only at the zooms it is active at; a seed naming a
+layer active at none of the requested zooms, or layers of a map with `serve_layer_collections =
+false` or with `[[maps.params]]`, is refused. `cache purge --layers` clears the named layers' tiles
+and the whole-map tile; without `--layers` it clears the whole-map tile and every layer's.
 
 A tile request carrying any *other* query parameter is served **uncached**: the key cannot describe
 it. Nothing on this surface passes query parameters through to a provider — `[[maps.params]]` is

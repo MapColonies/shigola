@@ -1,9 +1,14 @@
 package cacheops_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -12,6 +17,7 @@ import (
 	"github.com/MapColonies/shigola/cache/multi"
 	"github.com/MapColonies/shigola/internal/cacheops"
 	"github.com/MapColonies/shigola/internal/faketier"
+	"github.com/MapColonies/shigola/provider"
 	"github.com/MapColonies/shigola/provider/test"
 	"github.com/MapColonies/shigola/tms"
 	"github.com/go-spatial/geom/slippy"
@@ -460,6 +466,122 @@ func TestPurgeOfOneLayerAlsoClearsTheWholeMapTile(t *testing.T) {
 	}
 }
 
+// layerEcho encodes a tile as the names of the layers it was asked for, so a
+// test can tell which layers went into a cached tile.
+type layerEcho struct{ test.TileProvider }
+
+func (layerEcho) MVTForLayers(_ context.Context, _ provider.Tile, _ provider.Params, layers []provider.Layer) ([]byte, error) {
+	names := make([]string, len(layers))
+	for i, l := range layers {
+		names[i] = l.MVTName
+	}
+
+	return []byte(strings.Join(names, ",")), nil
+}
+
+func echoingMap(name string) atlas.Map {
+	m := layeredMap(name)
+	m.SetMVTProvider("echo", &layerEcho{})
+
+	return m
+}
+
+func noLayerCollections(m atlas.Map) atlas.Map {
+	off := false
+	m.ServeLayerCollections = &off
+
+	return m
+}
+
+// layersIn is the layer names a cached tile was encoded with.
+func layersIn(t *testing.T, tier *faketier.Tier, k *cache.Key) (string, bool) {
+	t.Helper()
+
+	v, ok := tier.Value(k)
+	if !ok {
+		return "", false
+	}
+	r, err := gzip.NewReader(bytes.NewReader(v))
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+
+	return string(b), true
+}
+
+func TestSeedOfOneLayerWritesItAndTheWholeMapTile(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: echoingMap("osm"), Layers: []string{"roads", "pois"}}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Done != 1 {
+		t.Errorf("Done: got %d, expected 1 map tile", res.Done)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "", 6, 1, 1)); got != "roads,buildings" {
+		t.Errorf("whole-map tile: got layers %q, expected every layer active at z6", got)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "roads", 6, 1, 1)); got != "roads" {
+		t.Errorf("roads tile: got layers %q, expected roads alone", got)
+	}
+	if _, ok := tier.Value(layerKey(t, grid, "osm", "buildings", 6, 1, 1)); ok {
+		t.Error("a layer that was not named was seeded")
+	}
+	// pois starts at z14, so the server never caches it at z6
+	if n := tier.Count(faketier.OpSet); n != 2 {
+		t.Errorf("writes: got %d, expected the map key and roads", n)
+	}
+}
+
+func TestSeedOfALayerWithoutOverwriteFillsOnlyItsMissingKeys(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	whole := layerKey(t, grid, "osm", "", 6, 1, 1)
+	tier.Seed(whole, []byte("old"))
+	for _, layer := range []string{"", "roads"} {
+		tier.Seed(layerKey(t, grid, "osm", layer, 6, 2, 2), []byte("old"))
+	}
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: echoingMap("osm"), Layers: []string{"roads"}}},
+		Grid:    grid,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}, slippy.Tile{Z: 6, X: 2, Y: 2}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Done != 1 || res.Skipped != 1 {
+		t.Errorf("result: got %+v, expected the fully cached tile skipped and the other done", res)
+	}
+	if v, _ := tier.Value(whole); string(v) != "old" {
+		t.Errorf("whole-map tile: got %q, expected it left as old", v)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "roads", 6, 1, 1)); got != "roads" {
+		t.Errorf("roads tile: got layers %q, expected it seeded", got)
+	}
+}
+
 func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 	type tcase struct {
 		opts cacheops.Options
@@ -490,8 +612,17 @@ func TestRunRejectsLayersItCannotHonour(t *testing.T) {
 		"purge naming an unknown layer": {opts: cacheops.Options{
 			Op: cacheops.Purge, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}},
 		}},
-		"seed naming a layer": {opts: cacheops.Options{
-			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"roads"}}},
+		"seed naming an unknown layer": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}},
+		}},
+		"seed naming a layer of a map serving no layer collections": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}},
+		}},
+		"seed naming a layer active at none of the zooms": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}, Zooms: []uint{6},
+		}},
+		"seed naming a layer of a map with query parameters": {opts: cacheops.Options{
+			Op: cacheops.Seed, Targets: []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}},
 		}},
 	}
 
@@ -523,5 +654,165 @@ func TestContinueOnErrorAttemptsEveryTileAndCountsFailures(t *testing.T) {
 	}
 	if n := tier.Count(faketier.OpPurge); n != 3 {
 		t.Errorf("purges: got %d, expected every tile attempted", n)
+	}
+}
+
+func withParams(m atlas.Map) atlas.Map {
+	m.Params = []provider.QueryParameter{{Name: "lang", Token: "!LANG!", Type: "string"}}
+
+	return m
+}
+
+func TestValidateTargetsReportsAnUnknownLayerFirst(t *testing.T) {
+	err := cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{
+		{Map: noLayerCollections(layeredMap("flat")), Layers: []string{"rivers"}},
+	})
+
+	if errors.Is(err, cacheops.ErrNoLayerCollections) || !strings.Contains(fmt.Sprint(err), `no layer named "rivers"`) {
+		t.Errorf("err: got %v, expected the unknown layer reported", err)
+	}
+}
+
+func TestValidateZooms(t *testing.T) {
+	type tcase struct {
+		op    cacheops.Op
+		zooms []uint
+		ok    bool
+	}
+
+	targets := []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}
+
+	fn := func(tc tcase) func(*testing.T) {
+		return func(t *testing.T) {
+			err := cacheops.ValidateZooms(tc.op, targets, tc.zooms)
+			if tc.ok && err != nil {
+				t.Errorf("err: got %v, expected none", err)
+			}
+			if !tc.ok && !errors.Is(err, cacheops.ErrLayerZooms) {
+				t.Errorf("err: got %v, expected ErrLayerZooms", err)
+			}
+		}
+	}
+
+	tests := map[string]tcase{
+		"seed below the layer's zooms":   {op: cacheops.Seed, zooms: []uint{1, 2, 3}},
+		"seed reaching the layer's zoom": {op: cacheops.Seed, zooms: []uint{13, 14}, ok: true},
+		"purge is not checked":           {op: cacheops.Purge, zooms: []uint{1}, ok: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, fn(tc))
+	}
+}
+
+func TestKeysNameALayerSharedByZoomBandsOnce(t *testing.T) {
+	m := layeredMap("osm")
+	m.Layers = append(m.Layers, atlas.Layer{Name: "roads", MinZoom: 0, MaxZoom: 20})
+
+	for name, tgt := range map[string]cacheops.Target{
+		"named":     {Map: m, Layers: []string{"roads"}},
+		"every one": {Map: m},
+	} {
+		keys := tgt.Keys(cacheops.Purge, 6)
+		if n := strings.Count(strings.Join(keys, ","), "roads"); n != 1 {
+			t.Errorf("%v: got keys %q, expected roads once", name, keys)
+		}
+	}
+}
+
+// failingLayer echoes like layerEcho, but fails a tile of the named layer alone.
+type failingLayer struct {
+	layerEcho
+	layer string
+}
+
+func (p failingLayer) MVTForLayers(ctx context.Context, tile provider.Tile, params provider.Params, layers []provider.Layer) ([]byte, error) {
+	if len(layers) == 1 && layers[0].MVTName == p.layer {
+		return nil, errors.New("boom")
+	}
+
+	return p.layerEcho.MVTForLayers(ctx, tile, params, layers)
+}
+
+func TestSeedOfLayersTriesEveryKeyAndNamesWhatItWrote(t *testing.T) {
+	grid := webMercator(t)
+	tier := faketier.New("solo")
+
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	m := layeredMap("osm")
+	m.SetMVTProvider("echo", &failingLayer{layer: "roads"})
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:              cacheops.Seed,
+		Atlas:           a,
+		Targets:         []cacheops.Target{{Map: m, Layers: []string{"roads", "buildings"}}},
+		Grid:            grid,
+		ContinueOnError: true,
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+
+	var te cacheops.ErrTile
+	if !errors.As(err, &te) {
+		t.Fatalf("err: got %v, expected an ErrTile", err)
+	}
+	for _, want := range []string{"the whole-map tile", "layer (buildings)", "layer (roads): "} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err: got %q, expected it to mention %q", err, want)
+		}
+	}
+	if res.Failed != 1 || res.Done != 0 {
+		t.Errorf("result: got %+v, expected the tile failed", res)
+	}
+	if got, _ := layersIn(t, tier, layerKey(t, grid, "osm", "buildings", 6, 1, 1)); got != "buildings" {
+		t.Errorf("buildings tile: got layers %q, expected it seeded after roads failed", got)
+	}
+}
+
+func TestSeedOfAMapWithQueryParametersSkipsIt(t *testing.T) {
+	tier := faketier.New("solo")
+	a := &atlas.Atlas{}
+	a.SetCache(tier)
+
+	res, err := cacheops.Run(context.Background(), cacheops.Options{
+		Op:      cacheops.Seed,
+		Atlas:   a,
+		Targets: []cacheops.Target{{Map: withParams(echoingMap("osm"))}},
+		Grid:    webMercator(t),
+	}, tiles(slippy.Tile{Z: 6, X: 1, Y: 1}))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if res.Skipped != 1 || res.Done != 0 {
+		t.Errorf("result: got %+v, expected the tile skipped", res)
+	}
+	if len(tier.Calls()) != 0 {
+		t.Errorf("the cache was touched: %v", tier.Calls())
+	}
+}
+
+func TestUnprocessableTargetsMatchOneSentinel(t *testing.T) {
+	errs := map[string]error{
+		"no layer collections": cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}}),
+		"query parameters":     cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: withParams(layeredMap("osm")), Layers: []string{"roads"}}}),
+		"zooms":                cacheops.ValidateZooms(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"pois"}}}, []uint{1}),
+	}
+	for name, err := range errs {
+		if !errors.Is(err, cacheops.ErrUnprocessable) {
+			t.Errorf("%v: got %v, expected it to match ErrUnprocessable", name, err)
+		}
+	}
+
+	unknown := cacheops.ValidateTargets(cacheops.Seed, []cacheops.Target{{Map: layeredMap("osm"), Layers: []string{"rivers"}}})
+	if unknown == nil || errors.Is(unknown, cacheops.ErrUnprocessable) {
+		t.Errorf("unknown layer: got %v, expected a plain invalid target", unknown)
+	}
+}
+
+func TestPurgeOfLayersOfAMapServingNoLayerCollectionsIsAllowed(t *testing.T) {
+	err := cacheops.ValidateTargets(cacheops.Purge, []cacheops.Target{{Map: noLayerCollections(layeredMap("osm")), Layers: []string{"roads"}}})
+	if err != nil {
+		t.Errorf("err: got %v, expected the stale layer keys purgeable", err)
 	}
 }

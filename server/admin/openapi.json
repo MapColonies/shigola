@@ -386,7 +386,7 @@
           },
           "layers": {
             "type": "array",
-            "description": "Narrows a purge to these layers and the map's whole-map tile, which contains them. Omitted, the whole-map tile and every layer's tile.",
+            "description": "Narrows the request to these layers and the map's whole-map tile, which contains them. A seed writes each layer's tile as its layer collection serves it. Omitted, a purge clears the whole-map tile and every layer's tile, and a seed writes the whole-map tile only.",
             "items": {
               "type": "string"
             }
@@ -523,7 +523,7 @@
         }
       },
       "SeedUnprocessable": {
-        "description": "The request covers more than max_tiles_per_request, or names layers, which seed does not support. Nothing was touched.",
+        "description": "The request covers more than max_tiles_per_request, or names layers the seed cannot honour: layers of a map that does not serve layer collections, so its layer tiles would never be read; layers of a map with query parameters, whose tiles are not cached; or a layer active at none of the requested zooms. Nothing was touched.",
         "content": {
           "application/json": {
             "schema": {

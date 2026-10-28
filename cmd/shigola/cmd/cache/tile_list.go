@@ -92,8 +92,13 @@ func tileListCommand(cmd *cobra.Command, args []string) (err error) {
 
 	tilechannel := generateTilesForTileList(ctx, in, explicit, zooms, format)
 
-	// start up workers here
-	return runSeedPurge(ctx, tilechannel)
+	// start up workers here. explicit means no zoom flags were given, and then
+	// each tile keeps its own zoom, which is not known up front
+	var known []uint
+	if !explicit {
+		known = zooms
+	}
+	return runSeedPurge(ctx, tilechannel, known)
 }
 
 // generateTilesForTileList will return a channel where all the tiles in the list will be published
