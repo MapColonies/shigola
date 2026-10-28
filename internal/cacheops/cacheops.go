@@ -393,7 +393,7 @@ func (opts Options) seed(ctx context.Context, mt mapTile) (skipped bool, err err
 				continue
 			}
 			if hit {
-				log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) layer (%v) tile (%v/%v/%v)", m.Name, layer, z, x, y)
+				log.Infof("cache seed set to not overwrite existing tiles. skipping map (%v) %v (%v/%v/%v)", m.Name, keyName(layer), z, x, y)
 				continue
 			}
 		}
